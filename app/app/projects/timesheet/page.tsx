@@ -1,23 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Filter, MoreHorizontal, ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
-
-const MOCK_TIMESHEETS = [
-  { id: "TS-2026-0001", employee: "Ali Hashemi", status: "Submitted", total_hours: 8, date: "2026-07-27" },
-  { id: "TS-2026-0002", employee: "Thomas Founder", status: "Draft", total_hours: 4.5, date: "2026-07-27" },
-  { id: "TS-2026-0003", employee: "Jane Doe", status: "Approved", total_hours: 40, date: "2026-07-20" },
-];
+import { createClient } from "@/utils/supabase/client";
 
 export default function TimesheetListView() {
   const [selected, setSelected] = useState<string[]>([]);
+  const [timesheets, setTimesheets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchTimesheets() {
+      const supabase = createClient();
+      const { data } = await (supabase as any)
+        .from("erp_timesheets")
+        .select(`
+          id, 
+          status, 
+          hours, 
+          log_date,
+          person:person_id ( full_name )
+        `)
+        .order("log_date", { ascending: false });
+      
+      setTimesheets(data || []);
+      setLoading(false);
+    }
+    fetchTimesheets();
+  }, []);
 
   const toggleSelectAll = () => {
-    if (selected.length === MOCK_TIMESHEETS.length) {
+    if (selected.length === timesheets.length) {
       setSelected([]);
     } else {
-      setSelected(MOCK_TIMESHEETS.map((t) => t.id));
+      setSelected(timesheets.map((t) => t.id));
     }
   };
 
@@ -33,7 +50,7 @@ export default function TimesheetListView() {
       <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 shrink-0">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-semibold text-gray-900">Timesheet</h2>
-          <span className="text-gray-500 font-medium">{MOCK_TIMESHEETS.length}</span>
+          <span className="text-gray-500 font-medium">{timesheets.length}</span>
         </div>
         <div className="flex items-center gap-3">
           <button className="px-3 py-1.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded font-medium transition-colors">
@@ -81,9 +98,9 @@ export default function TimesheetListView() {
                   <th className="w-10 px-4 py-2 text-center">
                     <input 
                       type="checkbox" 
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      checked={selected.length === MOCK_TIMESHEETS.length && MOCK_TIMESHEETS.length > 0}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       onChange={toggleSelectAll}
+                      checked={selected.length === timesheets.length && timesheets.length > 0}
                     />
                   </th>
                   <th className="px-4 py-2 font-medium text-gray-500">Name</th>
@@ -94,35 +111,37 @@ export default function TimesheetListView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {MOCK_TIMESHEETS.map((ts) => (
-                  <tr key={ts.id} className="hover:bg-gray-50 transition-colors group cursor-pointer">
-                    <td className="px-4 py-2.5 text-center">
+                {timesheets.map((ts) => (
+                  <tr 
+                    key={ts.id} 
+                    className={`border-b border-gray-100 hover:bg-gray-50/50 transition-colors cursor-pointer ${
+                      selected.includes(ts.id) ? "bg-blue-50/50" : ""
+                    }`}
+                  >
+                    <td className="w-12 px-6 py-3">
                       <input 
                         type="checkbox" 
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         checked={selected.includes(ts.id)}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          toggleSelect(ts.id);
-                        }}
+                        onChange={() => toggleSelect(ts.id)}
                       />
                     </td>
-                    <td className="px-4 py-2.5 font-medium text-gray-900">
+                    <td className="px-6 py-3 font-medium text-gray-900">
                       <Link href={`/app/projects/timesheet/${ts.id}`} className="hover:underline">
-                        {ts.id}
+                        {ts.id.slice(0, 8)}...
                       </Link>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${
-                        ts.status === 'Approved' ? 'bg-green-100 text-green-700' :
-                        ts.status === 'Submitted' ? 'bg-blue-100 text-blue-700' :
-                        'bg-gray-100 text-gray-700'
+                    <td className="px-6 py-3 text-gray-600">{ts.person?.full_name || 'Unknown'}</td>
+                    <td className="px-6 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider ${
+                        ts.status === "Approved" ? "bg-green-100 text-green-700" :
+                        ts.status === "Submitted" ? "bg-blue-100 text-blue-700" :
+                        "bg-gray-100 text-gray-700"
                       }`}>
                         {ts.status}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-600">{ts.employee}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{ts.total_hours}h</td>
+                    <td className="px-6 py-3 text-gray-600 font-medium">{ts.hours} h</td>
                     <td className="px-4 py-2.5 text-right text-gray-400">
                       <button className="hover:text-gray-700 p-1 rounded hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-all">
                         <MoreHorizontal size={14} />
