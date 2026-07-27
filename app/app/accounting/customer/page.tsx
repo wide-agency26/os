@@ -51,7 +51,7 @@ export default function CRMListView() {
           <span className="text-gray-500 font-medium">{customers.length}</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/app/crm/customers/new" className="px-3 py-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
+          <Link href="/app/accounting/customer/new" className="px-3 py-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
             <Plus size={14} /> Add Lead / Client
           </Link>
         </div>
