@@ -107,7 +107,7 @@ export default function ProjectTypeListView() {
         </div>
       </div>
 
-      <Section>
+      <Section title="Project Types List">
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
           {types.length === 0 ? (
             <div className="p-12 text-center flex flex-col items-center justify-center">
