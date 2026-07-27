@@ -50,35 +50,33 @@ export function ProjectWorkspaceDashboard() {
 
   return (
     <Section title="Quick Stats">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-between">
-          <div>
-            <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Active Projects</p>
-            {loading ? <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-2"></div> : <h3 className="text-3xl font-semibold text-gray-900">{activeProjects}</h3>}
-          </div>
-          <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-            <Briefcase size={20} />
-          </div>
+      <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-between">
+        <div>
+          <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Active Projects</p>
+          {loading ? <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-2"></div> : <h3 className="text-3xl font-semibold text-gray-900">{activeProjects}</h3>}
         </div>
-
-        <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-between">
-          <div>
-            <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Open Tasks</p>
-            {loading ? <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-2"></div> : <h3 className="text-3xl font-semibold text-gray-900">{openTasks}</h3>}
-          </div>
-          <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-orange-600">
-            <CheckSquare size={20} />
-          </div>
+        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+          <Briefcase size={20} />
         </div>
+      </div>
 
-        <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-between">
-          <div>
-            <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Unbilled Hours</p>
-            {loading ? <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-2"></div> : <h3 className="text-3xl font-semibold text-gray-900">{unbilledHours.toFixed(1)}</h3>}
-          </div>
-          <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center text-green-600">
-            <Clock size={20} />
-          </div>
+      <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-between">
+        <div>
+          <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Open Tasks</p>
+          {loading ? <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-2"></div> : <h3 className="text-3xl font-semibold text-gray-900">{openTasks}</h3>}
+        </div>
+        <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-orange-600">
+          <CheckSquare size={20} />
+        </div>
+      </div>
+
+      <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all flex items-center justify-between">
+        <div>
+          <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Unbilled Hours</p>
+          {loading ? <div className="h-8 w-16 bg-gray-200 animate-pulse rounded mt-2"></div> : <h3 className="text-3xl font-semibold text-gray-900">{unbilledHours.toFixed(1)}</h3>}
+        </div>
+        <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center text-green-600">
+          <Clock size={20} />
         </div>
       </div>
     </Section>

@@ -53,13 +53,13 @@ export default function TimesheetListView() {
           <span className="text-gray-500 font-medium">{timesheets.length}</span>
         </div>
         <div className="flex items-center gap-3">
-          <button className="px-3 py-1.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded font-medium transition-colors">
+          <Link href="/app/projects/timesheet" className="px-3 py-1.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded font-medium transition-colors">
             List View
-          </button>
-          <button className="px-3 py-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
+          </Link>
+          <Link href="/app/projects/timesheet/new" className="px-3 py-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
             <Plus size={14} />
             Add Timesheet
-          </button>
+          </Link>
         </div>
       </div>
 
