@@ -3,12 +3,16 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Section } from "@/components/frappe-ui/Workspace";
-import { CheckCircle, Clock, DollarSign, Activity } from "lucide-react";
+import { CheckCircle, Clock, DollarSign, Activity, Edit2 } from "lucide-react";
 import Link from "next/link";
 
 export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [timesheetRecords, setTimesheetRecords] = useState<any[]>([]);
+  const [expenseRecords, setExpenseRecords] = useState<any[]>([]);
+  const [invoiceRecords, setInvoiceRecords] = useState<any[]>([]);
+
   const [stats, setStats] = useState({
     completionPercentage: 0,
     totalCost: 0,
@@ -50,43 +54,57 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
       
       setTasks(fetchedTasks || []);
 
-      // Fetch Timesheets for Costing and Timeline
+      // Fetch Timesheets
       const { data: timesheets } = await (supabase as any)
         .from("erp_timesheets")
-        .select("log_date, hours, billing_rate")
+        .select(`
+          id, log_date, hours, billing_rate, note, 
+          employee:employee_id ( full_name )
+        `)
         .eq("project_id", projectId)
-        .order("log_date", { ascending: true });
+        .order("log_date", { ascending: false });
       
+      setTimesheetRecords(timesheets || []);
+
       let actualStartDate = null;
       let actualEndDate = null;
       let timesheetCost = 0;
 
       if (timesheets && timesheets.length > 0) {
-        actualStartDate = timesheets[0].log_date;
-        actualEndDate = timesheets[timesheets.length - 1].log_date;
+        // since they are ordered desc, last one is first date
+        actualStartDate = timesheets[timesheets.length - 1].log_date;
+        actualEndDate = timesheets[0].log_date;
         
         timesheetCost = timesheets.reduce((acc: number, ts: any) => {
           return acc + (Number(ts.hours) * Number(ts.billing_rate || 0));
         }, 0);
       }
 
-      // Fetch Expenses for Costing
+      // Fetch Expenses
       const { data: expenses } = await (supabase as any)
         .from("erp_expenses")
-        .select("amount")
-        .eq("project_id", projectId);
+        .select(`
+          id, expense_date, expense_type, amount, status
+        `)
+        .eq("project_id", projectId)
+        .order("expense_date", { ascending: false });
       
+      setExpenseRecords(expenses || []);
       const expenseCost = expenses?.reduce((acc: number, exp: any) => acc + Number(exp.amount), 0) || 0;
       const totalCost = timesheetCost + expenseCost;
 
-      // Fetch Invoices for Billing
+      // Fetch Invoices
       const { data: invoices } = await (supabase as any)
         .from("erp_invoices")
-        .select("grand_total")
+        .select(`
+          id, title, issue_date, grand_total, status
+        `)
         .eq("project_id", projectId)
         .neq("status", "Cancelled")
-        .neq("status", "Draft");
+        .neq("status", "Draft")
+        .order("issue_date", { ascending: false });
       
+      setInvoiceRecords(invoices || []);
       const totalBilled = invoices?.reduce((acc: number, inv: any) => acc + Number(inv.grand_total), 0) || 0;
 
       setStats({
@@ -142,6 +160,9 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
             <p className="text-gray-500 mt-1">{project.scope || "No scope provided."}</p>
           </div>
           <div className="flex gap-2">
+            <Link href={`/app/projects/project/${projectId}`} className="px-4 py-2 bg-white border border-gray-300 rounded text-[13px] font-medium text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2">
+              <Edit2 size={14} /> Edit Project
+            </Link>
             <Link href={`/app/projects/task/new?project=${projectId}`} className="px-4 py-2 bg-white border border-gray-300 rounded text-[13px] font-medium text-gray-700 hover:bg-gray-50 transition-colors">
               Add Task
             </Link>
@@ -153,7 +174,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 mb-6">
-          {["Dashboard", "Tasks", "Timesheets", "Files"].map(tab => (
+          {["Dashboard", "Tasks", "Timesheets", "Financials", "Files"].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -246,7 +267,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
                   </div>
                   <div className="p-3 overflow-y-auto flex flex-col gap-3">
                     {columnTasks.map(t => (
-                      <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:border-blue-400 hover:shadow transition-all cursor-pointer">
+                      <Link href={`/app/projects/task/${t.id}`} key={t.id} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:border-blue-400 hover:shadow transition-all cursor-pointer block">
                         <h4 className="font-medium text-gray-900 mb-2 leading-snug">{t.title}</h4>
                         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
                           <span className="text-[11px] font-medium text-gray-500">
@@ -261,7 +282,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
                             {t.priority || 'Normal'}
                           </span>
                         </div>
-                      </div>
+                      </Link>
                     ))}
                     {columnTasks.length === 0 && (
                       <div className="text-center py-6 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-lg">
@@ -275,12 +296,130 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* Other Tabs Placeholders */}
+        {/* Tab Content: Timesheets */}
         {activeTab === "Timesheets" && (
-           <div className="p-8 text-center text-gray-500 border border-gray-200 rounded border-dashed">
-             Timesheets list will be rendered here.
+           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+             {timesheetRecords.length === 0 ? (
+               <div className="p-8 text-center text-gray-500">No timesheets logged for this project.</div>
+             ) : (
+               <table className="w-full text-left text-[13px]">
+                 <thead className="bg-gray-50 border-b border-gray-200">
+                   <tr>
+                     <th className="px-4 py-3 font-medium text-gray-600">Date</th>
+                     <th className="px-4 py-3 font-medium text-gray-600">Employee</th>
+                     <th className="px-4 py-3 font-medium text-gray-600">Hours</th>
+                     <th className="px-4 py-3 font-medium text-gray-600">Cost</th>
+                     <th className="px-4 py-3 font-medium text-gray-600">Note</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {timesheetRecords.map(ts => (
+                     <tr key={ts.id} className="border-b border-gray-100 hover:bg-gray-50">
+                       <td className="px-4 py-3 font-medium text-gray-900">
+                         <Link href={`/app/projects/timesheet/${ts.id}`} className="hover:underline hover:text-blue-600">
+                           {ts.log_date}
+                         </Link>
+                       </td>
+                       <td className="px-4 py-3 text-gray-600">{ts.employee?.full_name || "-"}</td>
+                       <td className="px-4 py-3 text-gray-600">{ts.hours}</td>
+                       <td className="px-4 py-3 text-gray-600">{formatCurrency(ts.hours * (ts.billing_rate || 0))}</td>
+                       <td className="px-4 py-3 text-gray-600 truncate max-w-xs">{ts.note || "-"}</td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+             )}
            </div>
         )}
+
+        {/* Tab Content: Financials */}
+        {activeTab === "Financials" && (
+           <div className="space-y-8">
+             <Section title="Invoices">
+               <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                 {invoiceRecords.length === 0 ? (
+                   <div className="p-8 text-center text-gray-500">No invoices generated for this project.</div>
+                 ) : (
+                   <table className="w-full text-left text-[13px]">
+                     <thead className="bg-gray-50 border-b border-gray-200">
+                       <tr>
+                         <th className="px-4 py-3 font-medium text-gray-600">Invoice ID</th>
+                         <th className="px-4 py-3 font-medium text-gray-600">Date</th>
+                         <th className="px-4 py-3 font-medium text-gray-600">Amount</th>
+                         <th className="px-4 py-3 font-medium text-gray-600">Status</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       {invoiceRecords.map(inv => (
+                         <tr key={inv.id} className="border-b border-gray-100 hover:bg-gray-50">
+                           <td className="px-4 py-3 font-medium text-gray-900">
+                             <Link href={`/app/accounting/sales-invoice/${inv.id}`} className="hover:underline hover:text-blue-600">
+                               {inv.title || inv.id.split('-')[0]}
+                             </Link>
+                           </td>
+                           <td className="px-4 py-3 text-gray-600">{inv.issue_date}</td>
+                           <td className="px-4 py-3 text-gray-600">{formatCurrency(inv.grand_total)}</td>
+                           <td className="px-4 py-3">
+                             <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                               inv.status === 'Paid' ? 'bg-green-100 text-green-700' :
+                               inv.status === 'Unpaid' ? 'bg-red-100 text-red-700' :
+                               'bg-blue-100 text-blue-700'
+                             }`}>
+                               {inv.status}
+                             </span>
+                           </td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 )}
+               </div>
+             </Section>
+             
+             <Section title="Expenses">
+               <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                 {expenseRecords.length === 0 ? (
+                   <div className="p-8 text-center text-gray-500">No expenses logged for this project.</div>
+                 ) : (
+                   <table className="w-full text-left text-[13px]">
+                     <thead className="bg-gray-50 border-b border-gray-200">
+                       <tr>
+                         <th className="px-4 py-3 font-medium text-gray-600">Date</th>
+                         <th className="px-4 py-3 font-medium text-gray-600">Type</th>
+                         <th className="px-4 py-3 font-medium text-gray-600">Amount</th>
+                         <th className="px-4 py-3 font-medium text-gray-600">Status</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       {expenseRecords.map(exp => (
+                         <tr key={exp.id} className="border-b border-gray-100 hover:bg-gray-50">
+                           <td className="px-4 py-3 font-medium text-gray-900">
+                             <Link href={`/app/accounting/expense/${exp.id}`} className="hover:underline hover:text-blue-600">
+                               {exp.expense_date}
+                             </Link>
+                           </td>
+                           <td className="px-4 py-3 text-gray-600">{exp.expense_type || "-"}</td>
+                           <td className="px-4 py-3 text-gray-600">{formatCurrency(exp.amount)}</td>
+                           <td className="px-4 py-3">
+                             <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                               exp.status === 'Approved' ? 'bg-green-100 text-green-700' :
+                               exp.status === 'Rejected' ? 'bg-red-100 text-red-700' :
+                               'bg-yellow-100 text-yellow-700'
+                             }`}>
+                               {exp.status || "Pending"}
+                             </span>
+                           </td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 )}
+               </div>
+             </Section>
+           </div>
+        )}
+
+        {/* Tab Content: Files */}
         {activeTab === "Files" && (
            <div className="p-8 text-center text-gray-500 border border-gray-200 rounded border-dashed">
              Project files and attachments will be rendered here.

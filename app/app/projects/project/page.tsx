@@ -1,122 +1,201 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Plus, Filter, FileUp } from "lucide-react";
+import { Workspace } from "@/components/frappe-ui/Workspace";
+import { Plus, MoreHorizontal, Filter, Search, Trash, FileUp } from "lucide-react";
 import Link from "next/link";
+import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
+import { useRouter } from "next/navigation";
 
 export default function ProjectListView() {
-  const [selected, setSelected] = useState<string[]>([]);
+  const router = useRouter();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const fetchProjects = async () => {
+    setLoading(true);
+    const supabase = createClient();
+    const { data } = await (supabase as any)
+      .from("projects")
+      .select(`
+        id, 
+        title, 
+        status, 
+        priority, 
+        expected_start_date,
+        expected_end_date,
+        client:client_id ( company, name )
+      `)
+      .order("created_at", { ascending: false });
+    
+    setProjects(data || []);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    async function fetchProjects() {
-      const supabase = createClient();
-      const { data } = await (supabase as any)
-        .from("projects")
-        .select(`
-          id, 
-          title, 
-          status, 
-          priority, 
-          expected_start_date,
-          expected_end_date,
-          client:client_id ( company, name )
-        `)
-        .order("created_at", { ascending: false });
-      
-      setProjects(data || []);
-      setLoading(false);
-    }
     fetchProjects();
   }, []);
 
   const toggleSelectAll = () => {
-    if (selected.length === projects.length) setSelected([]);
-    else setSelected(projects.map((p) => p.id));
+    if (selectedIds.size === projects.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(projects.map(p => p.id)));
+    }
   };
 
-  const toggleSelect = (id: string) => {
-    setSelected((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} project(s)?`)) return;
+    setIsDeleting(true);
+    const supabase = createClient();
+    
+    const idsToDelete = Array.from(selectedIds);
+    
+    const { error } = await (supabase as any)
+      .from("projects")
+      .delete()
+      .in('id', idsToDelete);
+      
+    if (error) {
+      alert("Error deleting projects: " + error.message);
+    } else {
+      setSelectedIds(new Set());
+      await fetchProjects();
+    }
+    setIsDeleting(false);
+  };
+
+  const handleRowClick = (id: string) => {
+    router.push(`/app/projects/${id}`);
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white text-[13px]">
-      <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 shrink-0">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold text-gray-900">Project</h2>
-          <span className="text-gray-500 font-medium">{projects.length}</span>
-        </div>
+    <Workspace>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-gray-900">Projects</h2>
         <div className="flex items-center gap-3">
-          <Link href="/app/projects/project/bulk-import" className="px-3 py-1.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded font-medium transition-colors flex items-center gap-1.5">
-            <FileUp size={14} /> Import as Bulk
+          {selectedIds.size > 0 && (
+            <button 
+              onClick={handleBulkDelete}
+              disabled={isDeleting}
+              className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded text-[13px] font-medium hover:bg-red-100 transition-colors flex items-center gap-2"
+            >
+              <Trash size={16} />
+              {isDeleting ? "Deleting..." : `Delete ${selectedIds.size}`}
+            </button>
+          )}
+          <Link href="/app/projects/project/bulk-import" className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center gap-2">
+            <FileUp size={16} />
+            Bulk Import
           </Link>
-          <Link href="/app/projects/project/new" className="px-3 py-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
-            <Plus size={14} /> Add Project
+          <button className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center gap-2">
+            <Filter size={16} />
+            Filter
+          </button>
+          <div className="h-4 w-px bg-gray-300 mx-1"></div>
+          <Link href="/app/projects/project/new" className="px-3 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 transition-colors flex items-center gap-2">
+            <Plus size={16} />
+            New Project
           </Link>
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="w-56 border-r border-gray-200 p-4 overflow-y-auto hidden md:block shrink-0">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-700">Filters</h3>
-            <Filter size={14} className="text-gray-400" />
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-gray-50/50">
+          <div className="relative w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input 
+              type="text" 
+              placeholder="Search projects..." 
+              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+            />
+          </div>
+          <div className="text-[13px] text-gray-500">
+            {projects.length} projects
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto bg-white">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-white sticky top-0 z-10 border-b border-gray-200 shadow-sm">
-              <tr>
-                <th className="px-4 py-3 w-10">
-                  <input type="checkbox" className="rounded border-gray-300" checked={selected.length === projects.length && projects.length > 0} onChange={toggleSelectAll} />
-                </th>
-                <th className="px-4 py-3 font-medium text-gray-500">Project Name</th>
-                <th className="px-4 py-3 font-medium text-gray-500">Status</th>
-                <th className="px-4 py-3 font-medium text-gray-500">Customer</th>
-                <th className="px-4 py-3 font-medium text-gray-500">Priority</th>
-                <th className="px-4 py-3 font-medium text-gray-500">Start Date</th>
-                <th className="px-4 py-3 font-medium text-gray-500">End Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} className="text-center py-10 text-gray-500">Loading projects...</td></tr>
-              ) : projects.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-10 text-gray-500">No projects found.</td></tr>
-              ) : (
-                projects.map((p) => (
-                  <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50 group">
-                    <td className="px-4 py-3">
-                      <input type="checkbox" className="rounded border-gray-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity" checked={selected.includes(p.id)} onChange={() => toggleSelect(p.id)} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link href={`/app/projects/${p.id}`} className="font-medium text-gray-900 hover:underline">
-                        {p.title}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
-                        p.status === 'completed' ? 'bg-green-100 text-green-700' :
-                        p.status === 'expired' ? 'bg-red-100 text-red-700' :
-                        'bg-blue-100 text-blue-700'
-                      }`}>
-                        {p.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{p.client?.company || p.client?.name || '-'}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.priority || '-'}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.expected_start_date || '-'}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.expected_end_date || '-'}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <table className="w-full text-left text-[13px]">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-4 py-3 w-10">
+                <input 
+                  type="checkbox" 
+                  checked={projects.length > 0 && selectedIds.size === projects.length}
+                  onChange={toggleSelectAll}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                />
+              </th>
+              <th className="px-4 py-3 font-medium text-gray-600">Project Name</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Customer</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Status</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Priority</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Start Date</th>
+              <th className="px-4 py-3 font-medium text-gray-600">End Date</th>
+              <th className="px-4 py-3 w-10"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={8} className="p-8 text-center text-gray-500">Loading...</td></tr>
+            ) : projects.length === 0 ? (
+              <tr><td colSpan={8} className="p-8 text-center text-gray-500">No projects found.</td></tr>
+            ) : (
+              projects.map((p, idx) => (
+                <tr 
+                  key={p.id || idx} 
+                  onClick={() => handleRowClick(p.id)}
+                  className="border-b border-gray-100 hover:bg-gray-50 group cursor-pointer"
+                >
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input 
+                      type="checkbox"
+                      checked={selectedIds.has(p.id)}
+                      onChange={(e) => toggleSelect(p.id, e as any)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" 
+                      style={{ opacity: selectedIds.has(p.id) ? 1 : undefined }}
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{p.title}</td>
+                  <td className="px-4 py-3 text-gray-600">{p.client?.company || p.client?.name || "-"}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      p.status === 'completed' ? 'bg-green-100 text-green-700' :
+                      p.status === 'expired' ? 'bg-red-100 text-red-700' :
+                      'bg-blue-100 text-blue-700'
+                    }`}>
+                      {p.status || "running"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">{p.priority || "-"}</td>
+                  <td className="px-4 py-3 text-gray-600">{p.expected_start_date || "-"}</td>
+                  <td className="px-4 py-3 text-gray-600">{p.expected_end_date || "-"}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button className="text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <MoreHorizontal size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
-    </div>
+    </Workspace>
   );
 }
