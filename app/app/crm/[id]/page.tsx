@@ -118,7 +118,7 @@ export default function EditCustomerPage() {
     if (error) {
       alert("Error updating record: " + error.message);
     } else {
-      router.push(`/app/accounting/customer`);
+      router.push(`/app/crm`);
     }
   };
 
@@ -136,7 +136,7 @@ export default function EditCustomerPage() {
     if (error) {
       alert("Error deleting record: " + error.message);
     } else {
-      router.push(`/app/accounting/customer`);
+      router.push(`/app/crm`);
     }
   };
 
@@ -149,7 +149,7 @@ export default function EditCustomerPage() {
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
           <div className="flex items-center gap-4">
-            <Link href="/app/accounting/customer" className="text-gray-400 hover:text-gray-900 transition-colors">
+            <Link href="/app/crm" className="text-gray-400 hover:text-gray-900 transition-colors">
               <ArrowLeft size={20} />
             </Link>
             <div>

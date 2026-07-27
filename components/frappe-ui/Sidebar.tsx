@@ -16,6 +16,7 @@ import {
 const MODULES = [
   { name: "Home", href: "/app/home", icon: Home },
   { name: "Accounting", href: "/app/accounting", icon: FileText },
+  { name: "CRM", href: "/app/crm", icon: Users },
   { name: "HR", href: "/app/hr", icon: Users },
   { name: "Projects", href: "/app/projects", icon: Briefcase },
   { name: "Settings", href: "/app/settings", icon: Settings },

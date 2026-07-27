@@ -103,10 +103,10 @@ export default function CRMListView() {
               <Trash size={14} /> Delete {selected.length}
             </button>
           )}
-          <Link href="/app/accounting/customer/bulk-import" className="px-3 py-1.5 text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
+          <Link href="/app/crm/bulk-import" className="px-3 py-1.5 text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
             Bulk Import
           </Link>
-          <Link href="/app/accounting/customer/new" className="px-3 py-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
+          <Link href="/app/crm/new" className="px-3 py-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded font-medium shadow-sm transition-colors flex items-center gap-1.5">
             <Plus size={14} /> Add Lead / Client
           </Link>
         </div>
@@ -188,7 +188,7 @@ export default function CRMListView() {
                       />
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      <Link href={`/app/accounting/customer/${c.id}`} className="hover:text-blue-600 hover:underline">{c.name}</Link>
+                      <Link href={`/app/crm/${c.id}`} className="hover:text-blue-600 hover:underline">{c.name}</Link>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{c.company || '-'}</td>
                     <td className="px-4 py-3">
@@ -213,7 +213,7 @@ export default function CRMListView() {
                     <td className="px-4 py-3 text-gray-600">{c.role || '-'}</td>
                     <td className="px-4 py-3 text-gray-600">{c.contract_value ? `$${Number(c.contract_value).toLocaleString()}` : '-'}</td>
                     <td className="px-4 py-3 text-right">
-                      <Link href={`/app/accounting/customer/${c.id}`} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded inline-flex opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Link href={`/app/crm/${c.id}`} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded inline-flex opacity-0 group-hover:opacity-100 transition-opacity">
                         <Edit2 size={14} />
                       </Link>
                     </td>

@@ -146,7 +146,7 @@ export default function NewProjectPage() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-[12px] font-medium text-gray-700">Customer <span className="text-red-500">*</span></label>
-                  <Link href="/app/accounting/customer/new" className="text-[11px] text-blue-600 hover:underline">
+                  <Link href="/app/crm/new" className="text-[11px] text-blue-600 hover:underline">
                     + New Customer
                   </Link>
                 </div>
