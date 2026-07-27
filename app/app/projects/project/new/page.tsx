@@ -29,10 +29,10 @@ export default function NewProjectPage() {
     async function fetchData() {
       const supabase = createClient();
       
-      const { data: clientsData } = await supabase
-        .from("profiles")
-        .select("id, full_name, company_name")
-        .eq("role", "client");
+      const { data: clientsData } = await (supabase as any)
+        .from("crm_customers")
+        .select("id, name, company")
+        .order("name", { ascending: true });
       setClients(clientsData || []);
 
       const { data: templatesData } = await (supabase as any)
@@ -144,7 +144,12 @@ export default function NewProjectPage() {
                 />
               </div>
               <div>
-                <label className="block text-[12px] font-medium text-gray-700 mb-1">Customer <span className="text-red-500">*</span></label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[12px] font-medium text-gray-700">Customer <span className="text-red-500">*</span></label>
+                  <Link href="/app/crm/customers/new" className="text-[11px] text-blue-600 hover:underline">
+                    + New Customer
+                  </Link>
+                </div>
                 <select 
                   name="client_id" 
                   value={formData.client_id} 
@@ -153,7 +158,9 @@ export default function NewProjectPage() {
                 >
                   <option value="">Select a customer...</option>
                   {clients.map(c => (
-                    <option key={c.id} value={c.id}>{c.company_name || c.full_name}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.company ? `(${c.company})` : ''}
+                    </option>
                   ))}
                 </select>
               </div>

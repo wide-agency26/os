@@ -22,7 +22,7 @@ export default function ProjectListView() {
           priority, 
           expected_start_date,
           expected_end_date,
-          client:client_id ( company_name, full_name )
+          client:client_id ( company, name )
         `)
         .order("created_at", { ascending: false });
       
@@ -106,7 +106,7 @@ export default function ProjectListView() {
                         {p.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{p.client?.company_name || p.client?.full_name || '-'}</td>
+                    <td className="px-4 py-3 text-gray-600">{p.client?.company || p.client?.name || '-'}</td>
                     <td className="px-4 py-3 text-gray-600">{p.priority || '-'}</td>
                     <td className="px-4 py-3 text-gray-600">{p.expected_start_date || '-'}</td>
                     <td className="px-4 py-3 text-gray-600">{p.expected_end_date || '-'}</td>
