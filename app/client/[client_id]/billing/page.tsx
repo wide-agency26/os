@@ -1,6 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { notFound } from "next/navigation";
-import { resolveClientLayoutAccess } from "@/lib/client/resolve-client-layout-access";
+import { requireClientPortalAccess } from "@/lib/client-access";
 import { ContextExplainer } from "@/components/wide-os/ContextExplainer";
 import Link from "next/link";
 
@@ -10,8 +10,7 @@ export default async function ClientBillingPage({
   params: Promise<{ client_id: string }>;
 }) {
   const { client_id } = await params;
-  const access = await resolveClientLayoutAccess(client_id);
-  if (!access) return notFound();
+  await requireClientPortalAccess(client_id);
 
   const supabase = await createClient();
 
