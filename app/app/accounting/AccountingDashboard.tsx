@@ -81,50 +81,52 @@ export function AccountingDashboard() {
       </div>
 
       <Section title="Financial Performance">
-        {/* Total Revenue */}
-        <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all group flex items-start justify-between">
-          <div>
-            <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Revenue</p>
-            {loading ? (
-              <div className="h-8 w-24 bg-gray-200 animate-pulse rounded mt-2"></div>
-            ) : (
-              <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{formatCurrency(revenue)}</h3>
-            )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4">
+          {/* Total Revenue */}
+          <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all group flex items-start justify-between">
+            <div>
+              <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Revenue</p>
+              {loading ? (
+                <div className="h-8 w-24 bg-gray-200 animate-pulse rounded mt-2"></div>
+              ) : (
+                <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{formatCurrency(revenue)}</h3>
+              )}
+            </div>
+            <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
+              <TrendingUp size={20} />
+            </div>
           </div>
-          <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
-            <TrendingUp size={20} />
-          </div>
-        </div>
 
-        {/* Total Cost */}
-        <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all group flex items-start justify-between">
-          <div>
-            <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Cost</p>
-            {loading ? (
-              <div className="h-8 w-24 bg-gray-200 animate-pulse rounded mt-2"></div>
-            ) : (
-              <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{formatCurrency(cost)}</h3>
-            )}
+          {/* Total Cost */}
+          <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all group flex items-start justify-between">
+            <div>
+              <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Cost</p>
+              {loading ? (
+                <div className="h-8 w-24 bg-gray-200 animate-pulse rounded mt-2"></div>
+              ) : (
+                <h3 className="text-3xl font-semibold text-gray-900 tracking-tight">{formatCurrency(cost)}</h3>
+              )}
+            </div>
+            <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600 group-hover:scale-110 transition-transform">
+              <TrendingDown size={20} />
+            </div>
           </div>
-          <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600 group-hover:scale-110 transition-transform">
-            <TrendingDown size={20} />
-          </div>
-        </div>
 
-        {/* Total Profit */}
-        <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all group flex items-start justify-between">
-          <div>
-            <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Profit</p>
-            {loading ? (
-              <div className="h-8 w-24 bg-gray-200 animate-pulse rounded mt-2"></div>
-            ) : (
-              <h3 className={`text-3xl font-semibold tracking-tight ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(profit)}
-              </h3>
-            )}
-          </div>
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform ${profit >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-            <DollarSign size={20} />
+          {/* Total Profit */}
+          <div className="p-5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all group flex items-start justify-between">
+            <div>
+              <p className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Profit</p>
+              {loading ? (
+                <div className="h-8 w-24 bg-gray-200 animate-pulse rounded mt-2"></div>
+              ) : (
+                <h3 className={`text-3xl font-semibold tracking-tight ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(profit)}
+                </h3>
+              )}
+            </div>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform ${profit >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+              <DollarSign size={20} />
+            </div>
           </div>
         </div>
       </Section>

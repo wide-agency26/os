@@ -10,9 +10,11 @@ export default function HomeWorkspace() {
       </div>
 
       <Section title="Your Shortcuts">
-        <ShortcutCard title="Accounting" icon={FileText} href="/app/accounting" />
-        <ShortcutCard title="HR" icon={Users} href="/app/hr" />
-        <ShortcutCard title="Projects" icon={Briefcase} href="/app/projects" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4">
+          <ShortcutCard title="Accounting" icon={FileText} href="/app/accounting" />
+          <ShortcutCard title="HR" icon={Users} href="/app/hr" />
+          <ShortcutCard title="Projects" icon={Briefcase} href="/app/projects" />
+        </div>
       </Section>
     </Workspace>
   );
