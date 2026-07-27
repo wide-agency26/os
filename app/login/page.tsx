@@ -2,7 +2,7 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { homePathForRole } from "@/lib/routing";
+
 import { useRouter, useSearchParams } from "next/navigation";
 import { WideLogo } from "@/components/brand/WideLogo";
 
@@ -67,7 +67,7 @@ function LoginForm() {
       const workspaceId =
         (workspace?.primary_account_id as string | null) || authData.user.id;
 
-      router.push(homePathForRole(profile.role, workspaceId));
+      router.push("/app/home");
     } catch {
       setError("An unexpected error occurred. Please try again.");
       setLoading(false);

@@ -5,7 +5,7 @@ import { getSupabasePublishableKey, getSupabaseUrl } from "@/utils/supabase/env"
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const nextPath = searchParams.get("next") ?? "/dashboard";
+  const nextPath = searchParams.get("next") ?? "/app/home";
 
   const redirectUrl = new URL(nextPath.startsWith("/") ? nextPath : `/${nextPath}`, origin);
   const response = NextResponse.redirect(redirectUrl);
