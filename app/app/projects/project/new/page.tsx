@@ -11,6 +11,7 @@ export default function NewProjectPage() {
   const router = useRouter();
   const [clients, setClients] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
+  const [projectTypes, setProjectTypes] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     title: "",
     client_id: "",
@@ -22,6 +23,7 @@ export default function NewProjectPage() {
     estimated_cost: "",
     scope: "",
     template_id: "",
+    project_type_id: "",
   });
   const [loading, setLoading] = useState(false);
 
@@ -39,6 +41,12 @@ export default function NewProjectPage() {
         .from("project_templates")
         .select("id, name");
       setTemplates(templatesData || []);
+
+      const { data: pTypesData } = await (supabase as any)
+        .from("project_types")
+        .select("id, name")
+        .order("name", { ascending: true });
+      setProjectTypes(pTypesData || []);
     }
     fetchData();
   }, []);
@@ -60,6 +68,7 @@ export default function NewProjectPage() {
       .insert([{
         title: formData.title,
         client_id: formData.client_id,
+        project_type_id: formData.project_type_id || null,
         status: formData.status,
         priority: formData.priority,
         department: formData.department,
@@ -164,20 +173,36 @@ export default function NewProjectPage() {
                   ))}
                 </select>
               </div>
-              <div className="md:col-span-2">
-                <label className="block text-[12px] font-medium text-gray-700 mb-1">Create from Template (Optional)</label>
-                <select 
-                  name="template_id" 
-                  value={formData.template_id} 
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="">No template (Start from scratch)</option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-gray-500 mt-1">If selected, tasks from the template will be automatically generated for this project.</p>
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Project Type</label>
+                  <select 
+                    name="project_type_id" 
+                    value={formData.project_type_id} 
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Select a Project Type...</option>
+                    {projectTypes.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Create from Template (Optional)</label>
+                  <select 
+                    name="template_id" 
+                    value={formData.template_id} 
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">No template (Start from scratch)</option>
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-gray-500 mt-1">If selected, tasks from the template will be automatically generated for this project.</p>
+                </div>
               </div>
               <div>
                 <label className="block text-[12px] font-medium text-gray-700 mb-1">Status</label>

@@ -11,9 +11,11 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const [projectId, setProjectId] = useState<string>("");
   const [clients, setClients] = useState<any[]>([]);
+  const [projectTypes, setProjectTypes] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     title: "",
     client_id: "",
+    project_type_id: "",
     status: "running",
     priority: "Medium",
     department: "",
@@ -39,6 +41,12 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
         .order("name", { ascending: true });
       setClients(clientsData || []);
 
+      const { data: pTypesData } = await (supabase as any)
+        .from("project_types")
+        .select("id, name")
+        .order("name", { ascending: true });
+      setProjectTypes(pTypesData || []);
+
       const { data: project } = await (supabase as any)
         .from("projects")
         .select("*")
@@ -49,6 +57,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
         setFormData({
           title: project.title || "",
           client_id: project.client_id || "",
+          project_type_id: project.project_type_id || "",
           status: project.status || "running",
           priority: project.priority || "Medium",
           department: project.department || "",
@@ -80,6 +89,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
       .update({
         title: formData.title,
         client_id: formData.client_id,
+        project_type_id: formData.project_type_id || null,
         status: formData.status,
         priority: formData.priority,
         department: formData.department,
@@ -186,6 +196,21 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                     <option key={c.id} value={c.id}>
                       {c.name} {c.company ? `(${c.company})` : ''}
                     </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="md:col-span-2">
+                <label className="block text-[12px] font-medium text-gray-700 mb-1">Project Type</label>
+                <select 
+                  name="project_type_id" 
+                  value={formData.project_type_id} 
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Select a Project Type...</option>
+                  {projectTypes.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
               </div>

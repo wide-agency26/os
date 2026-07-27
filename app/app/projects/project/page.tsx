@@ -28,7 +28,8 @@ export default function ProjectListView() {
         priority, 
         expected_start_date,
         expected_end_date,
-        client:client_id ( company, name )
+        client:client_id ( company, name ),
+        project_type:project_type_id ( name )
       `)
       .order("created_at", { ascending: false });
     
@@ -142,6 +143,7 @@ export default function ProjectListView() {
                 />
               </th>
               <th className="px-4 py-3 font-medium text-gray-600">Project Name</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Type</th>
               <th className="px-4 py-3 font-medium text-gray-600">Customer</th>
               <th className="px-4 py-3 font-medium text-gray-600">Status</th>
               <th className="px-4 py-3 font-medium text-gray-600">Priority</th>
@@ -172,6 +174,7 @@ export default function ProjectListView() {
                     />
                   </td>
                   <td className="px-4 py-3 font-medium text-gray-900">{p.title}</td>
+                  <td className="px-4 py-3 text-gray-600">{p.project_type?.name || "-"}</td>
                   <td className="px-4 py-3 text-gray-600">{p.client?.company || p.client?.name || "-"}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
