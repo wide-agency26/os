@@ -10,6 +10,7 @@ import Link from "next/link";
 export default function NewProjectPage() {
   const router = useRouter();
   const [clients, setClients] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     title: "",
     client_id: "",
@@ -20,19 +21,26 @@ export default function NewProjectPage() {
     expected_end_date: "",
     estimated_cost: "",
     scope: "",
+    template_id: "",
   });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    async function fetchClients() {
+    async function fetchData() {
       const supabase = createClient();
-      const { data } = await supabase
+      
+      const { data: clientsData } = await supabase
         .from("profiles")
         .select("id, full_name, company_name")
         .eq("role", "client");
-      setClients(data || []);
+      setClients(clientsData || []);
+
+      const { data: templatesData } = await (supabase as any)
+        .from("project_templates")
+        .select("id, name");
+      setTemplates(templatesData || []);
     }
-    fetchClients();
+    fetchData();
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -47,7 +55,7 @@ export default function NewProjectPage() {
 
     setLoading(true);
     const supabase = createClient();
-    const { data, error } = await (supabase as any)
+    const { data: project, error } = await (supabase as any)
       .from("projects")
       .insert([{
         title: formData.title,
@@ -63,13 +71,37 @@ export default function NewProjectPage() {
       .select("id")
       .single();
     
-    setLoading(false);
-
     if (error) {
+      setLoading(false);
       alert("Error creating project: " + error.message);
-    } else {
-      router.push(`/app/projects/${data.id}`);
+      return;
     }
+
+    // Auto-generate Tasks if a Template is selected
+    if (formData.template_id) {
+      const { data: templateTasks } = await (supabase as any)
+        .from("project_template_tasks")
+        .select("*")
+        .eq("template_id", formData.template_id);
+      
+      if (templateTasks && templateTasks.length > 0) {
+        const tasksToInsert = templateTasks.map((tt: any) => ({
+          project_id: project.id,
+          title: tt.title,
+          description: tt.description,
+          priority: tt.priority,
+          weight: tt.weight,
+          expected_time: tt.expected_time,
+          status: "Open",
+          progress: 0
+        }));
+
+        await (supabase as any).from("erp_tasks").insert(tasksToInsert);
+      }
+    }
+
+    setLoading(false);
+    router.push(`/app/projects/${project.id}`);
   };
 
   return (
@@ -124,6 +156,21 @@ export default function NewProjectPage() {
                     <option key={c.id} value={c.id}>{c.company_name || c.full_name}</option>
                   ))}
                 </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[12px] font-medium text-gray-700 mb-1">Create from Template (Optional)</label>
+                <select 
+                  name="template_id" 
+                  value={formData.template_id} 
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">No template (Start from scratch)</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-gray-500 mt-1">If selected, tasks from the template will be automatically generated for this project.</p>
               </div>
               <div>
                 <label className="block text-[12px] font-medium text-gray-700 mb-1">Status</label>

@@ -8,6 +8,7 @@ import Link from "next/link";
 
 export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<any>(null);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [stats, setStats] = useState({
     completionPercentage: 0,
     totalCost: 0,
@@ -34,15 +35,20 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
       
       if (projData) setProject(projData);
 
-      // Fetch Tasks for Completion %
-      const { data: tasks } = await (supabase as any)
+      // Fetch Full Tasks
+      const { data: fetchedTasks } = await (supabase as any)
         .from("erp_tasks")
-        .select("status")
+        .select(`
+          id, title, status, priority, progress, due_date,
+          assignee:assigned_to ( full_name )
+        `)
         .eq("project_id", projectId);
-      
-      const taskCount = tasks?.length || 0;
-      const completedTaskCount = tasks?.filter((t: any) => t.status === "Done").length || 0;
+
+      const taskCount = fetchedTasks?.length || 0;
+      const completedTaskCount = fetchedTasks?.filter((t: any) => t.status === "Done").length || 0;
       const completionPercentage = taskCount > 0 ? Math.round((completedTaskCount / taskCount) * 100) : 0;
+      
+      setTasks(fetchedTasks || []);
 
       // Fetch Timesheets for Costing and Timeline
       const { data: timesheets } = await (supabase as any)
@@ -227,12 +233,49 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* Other Tabs Placeholders */}
+        {/* Tab Content: Tasks */}
         {activeTab === "Tasks" && (
-           <div className="p-8 text-center text-gray-500 border border-gray-200 rounded border-dashed">
-             Tasks list will be rendered here.
-           </div>
+          <div className="flex gap-4 overflow-x-auto min-w-max pb-4 px-1">
+            {['Open', 'In Progress', 'Review', 'Done', 'Cancelled'].map((status) => {
+              const columnTasks = tasks.filter(t => t.status === status);
+              return (
+                <div key={status} className="w-80 flex flex-col bg-gray-100/80 rounded-lg border border-gray-200 shrink-0 self-start max-h-[600px]">
+                  <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between sticky top-0 rounded-t-lg">
+                    <h3 className="font-semibold text-gray-700">{status}</h3>
+                    <span className="bg-gray-200 text-gray-600 text-[11px] px-2 py-0.5 rounded-full font-medium">{columnTasks.length}</span>
+                  </div>
+                  <div className="p-3 overflow-y-auto flex flex-col gap-3">
+                    {columnTasks.map(t => (
+                      <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:border-blue-400 hover:shadow transition-all cursor-pointer">
+                        <h4 className="font-medium text-gray-900 mb-2 leading-snug">{t.title}</h4>
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-50">
+                          <span className="text-[11px] font-medium text-gray-500">
+                            {t.assignee?.full_name || 'Unassigned'}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                            t.priority === 'Urgent' ? 'bg-red-100 text-red-700' :
+                            t.priority === 'High' ? 'bg-orange-100 text-orange-700' :
+                            t.priority === 'Low' ? 'bg-gray-100 text-gray-600' :
+                            'bg-blue-100 text-blue-700'
+                          }`}>
+                            {t.priority || 'Normal'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    {columnTasks.length === 0 && (
+                      <div className="text-center py-6 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-lg">
+                        Empty
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
+
+        {/* Other Tabs Placeholders */}
         {activeTab === "Timesheets" && (
            <div className="p-8 text-center text-gray-500 border border-gray-200 rounded border-dashed">
              Timesheets list will be rendered here.
