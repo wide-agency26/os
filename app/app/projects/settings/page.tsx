@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace, Section } from "@/components/frappe-ui/Workspace";
-import { Save, Settings } from "lucide-react";
+import { Save, Settings, ExternalLink, CheckCircle } from "lucide-react";
 
 export default function ProjectSettingsPage() {
   const [projectTypes, setProjectTypes] = useState<any[]>([]);
@@ -16,13 +16,19 @@ export default function ProjectSettingsPage() {
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
       const supabase = createClient();
-      const [{ data: settings }, { data: ptData }] = await Promise.all([
+      const [
+        { data: settings }, 
+        { data: ptData },
+        { data: integrations }
+      ] = await Promise.all([
         (supabase as any).from("erp_project_settings").select("*").limit(1).single(),
         (supabase as any).from("project_types").select("id, name").order("name"),
+        (supabase as any).from("admin_integrations").select("provider")
       ]);
       if (settings) {
         setSettingsId(settings.id);
@@ -32,6 +38,9 @@ export default function ProjectSettingsPage() {
           ignore_weekends: settings.ignore_weekends ?? true,
           ignore_employee_time_overlap: settings.ignore_employee_time_overlap ?? false,
         });
+      }
+      if (integrations) {
+        setGoogleConnected(integrations.some((i: any) => i.provider === "google_workspace"));
       }
       setProjectTypes(ptData || []);
       setLoading(false);
@@ -124,6 +133,31 @@ export default function ProjectSettingsPage() {
                 <p className="text-[12px] text-gray-500">Allow overlapping timesheet entries for the same employee.</p>
               </div>
             </label>
+          </div>
+        </Section>
+
+        <Section title="Integrations">
+          <div className="bg-white border border-gray-200 rounded-lg p-5 flex items-center justify-between shadow-sm">
+            <div>
+              <h4 className="text-[14px] font-bold text-gray-900 flex items-center gap-2">
+                Google Workspace
+                {googleConnected && <CheckCircle size={16} className="text-green-500" />}
+              </h4>
+              <p className="text-[12px] text-gray-500 mt-1 max-w-sm">
+                Connect your Google account to view relevant emails, calendar events, and tasks directly inside Project Dashboards.
+              </p>
+            </div>
+            <div>
+              {googleConnected ? (
+                <button className="px-4 py-2 bg-gray-100 text-gray-700 font-medium text-[13px] rounded hover:bg-gray-200 transition-colors">
+                  Manage Connection
+                </button>
+              ) : (
+                <a href="/api/integrations/google/connect" className="px-4 py-2 bg-blue-50 text-blue-600 font-medium text-[13px] rounded hover:bg-blue-100 transition-colors flex items-center gap-2">
+                  <ExternalLink size={14} /> Connect Google
+                </a>
+              )}
+            </div>
           </div>
         </Section>
 

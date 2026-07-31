@@ -5,7 +5,7 @@ import { createClient } from "@/utils/supabase/client";
 import { Section } from "@/components/frappe-ui/Workspace";
 import { CheckCircle, Clock, DollarSign, Activity, Edit2 } from "lucide-react";
 import FrappeGantt from "@/components/FrappeGantt";
-import { Plus, Trash, Users } from "lucide-react";
+import { Plus, Trash, Users, Mail, Calendar as CalendarIcon, CheckSquare } from "lucide-react";
 import Link from "next/link";
 
 export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
@@ -35,6 +35,11 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserRole, setNewUserRole] = useState("Member");
   const [newUserId, setNewUserId] = useState("");
+
+  // Google Workspace Context State
+  const [workspaceContext, setWorkspaceContext] = useState<any>({ emails: [], events: [], tasks: [] });
+  const [fetchingContext, setFetchingContext] = useState(false);
+  const [contextError, setContextError] = useState("");
 
   useEffect(() => {
     async function fetchProjectDetails() {
@@ -178,6 +183,30 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
     }
   }, [projectId]);
 
+  // Fetch Workspace Context when tab is clicked
+  useEffect(() => {
+    if (activeTab === "Workspace Context" && project && !workspaceContext.emails.length && !workspaceContext.events.length && !workspaceContext.tasks.length) {
+      async function fetchContext() {
+        setFetchingContext(true);
+        try {
+          const res = await fetch(`/api/integrations/google/context?query=${encodeURIComponent(project.title)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setWorkspaceContext(data);
+          } else if (res.status === 404) {
+            setContextError("Google Workspace not connected. Connect it in Project Settings.");
+          } else {
+            setContextError("Failed to fetch Workspace context.");
+          }
+        } catch (e) {
+          setContextError("Error fetching context.");
+        }
+        setFetchingContext(false);
+      }
+      fetchContext();
+    }
+  }, [activeTab, project]);
+
   const formatCurrency = (val: number) => 
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
@@ -271,7 +300,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 mb-6 overflow-x-auto min-w-max pb-1">
-          {["Dashboard", "Tasks", "Gantt Chart", "Users", "Updates", "Timesheets", "Financials", "Files"].map(tab => (
+          {["Dashboard", "Tasks", "Gantt Chart", "Users", "Updates", "Timesheets", "Financials", "Files", "Workspace Context"].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -631,9 +660,103 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
 
         {/* Tab Content: Files */}
         {activeTab === "Files" && (
-           <div className="p-8 text-center text-gray-500 border border-gray-200 rounded border-dashed">
-             Project files and attachments will be rendered here.
+           <div className="bg-white border border-gray-200 rounded-lg p-12 text-center text-gray-500 shadow-sm">
+             Document management integration coming soon.
            </div>
+        )}
+
+        {/* Tab Content: Workspace Context */}
+        {activeTab === "Workspace Context" && (
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-lg text-sm mb-4">
+              <strong>Dynamic Context Feed:</strong> Showing recent Google Workspace activity related to <strong>"{project.title}"</strong>.
+            </div>
+
+            {contextError ? (
+              <div className="p-8 text-center text-red-500 bg-red-50 border border-red-200 rounded-lg">
+                {contextError}
+                {contextError.includes("not connected") && (
+                  <div className="mt-4">
+                    <Link href="/app/projects/settings" className="px-4 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 transition-colors">
+                      Go to Settings
+                    </Link>
+                  </div>
+                )}
+              </div>
+            ) : fetchingContext ? (
+              <div className="p-12 text-center text-gray-500 animate-pulse">
+                Fetching secure context from Google Workspace...
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Emails */}
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col h-[500px]">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+                    <Mail size={16} className="text-gray-500" />
+                    <h3 className="font-bold text-gray-800 text-[13px]">Recent Emails</h3>
+                  </div>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-3">
+                    {workspaceContext.emails.length === 0 ? (
+                      <p className="text-[12px] text-gray-500 text-center py-4">No recent emails found.</p>
+                    ) : (
+                      workspaceContext.emails.map((m: any) => (
+                        <div key={m.id} className="border border-gray-100 p-3 rounded bg-gray-50">
+                          <h4 className="font-semibold text-gray-900 text-[12px] truncate">{m.subject || "No Subject"}</h4>
+                          <p className="text-[11px] text-gray-500 mt-1 truncate">From: {m.from}</p>
+                          <p className="text-[11px] text-gray-600 mt-2 line-clamp-2">{m.snippet}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Calendar */}
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col h-[500px]">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+                    <CalendarIcon size={16} className="text-gray-500" />
+                    <h3 className="font-bold text-gray-800 text-[13px]">Upcoming Events</h3>
+                  </div>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-3">
+                    {workspaceContext.events.length === 0 ? (
+                      <p className="text-[12px] text-gray-500 text-center py-4">No upcoming events.</p>
+                    ) : (
+                      workspaceContext.events.map((e: any) => (
+                        <a key={e.id} href={e.link} target="_blank" rel="noreferrer" className="block border border-gray-100 p-3 rounded bg-gray-50 hover:border-blue-300 transition-colors">
+                          <h4 className="font-semibold text-gray-900 text-[12px] truncate">{e.summary}</h4>
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            {new Date(e.start).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          </p>
+                        </a>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Tasks */}
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm flex flex-col h-[500px]">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+                    <CheckSquare size={16} className="text-gray-500" />
+                    <h3 className="font-bold text-gray-800 text-[13px]">Google Tasks</h3>
+                  </div>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-3">
+                    {workspaceContext.tasks.length === 0 ? (
+                      <p className="text-[12px] text-gray-500 text-center py-4">No related tasks found.</p>
+                    ) : (
+                      workspaceContext.tasks.map((t: any) => (
+                        <div key={t.id} className="border border-gray-100 p-3 rounded bg-gray-50 flex items-start gap-2">
+                          <input type="checkbox" disabled checked={t.status === 'completed'} className="mt-0.5 rounded border-gray-300 text-blue-600" />
+                          <div>
+                            <h4 className="font-semibold text-gray-900 text-[12px]">{t.title}</h4>
+                            {t.due && <p className="text-[10px] text-gray-500 mt-1">Due: {new Date(t.due).toLocaleDateString()}</p>}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
