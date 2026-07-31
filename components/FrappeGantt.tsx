@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from "react";
 // @ts-ignore
 import Gantt from "frappe-gantt";
-import "frappe-gantt/dist/frappe-gantt.css";
+import "./frappe-gantt.css";
 
 interface GanttTask {
   id: string;

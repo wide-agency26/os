@@ -6,6 +6,7 @@ import { Section } from "@/components/frappe-ui/Workspace";
 import { CheckCircle, Clock, DollarSign, Activity, Edit2 } from "lucide-react";
 import FrappeGantt from "@/components/FrappeGantt";
 import { Plus, Trash, Users } from "lucide-react";
+import Link from "next/link";
 
 export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<any>(null);
