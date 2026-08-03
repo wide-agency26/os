@@ -1,83 +1,61 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace } from "@/components/frappe-ui/Workspace";
-import SupersetEmbed from "@/components/reports/SupersetEmbed";
-import FunnelHeader from "@/components/reports/FunnelHeader";
-import { Loader2, AlertCircle } from "lucide-react";
-import Link from "next/link";
+import { NativeCharts } from "@/components/reports/NativeCharts";
+import { BarChart3, AlertCircle } from "lucide-react";
 
-interface ClientViewerContentProps {
-  clientId: string;
-}
-
-function ClientViewerContent({ clientId }: ClientViewerContentProps) {
-  const [clientName, setClientName] = useState("Client");
-  const [dashboardUuid, setDashboardUuid] = useState<string | null>(null);
-  const [packageTier, setPackageTier] = useState("launch");
+export default function ClientReportViewer() {
+  const { clientId } = useParams();
+  const [metricData, setMetricData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  const supabase = createClient();
 
   useEffect(() => {
-    async function loadConfig() {
+    async function loadReport() {
+      if (!clientId) return;
+      
       try {
-        const supabase = createClient();
-
-        // Fetch client info
-        const { data: profile } = await (supabase as any)
-          .from("profiles")
-          .select("full_name, company_name")
-          .eq("id", clientId)
+        // 1. Verify a published report exists for this client
+        const { data: published, error: pubErr } = await (supabase as any)
+          .from("published_reports")
+          .select("*")
+          .eq("client_id", clientId)
           .single();
-
-        if (profile) {
-          setClientName(profile.company_name || profile.full_name || "Client");
+          
+        if (pubErr || !published) {
+          throw new Error("No reports have been published for your account yet.");
         }
-
-        // Fetch report config to get the dashboard UUID
-        const res = await fetch(`/api/reports/${clientId}/config`);
-        if (!res.ok) {
-          setError("Unable to load report configuration.");
-          setLoading(false);
-          return;
-        }
-
-        const data = await res.json();
-        if (!data.configs || data.configs.length === 0) {
-          setError("No report has been provisioned for this client yet.");
-          setLoading(false);
-          return;
-        }
-
-        const config = data.configs[0];
-        setDashboardUuid(config.superset_dashboard_uuid);
-        setPackageTier(config.package_tier);
+        
+        // 2. Fetch the raw marketing metrics
+        const { data: metrics, error: metricsErr } = await (supabase as any)
+          .from("marketing_metrics")
+          .select("*")
+          .eq("client_id", clientId)
+          .order("date", { ascending: true });
+          
+        if (metricsErr) throw metricsErr;
+        
+        setMetricData(metrics || []);
       } catch (err: any) {
         setError(err.message || "Failed to load report.");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
-
-    loadConfig();
-  }, [clientId]);
-
-  const fetchGuestToken = useCallback(async () => {
-    const res = await fetch(`/api/reports/${clientId}/guest-token`);
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error || "Failed to generate access token");
-    }
-    const data = await res.json();
-    return data.guestToken;
+    
+    loadReport();
   }, [clientId]);
 
   if (loading) {
     return (
       <Workspace>
-        <div className="flex items-center justify-center py-24 gap-2 text-gray-400">
-          <Loader2 size={18} className="animate-spin" />
-          <span className="text-[13px]">Loading report…</span>
+        <div className="flex items-center justify-center h-[60vh]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
       </Workspace>
     );
@@ -86,68 +64,34 @@ function ClientViewerContent({ clientId }: ClientViewerContentProps) {
   if (error) {
     return (
       <Workspace>
-        <div className="max-w-lg mx-auto py-24 text-center">
-          <AlertCircle size={36} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="font-semibold text-gray-800 text-[16px] mb-2">Report Not Available</h3>
-          <p className="text-gray-500 text-[13px] mb-6">{error}</p>
-          <Link
-            href="/app/projects/report"
-            className="px-4 py-2 bg-gray-900 text-white text-[13px] font-medium rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            Back to Report Center
-          </Link>
+        <div className="flex flex-col items-center justify-center h-[60vh]">
+          <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-4">
+            <AlertCircle size={32} />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Report Unavailable</h2>
+          <p className="text-gray-500 text-[14px] max-w-md text-center">{error}</p>
         </div>
       </Workspace>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50">
-      <div className="max-w-[1600px] mx-auto px-6 py-6">
-        {/* Branded Header */}
-        <FunnelHeader
-          clientName={clientName}
-          packageTier={packageTier}
-        />
-
-        {/* Embedded Dashboard — Full Width */}
-        {dashboardUuid && (
-          <SupersetEmbed
-            dashboardUuid={dashboardUuid}
-            fetchGuestToken={fetchGuestToken}
-            className="bg-white border border-gray-200 rounded-xl shadow-sm"
-          />
-        )}
-
-        {/* Footer */}
-        <div className="text-center py-8 text-[11px] text-gray-400">
-          Powered by WIDE Agency · Data sources: Google Analytics, Search Console, Meta Ads, Google Ads, LinkedIn
+    <Workspace>
+      <div className="flex items-center gap-3 mb-8">
+        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md">
+          <BarChart3 size={20} />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Performance Report</h2>
+          <p className="text-gray-500 text-[13px]">
+            Your latest marketing analytics and pipeline data.
+          </p>
         </div>
       </div>
-    </div>
+      
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 min-h-[500px]">
+        <NativeCharts data={metricData} />
+      </div>
+    </Workspace>
   );
-}
-
-export default function ClientViewerPage({
-  params,
-}: {
-  params: Promise<{ clientId: string }>;
-}) {
-  const [clientId, setClientId] = useState<string | null>(null);
-
-  useEffect(() => {
-    params.then((p) => setClientId(p.clientId));
-  }, [params]);
-
-  if (!clientId) {
-    return (
-      <Workspace>
-        <div className="flex items-center justify-center py-24 gap-2 text-gray-400">
-          <Loader2 size={18} className="animate-spin" />
-        </div>
-      </Workspace>
-    );
-  }
-
-  return <ClientViewerContent clientId={clientId} />;
 }
