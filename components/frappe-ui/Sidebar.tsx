@@ -65,6 +65,7 @@ const MODULES: ModuleItem[] = [
       { name: "Project Templates", href: "/app/projects/project-template" },
       { name: "Project Types", href: "/app/projects/project-type" },
       { name: "Report Builder", href: "/app/projects/report", founderOnly: true },
+      { name: "Report Templates", href: "/app/projects/report/templates", founderOnly: true },
       { name: "Report Viewer", href: "/app/projects/report" }
     ]
   },
