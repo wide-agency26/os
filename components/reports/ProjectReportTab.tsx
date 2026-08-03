@@ -27,7 +27,7 @@ export function ProjectReportTab({ projectId }: { projectId: string }) {
       }
 
       // Check if published
-      const { data: report } = await supabase
+      const { data: report } = await (supabase as any)
         .from("published_reports")
         .select("id")
         .eq("project_id", projectId)
@@ -38,7 +38,7 @@ export function ProjectReportTab({ projectId }: { projectId: string }) {
       }
 
       // Load metrics
-      const { data: metricData } = await supabase
+      const { data: metricData } = await (supabase as any)
         .from("marketing_metrics")
         .select("*")
         .eq("project_id", projectId)
@@ -54,7 +54,7 @@ export function ProjectReportTab({ projectId }: { projectId: string }) {
 
   const handlePublish = async () => {
     const supabase = createClient();
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("published_reports")
       .upsert({
         project_id: projectId,
