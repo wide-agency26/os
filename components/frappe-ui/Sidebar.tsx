@@ -64,9 +64,7 @@ const MODULES: ModuleItem[] = [
       { name: "Timesheets", href: "/app/projects/timesheet" },
       { name: "Project Templates", href: "/app/projects/project-template" },
       { name: "Project Types", href: "/app/projects/project-type" },
-      { name: "Report Builder", href: "/app/projects/report", founderOnly: true },
-      { name: "Report Templates", href: "/app/projects/report/templates", founderOnly: true },
-      { name: "Report Viewer", href: "/app/projects/report" }
+      { name: "Reports", href: "/app/projects/report" }
     ]
   },
   { name: "Settings", href: "/app/settings", icon: Settings },

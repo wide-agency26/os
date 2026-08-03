@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS public.published_reports CASCADE;
 CREATE TABLE public.marketing_metrics (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE NOT NULL,
+  category TEXT NOT NULL DEFAULT 'General',
   date DATE NOT NULL,
   stage TEXT NOT NULL CHECK (stage IN ('Awareness', 'Consideration', 'Conversion', 'Advocacy')),
   metric_name TEXT NOT NULL,
@@ -22,7 +23,7 @@ CREATE TABLE public.marketing_metrics (
 
 -- Add Unique Constraint to enable idempotent CSV Upserts
 ALTER TABLE public.marketing_metrics 
-  ADD CONSTRAINT marketing_metrics_unique_row UNIQUE (project_id, date, stage, metric_name);
+  ADD CONSTRAINT marketing_metrics_unique_row UNIQUE (project_id, category, date, stage, metric_name);
 
 -- Enable RLS on marketing_metrics
 ALTER TABLE public.marketing_metrics ENABLE ROW LEVEL SECURITY;
@@ -45,9 +46,11 @@ CREATE POLICY "Admins have full access to metrics"
 -- 2. Create published_reports
 CREATE TABLE public.published_reports (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE NOT NULL UNIQUE,
+  project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE NOT NULL,
+  category TEXT NOT NULL DEFAULT 'General',
   config JSONB NOT NULL DEFAULT '{}'::jsonb, -- stores chart selections, date ranges, etc.
-  published_at TIMESTAMPTZ DEFAULT now()
+  published_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(project_id, category)
 );
 
 -- Enable RLS on published_reports
