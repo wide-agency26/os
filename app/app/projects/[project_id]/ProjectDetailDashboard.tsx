@@ -7,6 +7,7 @@ import { CheckCircle, Clock, DollarSign, Activity, Edit2 } from "lucide-react";
 import FrappeGantt from "@/components/FrappeGantt";
 import { Plus, Trash, Users, Mail, Calendar as CalendarIcon, CheckSquare } from "lucide-react";
 import Link from "next/link";
+import { ProjectReportTab } from "@/components/reports/ProjectReportTab";
 
 export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<any>(null);
@@ -300,7 +301,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 mb-6 overflow-x-auto min-w-max pb-1">
-          {["Dashboard", "Tasks", "Gantt Chart", "Users", "Updates", "Timesheets", "Financials", "Files", "Workspace Context"].map(tab => (
+          {["Dashboard", "Report", "Tasks", "Gantt Chart", "Users", "Updates", "Timesheets", "Financials", "Files", "Workspace Context"].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -312,6 +313,13 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
             </button>
           ))}
         </div>
+
+        {/* Tab Content: Report */}
+        {activeTab === "Report" && (
+          <div className="mt-4">
+            <ProjectReportTab projectId={projectId} />
+          </div>
+        )}
 
         {/* Tab Content: Dashboard */}
         {activeTab === "Dashboard" && (

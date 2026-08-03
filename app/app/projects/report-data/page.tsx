@@ -9,12 +9,12 @@ import Link from "next/link";
 
 interface MetricRow {
   id: string;
-  client_id: string;
+  project_id: string;
   date: string;
   stage: string;
   metric_name: string;
   metric_value: number;
-  profiles: { full_name: string };
+  projects: { title: string };
 }
 
 export default function ReportDataHub() {
@@ -24,27 +24,26 @@ export default function ReportDataHub() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
-  const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
-  const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [projects, setProjects] = useState<{ id: string; title: string }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
   useEffect(() => {
     fetchData();
-    fetchClients();
+    fetchProjects();
   }, []);
 
-  async function fetchClients() {
-    const { data: profiles } = await (supabase as any)
-      .from("profiles")
-      .select("id, full_name")
-      .eq("role", "client")
-      .order("full_name");
+  async function fetchProjects() {
+    const { data: projData } = await (supabase as any)
+      .from("projects")
+      .select("id, title")
+      .order("title");
     
-    if (profiles) {
-      setClients(profiles);
-      if (profiles.length > 0) setSelectedClientId(profiles[0].id);
+    if (projData) {
+      setProjects(projData);
+      if (projData.length > 0) setSelectedProjectId(projData[0].id);
     }
   }
 
@@ -53,8 +52,8 @@ export default function ReportDataHub() {
     const { data: metrics, error } = await (supabase as any)
       .from("marketing_metrics")
       .select(`
-        id, client_id, date, stage, metric_name, metric_value,
-        profiles ( full_name )
+        id, project_id, date, stage, metric_name, metric_value,
+        projects ( title )
       `)
       .order("date", { ascending: false });
 
@@ -70,8 +69,8 @@ export default function ReportDataHub() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!selectedClientId) {
-      setError("Please select a client before uploading.");
+    if (!selectedProjectId) {
+      setError("Please select a project before uploading.");
       return;
     }
 
@@ -85,7 +84,7 @@ export default function ReportDataHub() {
       complete: async (results) => {
         try {
           const rows = results.data.map((row: any) => ({
-            client_id: selectedClientId,
+            project_id: selectedProjectId,
             date: row.date || row.Date,
             stage: row.stage || row.Stage,
             metric_name: row.metric_name || row.Metric || row['Metric Name'],
@@ -100,7 +99,7 @@ export default function ReportDataHub() {
 
           const { error: upsertErr } = await (supabase as any)
             .from("marketing_metrics")
-            .upsert(rows, { onConflict: "client_id, date, stage, metric_name" });
+            .upsert(rows, { onConflict: "project_id, date, stage, metric_name" });
 
           if (upsertErr) throw upsertErr;
 
@@ -155,15 +154,15 @@ export default function ReportDataHub() {
 
             <div className="mb-4">
               <label className="block text-[12px] font-medium text-gray-700 mb-1">
-                Target Client
+                Target Project
               </label>
               <select
-                value={selectedClientId}
-                onChange={(e) => setSelectedClientId(e.target.value)}
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:ring-1 focus:ring-blue-500 outline-none"
               >
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.full_name}</option>
+                {projects.map(c => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
                 ))}
               </select>
             </div>
@@ -218,7 +217,7 @@ export default function ReportDataHub() {
               <table className="w-full text-left text-[13px]">
                 <thead className="bg-white sticky top-0 border-b border-gray-200 shadow-sm z-10">
                   <tr>
-                    <th className="px-4 py-3 font-medium text-gray-500">Client</th>
+                    <th className="px-4 py-3 font-medium text-gray-500">Project</th>
                     <th className="px-4 py-3 font-medium text-gray-500">Date</th>
                     <th className="px-4 py-3 font-medium text-gray-500">Stage</th>
                     <th className="px-4 py-3 font-medium text-gray-500">Metric</th>
@@ -234,7 +233,7 @@ export default function ReportDataHub() {
                   ) : (
                     data.map((row) => (
                       <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900 font-medium">{row.profiles?.full_name}</td>
+                        <td className="px-4 py-2 text-gray-900 font-medium">{row.projects?.title}</td>
                         <td className="px-4 py-2 text-gray-600">{row.date}</td>
                         <td className="px-4 py-2">
                           <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[11px] font-semibold">

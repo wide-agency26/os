@@ -71,13 +71,33 @@ export default function NewCustomerPage() {
       .from("crm_customers")
       .insert([payload]);
     
-    setLoading(false);
-
     if (error) {
       alert("Error creating record: " + error.message);
-    } else {
-      router.push(`/app/crm`);
+      setLoading(false);
+      return;
     }
+
+    if (formData.status === 'Client' && formData.email) {
+      try {
+        const syncRes = await fetch('/api/admin/sync-client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: formData.email,
+            name: formData.name,
+            company: formData.company
+          })
+        });
+        if (!syncRes.ok) {
+          console.error("Failed to sync CRM client to auth system.");
+        }
+      } catch (err) {
+        console.error("Error syncing client:", err);
+      }
+    }
+
+    setLoading(false);
+    router.push(`/app/crm`);
   };
 
   return (
