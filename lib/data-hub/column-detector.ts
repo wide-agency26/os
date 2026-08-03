@@ -35,13 +35,13 @@ export interface DetectionResult {
 
 // ── Date patterns ──────────────────────────────────────────────────
 const DATE_PATTERNS = [
-  /^\d{4}-\d{2}-\d{2}$/,                    // 2024-01-15
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/,         // ISO 8601
-  /^\d{2}\/\d{2}\/\d{4}$/,                  // 01/15/2024
-  /^\d{2}\.\d{2}\.\d{4}$/,                  // 15.01.2024
-  /^\d{1,2}\s\w{3,9}\s\d{4}$/,              // 15 January 2024
-  /^\w{3,9}\s\d{1,2},?\s\d{4}$/,            // January 15, 2024
-  /^\d{4}\/\d{2}\/\d{2}$/,                  // 2024/01/15
+  /^\d{4}-\d{1,2}-\d{1,2}$/,                    // 2024-1-15
+  /^\d{4}-\d{1,2}-\d{1,2}[T\s]\d{1,2}:\d{2}/,   // 2024-01-15 15:30:00
+  /^\d{1,2}\/\d{1,2}\/\d{2,4}$/,                // 1/15/2024 or 1/15/24
+  /^\d{1,2}\.\d{1,2}\.\d{2,4}$/,                // 15.1.2024
+  /^\d{1,2}\s\w{3,9}\s\d{2,4}$/,                // 15 January 2024
+  /^\w{3,9}\s\d{1,2},?\s\d{2,4}$/,              // January 15, 2024
+  /^\d{4}\/\d{1,2}\/\d{1,2}$/,                  // 2024/01/15
 ];
 
 function looksLikeDate(value: string): boolean {
@@ -67,7 +67,7 @@ function looksLikePercentage(value: string): boolean {
 
 // ── Number detection ───────────────────────────────────────────────
 function looksLikeNumber(value: string): boolean {
-  const trimmed = value.trim().replace(/,/g, "").replace(/[$€£¥₹%]/g, "");
+  const trimmed = value.trim().replace(/,/g, "").replace(/[$€£¥₹%]/g, "").replace(/\s/g, "");
   if (!trimmed) return false;
   return !isNaN(Number(trimmed)) && trimmed !== "";
 }
@@ -83,7 +83,7 @@ function cleanLabel(header: string): string {
 
 // ── Extract numeric value from a string ────────────────────────────
 function extractNumber(value: string): number | null {
-  const cleaned = value.trim().replace(/,/g, "").replace(/[$€£¥₹%]/g, "");
+  const cleaned = value.trim().replace(/,/g, "").replace(/[$€£¥₹%]/g, "").replace(/\s/g, "");
   const n = Number(cleaned);
   return isNaN(n) ? null : n;
 }

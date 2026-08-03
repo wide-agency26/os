@@ -128,8 +128,32 @@ export default function CentralReportHub() {
       .eq("dataset_id", datasetId)
       .order("row_index");
 
+    const rawRows = rows?.map((r: any) => r.row_data) || [];
+
+    // Coerce string values to proper types based on column metadata
+    // CSV parsing stores everything as strings in JSONB, but charts need real numbers
+    const coercedRows = rawRows.map((row: Record<string, any>) => {
+      const coerced: Record<string, any> = {};
+      for (const col of columns) {
+        const val = row[col.key];
+        if (val === null || val === undefined || val === "") {
+          coerced[col.key] = null;
+          continue;
+        }
+        if (["number", "percentage", "currency"].includes(col.type)) {
+          // Strip currency symbols, commas, percent signs, then parse
+          const cleaned = String(val).replace(/[$€£¥₹,%\s]/g, "");
+          const num = parseFloat(cleaned);
+          coerced[col.key] = isNaN(num) ? val : num;
+        } else {
+          coerced[col.key] = val;
+        }
+      }
+      return coerced;
+    });
+
     setDatasetColumns(columns);
-    setDatasetRows(rows?.map((r: any) => r.row_data) || []);
+    setDatasetRows(coercedRows);
   }
 
   const handleDatasetChange = async (dsId: string) => {
