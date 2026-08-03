@@ -13,12 +13,15 @@ import {
   LogOut,
   Command,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  BarChart3
 } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 
 type SubItem = {
   name: string;
   href: string;
+  founderOnly?: boolean;
 };
 
 type ModuleItem = {
@@ -60,7 +63,9 @@ const MODULES: ModuleItem[] = [
       { name: "Tasks", href: "/app/projects/task" },
       { name: "Timesheets", href: "/app/projects/timesheet" },
       { name: "Project Templates", href: "/app/projects/project-template" },
-      { name: "Project Types", href: "/app/projects/project-type" }
+      { name: "Project Types", href: "/app/projects/project-type" },
+      { name: "Report Builder", href: "/app/projects/report", founderOnly: true },
+      { name: "Report Viewer", href: "/app/projects/report" }
     ]
   },
   { name: "Settings", href: "/app/settings", icon: Settings },
@@ -69,6 +74,28 @@ const MODULES: ModuleItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  // Fetch user role for conditional sidebar rendering
+  useEffect(() => {
+    async function fetchRole() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", user.id)
+            .single();
+          if (profile) setUserRole(profile.role);
+        }
+      } catch {}
+    }
+    fetchRole();
+  }, []);
+
+  const isFounderRole = userRole && ["superadmin", "admin", "client_manager", "accountant", "bd_manager", "hr_manager"].includes(userRole);
 
   // Auto-expand active module
   useEffect(() => {
@@ -159,7 +186,9 @@ export function Sidebar() {
               {/* Nested Items */}
               {mod.items && isExpanded && (
                 <div className="ml-4 pl-3 mt-1 space-y-0.5 border-l border-gray-200">
-                  {mod.items.map((sub) => {
+                  {mod.items
+                    .filter((sub) => !sub.founderOnly || isFounderRole)
+                    .map((sub) => {
                     const isSubActive = pathname === sub.href;
                     return (
                       <Link

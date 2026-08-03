@@ -13,6 +13,7 @@
     "@ai-sdk/react": "^3.0.197",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",
+    "@superset-ui/embedded-sdk": "^0.4.0",
     "@xyflow/react": "^12.11.0",
     "ai": "^6.0.195",
     "archiver": "^7.0.1",
