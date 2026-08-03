@@ -32,10 +32,10 @@ export default function NewProjectPage() {
       const supabase = createClient();
       
       const { data: clientsData } = await (supabase as any)
-        .from("profiles")
-        .select("id, full_name, company_name")
-        .eq("role", "client")
-        .order("full_name", { ascending: true });
+        .from("crm_customers")
+        .select("id, name, company")
+        .eq("status", "Client")
+        .order("name", { ascending: true });
       setClients(clientsData || []);
 
       const { data: templatesData } = await (supabase as any)
@@ -167,9 +167,9 @@ export default function NewProjectPage() {
                   className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="">Select a customer...</option>
-                  {clients.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name} {c.company_name ? `(${c.company_name})` : ''}
+                  {clients.map(client => (
+                    <option key={client.id} value={client.id}>
+                      {client.name} {client.company ? `(${client.company})` : ""}
                     </option>
                   ))}
                 </select>
