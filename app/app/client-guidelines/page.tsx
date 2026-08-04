@@ -3,8 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace } from "@/components/frappe-ui/Workspace";
-import { CompanyPickerModal } from "@/components/client/CompanyPickerModal";
-import { PendingAccessCard } from "@/components/client/PendingAccessCard";
+import { ClientAccessFlowGate } from "@/components/client/ClientAccessFlowGate";
 import { isFounder } from "@/lib/rbac";
 import { BookOpen, Building2, ExternalLink, Sparkles, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -18,161 +17,93 @@ interface PublishedGuideline {
   updated_at: string;
 }
 
-export default function ClientGuidelinesPage() {
+function GuidelinesContent() {
   const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [membershipState, setMembershipState] = useState<"none" | "pending" | "active">("none");
-  const [pendingCompanyName, setPendingCompanyName] = useState<string>("your organization");
   const [guidelines, setGuidelines] = useState<PublishedGuideline[]>([]);
 
-  const supabase = createClient();
-
-  const checkClientAccess = async () => {
-    setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-      setUserId(user.id);
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      // If user is founder/admin, redirect or show all published guidelines
-      const isStaff = profile && isFounder(profile.role);
-
-      // Check company_members
-      const { data: members, error: memErr } = await (supabase as any)
-        .from("company_members")
-        .select("company_id, status")
-        .eq("user_id", user.id);
-
-      if (memErr) {
-        console.error("Error checking company members:", memErr);
-      }
-
-      const activeCompanyIds: string[] = [];
-      let hasPending = false;
-      let pCompId = "";
-
-      if (members && members.length > 0) {
-        members.forEach((m: any) => {
-          if (m.status === "active") {
-            activeCompanyIds.push(m.company_id);
-          } else if (m.status === "pending") {
-            hasPending = true;
-            pCompId = m.company_id;
-          }
-        });
-      }
-
-      if (isStaff) {
-        setMembershipState("active");
-      } else if (activeCompanyIds.length > 0) {
-        setMembershipState("active");
-      } else if (hasPending) {
-        setMembershipState("pending");
-        // Fetch company name for pending card
-        if (pCompId) {
-          const { data: cData } = await (supabase as any)
-            .from("crm_customers")
-            .select("company, name")
-            .eq("id", pCompId)
-            .maybeSingle();
-          if (cData) setPendingCompanyName(cData.company || cData.name || "your organization");
-        }
-        setLoading(false);
-        return;
-      } else {
-        setMembershipState("none");
-        setLoading(false);
-        return;
-      }
-
-      // Load guidelines
-      let query = (supabase as any)
-        .from("ci_guidelines")
-        .select(`
-          id,
-          slug,
-          brand_name,
-          updated_at,
-          projects!inner (
-            id,
-            title,
-            client_id,
-            crm_customers!client_id (
-              id,
-              company,
-              name
-            )
-          )
-        `)
-        .eq("status", "published");
-
-      if (!isStaff && activeCompanyIds.length > 0) {
-        query = query.in("projects.client_id", activeCompanyIds);
-      }
-
-      const { data: glData, error: glErr } = await query;
-
-      if (glErr) {
-        console.error("Error loading guidelines:", glErr);
-      } else if (glData) {
-        const formatted: PublishedGuideline[] = glData.map((g: any) => {
-          const proj = g.projects;
-          const cust = proj?.crm_customers;
-          return {
-            id: g.id,
-            slug: g.slug,
-            brand_name: g.brand_name || proj?.title || "Brand Guideline",
-            project_title: proj?.title || "Brand Guideline Project",
-            company_name: cust?.company || cust?.name || "WIDE Client",
-            updated_at: g.updated_at
-          };
-        });
-        setGuidelines(formatted);
-      }
-    } catch (e) {
-      console.error("Error in checkClientAccess:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    checkClientAccess();
+    async function loadGuidelines() {
+      setLoading(true);
+      const supabase = createClient();
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        const isStaff = profile && isFounder(profile.role);
+
+        // Fetch active company IDs for client
+        const { data: members } = await (supabase as any)
+          .from("company_members")
+          .select("company_id")
+          .eq("user_id", user.id)
+          .eq("status", "active");
+
+        const activeCompIds = members?.map((m: any) => m.company_id) || [];
+
+        let query = (supabase as any)
+          .from("ci_guidelines")
+          .select(`
+            id,
+            slug,
+            brand_name,
+            updated_at,
+            projects!inner (
+              id,
+              title,
+              client_id,
+              crm_customers!client_id (
+                id,
+                company,
+                name
+              )
+            )
+          `)
+          .eq("status", "published");
+
+        if (!isStaff && activeCompIds.length > 0) {
+          query = query.in("projects.client_id", activeCompIds);
+        }
+
+        const { data: glData, error: glErr } = await query;
+
+        if (glErr) {
+          console.error("Error loading guidelines:", glErr);
+        } else if (glData) {
+          const formatted: PublishedGuideline[] = glData.map((g: any) => {
+            const proj = g.projects;
+            const cust = proj?.crm_customers;
+            return {
+              id: g.id,
+              slug: g.slug,
+              brand_name: g.brand_name || proj?.title || "Brand Guideline",
+              project_title: proj?.title || "Brand Guideline Project",
+              company_name: cust?.company || cust?.name || "WIDE Client",
+              updated_at: g.updated_at
+            };
+          });
+          setGuidelines(formatted);
+        }
+      } catch (e) {
+        console.error("Error in loadGuidelines:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadGuidelines();
   }, []);
 
   if (loading) {
     return (
-      <Workspace>
-        <div className="flex items-center justify-center h-[calc(100vh-120px)]">
-          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-        </div>
-      </Workspace>
+      <div className="flex items-center justify-center min-h-[calc(100vh-120px)]">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+      </div>
     );
-  }
-
-  if (membershipState === "none" && userId) {
-    return (
-      <CompanyPickerModal
-        userId={userId}
-        onRequestSubmitted={(compName) => {
-          setPendingCompanyName(compName);
-          setMembershipState("pending");
-        }}
-      />
-    );
-  }
-
-  if (membershipState === "pending") {
-    return <PendingAccessCard companyName={pendingCompanyName} />;
   }
 
   return (
@@ -243,5 +174,13 @@ export default function ClientGuidelinesPage() {
         )}
       </div>
     </Workspace>
+  );
+}
+
+export default function ClientGuidelinesPage() {
+  return (
+    <ClientAccessFlowGate>
+      <GuidelinesContent />
+    </ClientAccessFlowGate>
   );
 }

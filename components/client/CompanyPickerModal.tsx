@@ -50,27 +50,40 @@ export function CompanyPickerModal({ userId, onRequestSubmitted }: CompanyPicker
 
     try {
       const supabase = createClient();
+
+      // Check if membership row already exists
+      const { data: existing } = await (supabase as any)
+        .from("company_members")
+        .select("id, status")
+        .eq("user_id", userId)
+        .eq("company_id", selectedCompanyId)
+        .maybeSingle();
+
+      const comp = companies.find((c) => c.id === selectedCompanyId);
+      const companyName = comp?.name || "Selected Company";
+
+      if (existing) {
+        if (existing.status === "pending" || existing.status === "active") {
+          setError(`You already have a ${existing.status} request or membership for ${companyName}.`);
+          setTimeout(() => {
+            onRequestSubmitted(companyName);
+          }, 1500);
+          return;
+        }
+      }
+
       const { error: insertErr } = await (supabase as any)
         .from("company_members")
-        .insert({
+        .upsert({
           user_id: userId,
           company_id: selectedCompanyId,
           status: "pending",
           source: "self_service"
-        });
+        }, { onConflict: "user_id, company_id" });
 
-      if (insertErr) {
-        if (insertErr.code === "23505") {
-          // Already requested
-          const comp = companies.find((c) => c.id === selectedCompanyId);
-          onRequestSubmitted(comp?.name || "Selected Company");
-          return;
-        }
-        throw insertErr;
-      }
+      if (insertErr) throw insertErr;
 
-      const comp = companies.find((c) => c.id === selectedCompanyId);
-      onRequestSubmitted(comp?.name || "Selected Company");
+      onRequestSubmitted(companyName);
     } catch (err: any) {
       console.error("Error requesting access:", err);
       setError(`Failed to submit access request: ${err.message}`);
