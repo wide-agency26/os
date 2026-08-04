@@ -6,7 +6,7 @@ import { CISection, CIAsset } from "@/lib/ci-builder/types";
 import { SectionRenderer } from "./sections/index";
 import { parseManifest } from "@/lib/ci-builder/parser";
 import { CI_GLOSSARY } from "@/lib/ci-builder/glossary";
-import { Settings, Share, UploadCloud, Plus, GripVertical, CheckSquare, Square, X, AlertTriangle, Layers, Image as ImageIcon } from "lucide-react";
+import { Settings, Share, UploadCloud, Plus, GripVertical, CheckSquare, Square, X, AlertTriangle, Layers } from "lucide-react";
 import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
 
@@ -22,20 +22,6 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const [uploading, setUploading] = useState(false);
   const [importReport, setImportReport] = useState<any>(null);
   const [selectedUnassigned, setSelectedUnassigned] = useState<Set<string>>(new Set());
-
-  const handleAddSection = (entry: any) => {
-    const newSection: Partial<CISection> = {
-      id: `temp_${Date.now()}`,
-      guideline_id: guideline?.id,
-      section_type: entry.section_type,
-      eyebrow_label: entry.eyebrow_label,
-      headline: entry.default_headline,
-      position: sections.length,
-      is_visible: true,
-      data: {}
-    };
-    setSections([...sections, newSection]);
-  };
 
   const supabase = createClient();
 
@@ -84,6 +70,68 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     setLoading(false);
   }
 
+  // --- CRUD Callbacks for Section Content & Assets ---
+
+  const handleUpdateSectionData = async (sectionId: string, newData: any) => {
+    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, data: newData } : s));
+    if (guideline?.id && !sectionId.startsWith("temp_")) {
+      await (supabase as any)
+        .from('ci_sections')
+        .update({ data: newData })
+        .eq('id', sectionId);
+    }
+  };
+
+  const handleEditSectionFields = async (sectionId: string, fields: Partial<CISection>) => {
+    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, ...fields } : s));
+    if (guideline?.id && !sectionId.startsWith("temp_")) {
+      await (supabase as any)
+        .from('ci_sections')
+        .update(fields)
+        .eq('id', sectionId);
+    }
+  };
+
+  const handleAddAssetRecord = async (asset: Partial<CIAsset>) => {
+    setAssets(prev => [...prev.filter(a => a.id !== asset.id), asset]);
+    if (guideline?.id && asset.id && !asset.id.startsWith("temp_")) {
+      await (supabase as any)
+        .from('ci_assets')
+        .upsert(asset);
+    }
+  };
+
+  const handleDeleteAssetRecord = async (assetId: string) => {
+    setAssets(prev => prev.filter(a => a.id !== assetId));
+    if (guideline?.id && assetId) {
+      await (supabase as any)
+        .from('ci_assets')
+        .delete()
+        .eq('id', assetId);
+    }
+  };
+
+  const handleAddSection = async (entry: any) => {
+    const newSection: Partial<CISection> = {
+      id: `sec_${Date.now()}`,
+      guideline_id: guideline?.id,
+      section_type: entry.section_type,
+      eyebrow_label: entry.eyebrow_label,
+      headline: entry.default_headline,
+      position: sections.length,
+      is_visible: true,
+      data: {}
+    };
+
+    setSections(prev => [...prev, newSection]);
+
+    if (guideline?.id) {
+      await (supabase as any)
+        .from('ci_sections')
+        .insert(newSection);
+    }
+  };
+
   // Handle manifest upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -112,14 +160,12 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       }));
       setSections(newSections);
       
-      // Keep existing assets + newly parsed assets (in a real app we'd merge by ID)
       const newAssets = parsed.assets.map(a => ({
         ...a,
         guideline_id: guideline.id
       }));
       setAssets(prev => [...prev.filter(pa => !newAssets.find(na => na.id === pa.id)), ...newAssets]);
       
-      // Update theme if suggestions exist
       if (parsed.themeSuggested && Object.keys(parsed.themeSuggested).length > 0) {
         setGuideline({ ...guideline, theme: { ...guideline.theme, ...parsed.themeSuggested } });
       }
@@ -129,7 +175,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       alert("Failed to parse manifest. Please ensure it is valid JSON.");
     } finally {
       setUploading(false);
-      if (e.target) e.target.value = ''; // Reset input
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -171,9 +217,9 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             {sections.length > 0 && <span className="text-gray-400">{sections.length}</span>}
           </h3>
           {sections.length === 0 ? (
-            <p className="text-gray-400 text-xs italic">No sections. Upload a manifest to begin.</p>
+            <p className="text-gray-400 text-xs italic">No sections. Upload a manifest or click + Add Section.</p>
           ) : (
-            sections.map((sec, idx) => (
+            sections.map((sec) => (
               <div key={sec.id} className="flex items-center gap-2 p-2 rounded hover:bg-gray-200 cursor-pointer group">
                 <GripVertical className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 cursor-grab" />
                 <a href={`#${sec.section_type}`} className="flex-1 truncate text-gray-700">{sec.eyebrow_label || sec.section_type}</a>
@@ -189,7 +235,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               <Plus className="w-3 h-3" /> Add Section
             </button>
             {showAddSectionDropdown && (
-              <div className="mt-1 w-full bg-white border border-gray-200 shadow-sm rounded-md overflow-hidden py-1">
+              <div className="mt-1 w-full bg-white border border-gray-200 shadow-sm rounded-md overflow-hidden py-1 z-30 relative">
                 {CI_GLOSSARY.map((entry) => (
                   <button
                     key={entry.section_type}
@@ -206,7 +252,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          {/* Unassigned Assets Panel in Sidebar (Summarized) */}
+          {/* Unassigned Assets Queue Summary */}
           {assets.filter(a => a.section_id === null).length > 0 && (
             <div className="mt-6 border-t border-gray-200 pt-4">
               <h3 className="text-xs font-medium text-amber-600 uppercase tracking-wider mb-2 flex items-center justify-between">
@@ -215,7 +261,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                   {assets.filter(a => a.section_id === null).length}
                 </span>
               </h3>
-              <p className="text-[10px] text-gray-500 mb-2 leading-tight">View the main editor pane to assign these assets.</p>
+              <p className="text-[10px] text-gray-500 mb-2 leading-tight">View main editor pane to assign these assets.</p>
             </div>
           )}
         </div>
@@ -236,13 +282,13 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {/* RIGHT PANE: Live Preview */}
+      {/* RIGHT PANE: Live Preview / Full Visual Editor */}
       <div className="flex-1 overflow-y-auto relative bg-[#f9f9f9]">
         <div 
           className="min-h-full transition-colors duration-300"
           style={applyThemeToCSS()}
         >
-          {/* Unassigned Assets Grid */}
+          {/* Unassigned Assets Queue */}
           {assets.filter(a => a.section_id === null).length > 0 && (
             <div className="max-w-6xl mx-auto p-8 mb-8 bg-amber-50/50 border-b border-amber-200 shadow-sm">
               <div className="flex items-center justify-between mb-6">
@@ -251,7 +297,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                     <Layers className="w-5 h-5" /> 
                     Unassigned Assets Queue ({assets.filter(a => a.section_id === null).length})
                   </h2>
-                  <p className="text-sm text-amber-700 mt-1">These assets couldn't be auto-matched. Select items to bulk-assign them to a section.</p>
+                  <p className="text-sm text-amber-700 mt-1">Select items to assign them to a section.</p>
                 </div>
                 
                 {selectedUnassigned.size > 0 && (
@@ -355,7 +401,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
           {sections.length === 0 && assets.filter(a => a.section_id === null).length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 min-h-[500px]">
-              <p>Upload a manifest.json to generate the guideline</p>
+              <p>Upload a manifest.json or click &quot;+ Add Section&quot; to build the guideline</p>
             </div>
           ) : (
             <div className="pb-32">
@@ -364,7 +410,14 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                   key={section.id} 
                   section={section} 
                   assets={assets.filter(a => a.section_id === section.id || a.kind === section.section_type)} 
+                  allAssets={assets}
+                  allSections={sections}
                   isAdmin={true} 
+                  onUpdateData={handleUpdateSectionData}
+                  onEditSectionFields={handleEditSectionFields}
+                  onAddAssetRecord={handleAddAssetRecord}
+                  onDeleteAssetRecord={handleDeleteAssetRecord}
+                  guidelineId={guideline?.id}
                 />
               ))}
             </div>

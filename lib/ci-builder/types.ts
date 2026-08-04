@@ -82,15 +82,27 @@ export interface CIAsset {
 // --- Section Data Shapes ---
 
 export type LogoAsset = {
+  id?: string;
   assetId: string; // references CIAsset.id
   label: string;
+  subtitle?: string;
   stage: 'dark' | 'light' | 'any';
   width?: string;
   fit?: 'contain' | 'cover';
 };
+
+export type MinSizeCard = {
+  id: string;
+  useCase: string;
+  size: string;
+  unit: string;
+};
+
 export type LogoSectionData = {
   logos: LogoAsset[];
   clearspaceText?: string;
+  clearspaceAssetId?: string;
+  minSizes?: MinSizeCard[];
   minSizeDigital?: string;
   minSizePrint?: string;
 };
@@ -101,10 +113,13 @@ export type ColorSwatch = {
   hex: string;
   cssVar?: string;
 };
+
 export type ColorGroup = {
+  id?: string;
   groupLabel: string;
   swatches: ColorSwatch[];
 };
+
 export type ColorsSectionData = {
   groups: ColorGroup[];
 };
@@ -112,21 +127,42 @@ export type ColorsSectionData = {
 export type TypeRow = {
   id: string;
   label: string;
-  specLine1: string;
-  specLine2?: string;
+  specLine1?: string;
+  fontFamily?: string;
+  fontSize?: string;
+  fontWeight?: string;
+  lineHeight?: string;
   sampleText: string;
-  sampleClass?: string; // class name or direct font-family/size styles
+  sampleClass?: string;
 };
+
+export type TypeScaleEntry = {
+  id: string;
+  px: number;
+  token: string;
+};
+
 export type TypographySectionData = {
   rows: TypeRow[];
+  scale?: TypeScaleEntry[];
+};
+
+export type StateColors = {
+  bg?: string;
+  text?: string;
+  border?: string;
 };
 
 export type ButtonSample = {
   id: string;
-  variant: 'primary' | 'secondary' | 'ghost' | 'tab';
+  variant: 'primary' | 'secondary' | 'ghost' | 'tab' | string;
   label: string;
-  size?: 'sm' | 'lg';
+  size?: 'sm' | 'md' | 'lg';
+  defaultColors?: StateColors;
+  hoverColors?: StateColors;
+  activeColors?: StateColors;
 };
+
 export type ButtonsSectionData = {
   samples: ButtonSample[];
 };
@@ -138,14 +174,23 @@ export type FrameCard = {
   aspectRatio?: string;
   assetId: string;
 };
+
 export type GridFramesSectionData = {
   frames: FrameCard[];
 };
 
-export type BackgroundGroup = {
-  groupLabel: string;
-  assets: { id: string; assetId: string; label: string }[];
+export type BackgroundAsset = {
+  id: string;
+  assetId: string;
+  label?: string;
 };
+
+export type BackgroundGroup = {
+  id?: string;
+  groupLabel: string;
+  assets: BackgroundAsset[];
+};
+
 export type BackgroundsSectionData = {
   groups: BackgroundGroup[];
 };
@@ -155,14 +200,25 @@ export type RuleItem = {
   title: string;
   description: string;
 };
+
 export type ImagerySectionData = {
   rules: RuleItem[];
 };
 
+export type VoiceTonePill = {
+  id: string;
+  word: string;
+};
+
+export type VoiceTonePhrase = {
+  id: string;
+  text: string;
+};
+
 export type VoiceToneSectionData = {
-  marqueeWords: string[];
-  doPhrases: string[];
-  dontPhrases: string[];
+  marqueeWords: (string | VoiceTonePill)[];
+  doPhrases: (string | VoiceTonePhrase)[];
+  dontPhrases: (string | VoiceTonePhrase)[];
 };
 
 export type ApplicationCard = {
@@ -172,6 +228,7 @@ export type ApplicationCard = {
   tag?: string;
   assetId: string;
 };
+
 export type ApplicationsSectionData = {
   apps: ApplicationCard[];
 };
@@ -182,13 +239,26 @@ export type DoDontItem = {
   assetId: string;
   caption: string;
 };
+
 export type DosDontsSectionData = {
   items: DoDontItem[];
 };
 
-export type OverviewSectionData = {
-  leadParagraph?: string;
-  stats?: { label: string; value: string }[];
-  tonalityCards?: string[];
+export type OverviewStat = {
+  id: string;
+  label: string;
+  value: string;
 };
 
+export type OverviewTonalityCard = {
+  id: string;
+  icon?: string;
+  label?: string;
+  text: string;
+};
+
+export type OverviewSectionData = {
+  leadParagraph?: string;
+  stats?: OverviewStat[];
+  tonalityCards?: OverviewTonalityCard[];
+};

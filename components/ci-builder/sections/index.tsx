@@ -1,11 +1,20 @@
+"use client";
+
 import React from "react";
 import { CISection, CIAsset } from "@/lib/ci-builder/types";
 
 import { SectionContainer } from "./SectionContainer";
-import { ColorsSection } from "./ColorsSection";
+import { OverviewSection } from "./OverviewSection";
 import { LogoSection } from "./LogoSection";
+import { ColorsSection } from "./ColorsSection";
 import { TypographySection } from "./TypographySection";
+import { ButtonsSection } from "./ButtonsSection";
 import { GridFramesSection } from "./GridFramesSection";
+import { BackgroundsSection } from "./BackgroundsSection";
+import { ImagerySection } from "./ImagerySection";
+import { VoiceToneSection } from "./VoiceToneSection";
+import { ApplicationsSection } from "./ApplicationsSection";
+import { DosDontsSection } from "./DosDontsSection";
 
 // Fallback generic section
 function GenericSection({ section, isAdmin }: { section: Partial<CISection>; isAdmin?: boolean }) {
@@ -18,23 +27,60 @@ function GenericSection({ section, isAdmin }: { section: Partial<CISection>; isA
   );
 }
 
-const SECTION_MAP: Record<string, React.FC<{ section: Partial<CISection>; assets: Partial<CIAsset>[]; isAdmin?: boolean }>> = {
-  colors: ColorsSection,
+export interface SectionRendererProps {
+  section: Partial<CISection>;
+  assets: Partial<CIAsset>[];
+  allAssets?: Partial<CIAsset>[];
+  allSections?: Partial<CISection>[];
+  isAdmin?: boolean;
+  onUpdateData?: (sectionId: string, newData: any) => void;
+  onEditSectionFields?: (sectionId: string, fields: Partial<CISection>) => void;
+  onAddAssetRecord?: (asset: Partial<CIAsset>) => void;
+  onDeleteAssetRecord?: (assetId: string) => void;
+  guidelineId?: string;
+}
+
+const SECTION_MAP: Record<string, React.FC<any>> = {
+  overview: OverviewSection,
   logo: LogoSection,
+  colors: ColorsSection,
   typography: TypographySection,
+  buttons: ButtonsSection,
   grid_frames: GridFramesSection,
+  backgrounds: BackgroundsSection,
+  imagery: ImagerySection,
+  voice_tone: VoiceToneSection,
+  applications: ApplicationsSection,
+  dos_donts: DosDontsSection,
 };
 
 export function SectionRenderer({ 
   section, 
-  assets, 
-  isAdmin 
-}: { 
-  section: Partial<CISection>; 
-  assets: Partial<CIAsset>[]; 
-  isAdmin?: boolean;
-}) {
+  assets,
+  allAssets = [],
+  allSections = [],
+  isAdmin,
+  onUpdateData,
+  onEditSectionFields,
+  onAddAssetRecord,
+  onDeleteAssetRecord,
+  guidelineId = ""
+}: SectionRendererProps) {
   if (!section.section_type) return <GenericSection section={section} isAdmin={isAdmin} />;
   const Component = SECTION_MAP[section.section_type as string] || GenericSection;
-  return <Component section={section} assets={assets} isAdmin={isAdmin} />;
+
+  return (
+    <Component
+      section={section}
+      assets={assets}
+      allAssets={allAssets.length > 0 ? allAssets : assets}
+      allSections={allSections}
+      isAdmin={isAdmin}
+      onUpdateData={(newData: any) => onUpdateData && section.id && onUpdateData(section.id, newData)}
+      onEditSectionFields={(fields: Partial<CISection>) => onEditSectionFields && section.id && onEditSectionFields(section.id, fields)}
+      onAddAssetRecord={onAddAssetRecord}
+      onDeleteAssetRecord={onDeleteAssetRecord}
+      guidelineId={guidelineId}
+    />
+  );
 }

@@ -1,87 +1,316 @@
 "use client";
 
-import React from "react";
-import { CISection, LogoSectionData, CIAsset } from "@/lib/ci-builder/types";
+import React, { useState } from "react";
+import { CISection, CIAsset, LogoSectionData, LogoAsset, MinSizeCard } from "@/lib/ci-builder/types";
 import { SectionContainer } from "./SectionContainer";
+import { EditableText, EditableImage, EditableListItem, AddItemButton } from "../primitives";
+import { Settings } from "lucide-react";
 
-export function LogoSection({ 
-  section, 
-  assets, 
-  isAdmin 
-}: { 
-  section: Partial<CISection>; 
-  assets: Partial<CIAsset>[]; 
-  isAdmin?: boolean 
-}) {
+export interface SectionProps {
+  section: Partial<CISection>;
+  assets?: Partial<CIAsset>[];
+  allAssets?: Partial<CIAsset>[];
+  allSections?: Partial<CISection>[];
+  isAdmin?: boolean;
+  onUpdateData?: (newData: any) => void;
+  onEditSectionFields?: (fields: Partial<CISection>) => void;
+  onAddAssetRecord?: (asset: Partial<CIAsset>) => void;
+  onDeleteAssetRecord?: (assetId: string) => void;
+  guidelineId?: string;
+}
+
+export function LogoSection({
+  section,
+  assets = [],
+  allAssets = [],
+  allSections = [],
+  isAdmin,
+  onUpdateData,
+  onEditSectionFields,
+  onAddAssetRecord,
+  onDeleteAssetRecord,
+  guidelineId = ""
+}: SectionProps) {
   const data = (section.data || {}) as LogoSectionData;
+  const logos = data.logos || [];
+  const minSizes = data.minSizes || [
+    ...(data.minSizeDigital ? [{ id: "min_dig", useCase: "Digital / Web", size: data.minSizeDigital, unit: "px" }] : []),
+    ...(data.minSizePrint ? [{ id: "min_prt", useCase: "Print / Physical", size: data.minSizePrint, unit: "mm" }] : [])
+  ];
 
-  const getAssetUrl = (assetId: string) => {
-    const asset = assets.find(a => a.id === assetId);
-    return asset?.public_url || asset?.storage_path || ""; // fallback to storage path for previewing if uploaded manually
+  const availableAssets = assets.length > 0 ? assets : allAssets;
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+
+  // Shared Asset Safety Delete Check
+  const handleDeleteVariant = (variant: LogoAsset) => {
+    const assetId = variant.assetId;
+    let count = 0;
+    allSections.forEach(sec => {
+      const dStr = JSON.stringify(sec.data || {});
+      if (assetId && dStr.includes(assetId)) {
+        count += (dStr.match(new RegExp(assetId, 'g')) || []).length;
+      }
+    });
+
+    const newLogos = logos.filter(l => (l.id || l.assetId) !== (variant.id || variant.assetId));
+    if (onUpdateData) onUpdateData({ ...data, logos: newLogos });
+
+    if (count <= 1 && assetId && onDeleteAssetRecord) {
+      onDeleteAssetRecord(assetId);
+    }
+  };
+
+  const addLogoVariant = (selectedAsset: Partial<CIAsset>) => {
+    const newVariant: LogoAsset = {
+      id: `logo_${Date.now()}`,
+      assetId: selectedAsset.id || "",
+      label: selectedAsset.label || "Logo Variant",
+      subtitle: "Primary Mark",
+      stage: "light",
+      fit: "contain"
+    };
+    if (onUpdateData) onUpdateData({ ...data, logos: [...logos, newVariant] });
+  };
+
+  const updateLogoVariant = (id: string, updates: Partial<LogoAsset>) => {
+    const updated = logos.map(l => (l.id || l.assetId) === id ? { ...l, ...updates } : l);
+    if (onUpdateData) onUpdateData({ ...data, logos: updated });
+  };
+
+  const addMinSize = () => {
+    const newMin: MinSizeCard = {
+      id: `min_${Date.now()}`,
+      useCase: "Favicon / Icon",
+      size: "24",
+      unit: "px"
+    };
+    if (onUpdateData) onUpdateData({ ...data, minSizes: [...minSizes, newMin] });
+  };
+
+  const updateMinSize = (id: string, field: keyof MinSizeCard, val: string) => {
+    const updated = minSizes.map(m => m.id === id ? { ...m, [field]: val } : m);
+    if (onUpdateData) onUpdateData({ ...data, minSizes: updated });
+  };
+
+  const deleteMinSize = (id: string) => {
+    if (onUpdateData) onUpdateData({ ...data, minSizes: minSizes.filter(m => m.id !== id) });
+  };
+
+  const updateClearspaceText = (clearspaceText: string) => {
+    if (onUpdateData) onUpdateData({ ...data, clearspaceText });
+  };
+
+  const updateClearspaceAsset = (asset: Partial<CIAsset>) => {
+    if (onUpdateData) onUpdateData({ ...data, clearspaceAssetId: asset.id });
   };
 
   return (
-    <SectionContainer section={section} isAdmin={isAdmin}>
-      <div className="space-y-12">
-        {data.logos?.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {data.logos.map((logo) => (
-              <div 
-                key={logo.assetId} 
-                className={`relative group rounded-2xl p-8 flex items-center justify-center border border-[var(--ci-border,#eaeaea)] min-h-[250px] ${logo.stage === 'dark' ? 'bg-gray-900' : 'bg-white'}`}
-              >
-                <img 
-                  src={getAssetUrl(logo.assetId)} 
-                  alt={logo.label}
-                  className="max-w-[80%] max-h-[80%] object-contain"
-                  style={{ width: logo.width, objectFit: logo.fit }}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNjY2MiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0PjxjaXJjbGUgY3g9IjguNSIgY3k9IjguNSIgcj0iMS41Ij48L2NpcmNsZT48cG9seWxpbmUgcG9pbnRzPSIyMSAxNSAxNiAxMCA1IDIxIj48L3BvbHlsaW5lPjwvc3ZnPg=='; // image placeholder icon
-                  }}
-                />
-                <div className="absolute bottom-4 left-4">
-                  <span className={`text-xs font-medium px-2 py-1 rounded-md ${logo.stage === 'dark' ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
-                    {logo.label}
-                  </span>
-                </div>
+    <SectionContainer section={section} isAdmin={isAdmin} onEditSectionFields={onEditSectionFields}>
+      <div className="space-y-16">
+        {/* Logo Variants Grid */}
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--ci-accent,#666)] mb-6">
+            Logo Variants & Marks
+          </h3>
 
-                {isAdmin && (
-                  <div className="absolute top-4 right-4 bg-white p-2 rounded-full shadow-sm opacity-0 group-hover:opacity-100 cursor-pointer text-gray-700 hover:text-blue-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {logos.map((logo) => {
+              const itemKey = logo.id || logo.assetId;
+              const isDarkStage = logo.stage === "dark";
+              return (
+                <EditableListItem
+                  key={itemKey}
+                  onDelete={() => handleDeleteVariant(logo)}
+                  deleteConfirmTitle="Delete logo variant? If this asset is unused elsewhere, the uploaded file will be deleted."
+                  isAdmin={isAdmin}
+                  className={`rounded-2xl border border-[var(--ci-border,#eaeaea)] overflow-hidden shadow-sm flex flex-col ${
+                    isDarkStage ? "bg-gray-900 text-white" : "bg-white text-[var(--ci-text,#111)]"
+                  }`}
+                >
+                  {/* Image slot */}
+                  <div className="h-44 p-6 flex items-center justify-center relative border-b border-[var(--ci-border,#eaeaea)]">
+                    <EditableImage
+                      assetId={logo.assetId}
+                      onSelectAsset={(ast) => updateLogoVariant(itemKey, { assetId: ast.id })}
+                      guidelineId={guidelineId}
+                      availableAssets={availableAssets}
+                      compatibleKind="logo"
+                      isAdmin={isAdmin}
+                      onAddAssetRecord={onAddAssetRecord}
+                      className="w-full h-full flex items-center justify-center"
+                      imageClassName={`max-w-full max-h-full ${logo.fit === "cover" ? "object-cover" : "object-contain"}`}
+                    />
+
+                    {isAdmin && (
+                      <button
+                        onClick={() => setEditingVariantId(editingVariantId === itemKey ? null : itemKey)}
+                        className="absolute bottom-2 right-2 p-1.5 bg-white/80 text-gray-700 rounded-full shadow hover:bg-white z-10"
+                        title="Configure Stage & Fit"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="p-12 border border-dashed border-[var(--ci-border,#eaeaea)] rounded-2xl flex flex-col items-center justify-center text-[var(--ci-text-muted,#666)]">
-            <svg className="w-12 h-12 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            <p>No logo assets configured.</p>
-          </div>
-        )}
 
-        {(data.clearspaceText || data.minSizeDigital || data.minSizePrint) && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 border-t border-[var(--ci-border,#eaeaea)]">
-            {data.clearspaceText && (
-              <div>
-                <h4 className="text-sm font-semibold uppercase text-[var(--ci-text,#111)] mb-2">Clearspace</h4>
-                <p className="text-[var(--ci-text-muted,#666)] text-sm">{data.clearspaceText}</p>
-              </div>
-            )}
-            {data.minSizeDigital && (
-              <div>
-                <h4 className="text-sm font-semibold uppercase text-[var(--ci-text,#111)] mb-2">Minimum Size (Digital)</h4>
-                <p className="text-[var(--ci-text-muted,#666)] text-sm">{data.minSizeDigital}</p>
-              </div>
-            )}
-            {data.minSizePrint && (
-              <div>
-                <h4 className="text-sm font-semibold uppercase text-[var(--ci-text,#111)] mb-2">Minimum Size (Print)</h4>
-                <p className="text-[var(--ci-text-muted,#666)] text-sm">{data.minSizePrint}</p>
-              </div>
+                  {/* Settings Drawer if open */}
+                  {isAdmin && editingVariantId === itemKey && (
+                    <div className="p-3 bg-gray-100 text-gray-800 text-xs border-b border-gray-200 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <label className="font-semibold">Stage:</label>
+                        <select
+                          value={logo.stage || "light"}
+                          onChange={(e) => updateLogoVariant(itemKey, { stage: e.target.value as any })}
+                          className="bg-white border rounded px-1.5 py-0.5"
+                        >
+                          <option value="light">Light</option>
+                          <option value="dark">Dark</option>
+                          <option value="any">Any</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="font-semibold">Fit:</label>
+                        <select
+                          value={logo.fit || "contain"}
+                          onChange={(e) => updateLogoVariant(itemKey, { fit: e.target.value as any })}
+                          className="bg-white border rounded px-1.5 py-0.5"
+                        >
+                          <option value="contain">Contain</option>
+                          <option value="cover">Cover</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Labels Footer */}
+                  <div className="p-4 flex flex-col justify-between flex-1">
+                    <EditableText
+                      tag="h4"
+                      value={logo.label}
+                      placeholder="Logo Label"
+                      onSave={(val) => updateLogoVariant(itemKey, { label: val })}
+                      isAdmin={isAdmin}
+                      className="font-bold text-base"
+                    />
+                    {logo.subtitle && (
+                      <EditableText
+                        tag="p"
+                        value={logo.subtitle}
+                        placeholder="Variant Subtitle"
+                        onSave={(val) => updateLogoVariant(itemKey, { subtitle: val })}
+                        isAdmin={isAdmin}
+                        className="text-xs opacity-60 mt-1"
+                      />
+                    )}
+                  </div>
+                </EditableListItem>
+              );
+            })}
+
+            {isAdmin && (
+              <EditableImage
+                onSelectAsset={addLogoVariant}
+                guidelineId={guidelineId}
+                availableAssets={availableAssets}
+                compatibleKind="logo"
+                isAdmin={isAdmin}
+                onAddAssetRecord={onAddAssetRecord}
+                className="min-h-[220px]"
+              >
+                <div className="w-full h-full min-h-[220px] flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 hover:border-blue-500 bg-gray-50/50 rounded-2xl text-gray-500 hover:text-blue-600 transition-colors">
+                  <span className="text-xs font-semibold">+ Add Logo Variant</span>
+                </div>
+              </EditableImage>
             )}
           </div>
-        )}
+        </div>
+
+        {/* Clearspace & Safe Area */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-[var(--ci-border,#eaeaea)] pt-12">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--ci-accent,#666)] mb-3">
+              Clearspace & Exclusion Zone
+            </h3>
+            <EditableText
+              tag="p"
+              multiline
+              value={data.clearspaceText || ""}
+              placeholder="Specify clearspace rules (e.g., minimum clearspace is 50% of the logotype height 'X' around all edges)..."
+              onSave={updateClearspaceText}
+              isAdmin={isAdmin}
+              className="text-sm text-[var(--ci-text-muted,#666)] leading-relaxed"
+            />
+          </div>
+
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--ci-accent,#666)] mb-3">
+              Clearspace Diagram
+            </h3>
+            <EditableImage
+              assetId={data.clearspaceAssetId}
+              onSelectAsset={updateClearspaceAsset}
+              guidelineId={guidelineId}
+              availableAssets={availableAssets}
+              compatibleKind="logo"
+              isAdmin={isAdmin}
+              onAddAssetRecord={onAddAssetRecord}
+              className="w-full h-44 bg-gray-50 border border-[var(--ci-border,#eaeaea)] rounded-xl flex items-center justify-center p-4"
+            />
+          </div>
+        </div>
+
+        {/* Minimum Sizes */}
+        <div className="border-t border-[var(--ci-border,#eaeaea)] pt-12">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--ci-accent,#666)] mb-6">
+            Minimum Size Guidelines
+          </h3>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {minSizes.map((ms) => (
+              <EditableListItem
+                key={ms.id}
+                onDelete={() => deleteMinSize(ms.id)}
+                deleteConfirmTitle="Delete minimum size specification?"
+                isAdmin={isAdmin}
+                className="bg-white border border-[var(--ci-border,#eaeaea)] p-4 rounded-xl shadow-sm"
+              >
+                <EditableText
+                  tag="p"
+                  value={ms.useCase}
+                  placeholder="Use Case"
+                  onSave={(val) => updateMinSize(ms.id, "useCase", val)}
+                  isAdmin={isAdmin}
+                  className="text-xs font-semibold text-[var(--ci-text-muted,#666)] uppercase mb-2"
+                />
+                <div className="flex items-baseline gap-1">
+                  <EditableText
+                    tag="span"
+                    value={ms.size}
+                    placeholder="32"
+                    onSave={(val) => updateMinSize(ms.id, "size", val)}
+                    isAdmin={isAdmin}
+                    className="text-2xl font-extrabold text-[var(--ci-accent,#000)]"
+                  />
+                  <EditableText
+                    tag="span"
+                    value={ms.unit}
+                    placeholder="px"
+                    onSave={(val) => updateMinSize(ms.id, "unit", val)}
+                    isAdmin={isAdmin}
+                    className="text-xs font-mono uppercase text-gray-500"
+                  />
+                </div>
+              </EditableListItem>
+            ))}
+
+            <AddItemButton
+              label="+ Add Min Size"
+              onClick={addMinSize}
+              isAdmin={isAdmin}
+              variant="dashed-card"
+              className="min-h-[90px]"
+            />
+          </div>
+        </div>
       </div>
     </SectionContainer>
   );
