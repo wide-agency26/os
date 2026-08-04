@@ -393,56 +393,86 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-800">Manifest Import Report</h3>
+              <h3 className="text-lg font-semibold text-gray-800">
+                {importReport.format === 'unknown' ? 'Unrecognized Format' : 'Manifest Import Report'}
+              </h3>
               <button onClick={() => setImportReport(null)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
             <div className="p-6 space-y-6 flex-1 overflow-y-auto">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-blue-50 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold text-blue-600 mb-1">{importReport.totalItems}</div>
-                  <div className="text-xs font-medium text-blue-800 uppercase tracking-wide">Assets Found</div>
+              {importReport.format === 'unknown' ? (
+                <div className="bg-red-50 border border-red-100 rounded-lg p-4 text-red-800 text-sm">
+                  <div className="flex items-start gap-2 mb-3">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <p className="font-semibold">Format auto-detection failed.</p>
+                  </div>
+                  <p className="mb-2">{importReport.message}</p>
                 </div>
-                <div className="bg-green-50 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold text-green-600 mb-1">{importReport.assignedCount}</div>
-                  <div className="text-xs font-medium text-green-800 uppercase tracking-wide">Auto-Assigned</div>
-                </div>
-                <div className="bg-amber-50 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold text-amber-600 mb-1">{importReport.unassignedCount}</div>
-                  <div className="text-xs font-medium text-amber-800 uppercase tracking-wide">Waiting</div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold text-gray-800 mb-2 border-b pb-1">Key Mapping Detected</h4>
-                <div className="text-sm text-gray-600 space-y-1">
-                  <p>
-                    <span className="font-medium">Name fields used:</span>{' '}
-                    {importReport.detectedNameKeys?.length > 0 
-                      ? <span className="text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">{importReport.detectedNameKeys.join(', ')}</span>
-                      : <span className="text-red-500">None found (Expected: frame_name, name, title)</span>}
-                  </p>
-                  <p>
-                    <span className="font-medium">File fields used:</span>{' '}
-                    {importReport.detectedFileKeys?.length > 0 
-                      ? <span className="text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">{importReport.detectedFileKeys.join(', ')}</span>
-                      : <span className="text-red-500">None found (Expected: file, filename, image)</span>}
-                  </p>
-                </div>
-              </div>
-
-              {importReport.missingFiles > 0 && (
-                <div className="bg-red-50 border border-red-100 rounded-lg p-4">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="text-sm font-semibold text-red-800">Missing File References ({importReport.missingFiles})</h4>
-                      <p className="text-xs text-red-600 mt-1">Some rows in the manifest did not point to a valid image file. They were imported but flagged as broken.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-blue-50 rounded-xl p-4 text-center">
+                      <div className="text-3xl font-bold text-blue-600 mb-1">{importReport.totalItems}</div>
+                      <div className="text-xs font-medium text-blue-800 uppercase tracking-wide">
+                        {importReport.format === 'design_tokens' ? 'Tokens Found' : 'Assets Found'}
+                      </div>
+                    </div>
+                    <div className="bg-green-50 rounded-xl p-4 text-center">
+                      <div className="text-3xl font-bold text-green-600 mb-1">{importReport.assignedCount}</div>
+                      <div className="text-xs font-medium text-green-800 uppercase tracking-wide">Auto-Assigned</div>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-4 text-center">
+                      <div className="text-3xl font-bold text-amber-600 mb-1">{importReport.unassignedCount}</div>
+                      <div className="text-xs font-medium text-amber-800 uppercase tracking-wide">Waiting</div>
                     </div>
                   </div>
-                </div>
+
+                  {importReport.format === 'design_tokens' ? (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-800 mb-2 border-b pb-1">Design Tokens Detected</h4>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <p>
+                          <span className="font-medium">Sections populated:</span>{' '}
+                          {importReport.detectedNameKeys?.length > 0 
+                            ? <span className="text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">{importReport.detectedNameKeys.join(', ')}</span>
+                            : <span>None</span>}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-800 mb-2 border-b pb-1">Key Mapping Detected</h4>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <p>
+                          <span className="font-medium">Name fields used:</span>{' '}
+                          {importReport.detectedNameKeys?.length > 0 
+                            ? <span className="text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">{importReport.detectedNameKeys.join(', ')}</span>
+                            : <span className="text-red-500">None found (Expected: frame_name, name, title)</span>}
+                        </p>
+                        <p>
+                          <span className="font-medium">File fields used:</span>{' '}
+                          {importReport.detectedFileKeys?.length > 0 
+                            ? <span className="text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded">{importReport.detectedFileKeys.join(', ')}</span>
+                            : <span className="text-red-500">None found (Expected: file, filename, image)</span>}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {importReport.missingFiles > 0 && (
+                    <div className="bg-red-50 border border-red-100 rounded-lg p-4">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                        <div>
+                          <h4 className="text-sm font-semibold text-red-800">Missing File References ({importReport.missingFiles})</h4>
+                          <p className="text-xs text-red-600 mt-1">Some rows in the manifest did not point to a valid image file. They were imported but flagged as broken.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

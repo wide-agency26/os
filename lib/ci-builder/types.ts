@@ -73,7 +73,7 @@ export interface CIAsset {
   label: string | null;
   caption: string | null;
   metadata: {
-    match_method?: 'exact' | 'synonym' | 'substring' | 'manual' | null;
+    match_method?: 'exact' | 'synonym' | 'substring' | 'manual' | 'design_token' | null;
     [key: string]: any;
   };
   sort_order: number;
