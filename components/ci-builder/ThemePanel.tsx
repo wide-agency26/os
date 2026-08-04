@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { CITheme } from "@/lib/ci-builder/types";
-import { X, Check } from "lucide-react";
+import { X } from "lucide-react";
 
 interface ThemePanelProps {
   guideline: any;

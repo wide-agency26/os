@@ -1,21 +1,26 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { CISection, CIAsset } from "@/lib/ci-builder/types";
+import { CISection, CIAsset, CITheme } from "@/lib/ci-builder/types";
 import { SectionRenderer } from "./sections/index";
 import { parseManifest } from "@/lib/ci-builder/parser";
 import { CI_GLOSSARY } from "@/lib/ci-builder/glossary";
-import { Settings, Share, UploadCloud, Plus, GripVertical, CheckSquare, Square, X, AlertTriangle, Layers } from "lucide-react";
+import { Settings, Share, UploadCloud, Plus, GripVertical, CheckSquare, Square, X, AlertTriangle, Layers, Save, Check, Loader2 } from "lucide-react";
 import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
 
 export function AdminEditor({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [guideline, setGuideline] = useState<any>(null);
   const [sections, setSections] = useState<Partial<CISection>[]>([]);
   const [assets, setAssets] = useState<Partial<CIAsset>[]>([]);
   
+  // Save State Machine
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
+  const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
+
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [showAddSectionDropdown, setShowAddSectionDropdown] = useState(false);
@@ -24,97 +29,198 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const [selectedUnassigned, setSelectedUnassigned] = useState<Set<string>>(new Set());
 
   const supabase = createClient();
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingUpdatesRef = useRef<Map<string, { type: "data" | "fields"; payload: any }>>(new Map());
 
   useEffect(() => {
     loadData();
   }, [projectId]);
 
+  // Unsaved changes beforeunload warning
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (saveStatus === "saving" || saveStatus === "error" || pendingUpdatesRef.current.size > 0) {
+        e.preventDefault();
+        e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [saveStatus]);
+
   async function loadData() {
     setLoading(true);
+    setLoadError(null);
     
-    // 1. Fetch or create guideline for project
-    let { data: gl } = await (supabase as any)
-      .from('ci_guidelines')
-      .select('*')
-      .eq('project_id', projectId)
-      .single();
+    try {
+      // 1. Fetch or create guideline for project
+      let { data: gl, error: glErr } = await (supabase as any)
+        .from("ci_guidelines")
+        .select("*")
+        .eq("project_id", projectId)
+        .maybeSingle();
+
+      if (glErr) {
+        console.error("Error fetching guideline:", glErr);
+      }
+        
+      if (!gl) {
+        const { data: newGl, error: createErr } = await (supabase as any)
+          .from("ci_guidelines")
+          .insert({ project_id: projectId, theme: {} })
+          .select()
+          .single();
+        if (createErr) throw createErr;
+        gl = newGl;
+      }
+      setGuideline(gl);
+
+      if (gl) {
+        // 2. Fetch sections
+        const { data: secs, error: secErr } = await (supabase as any)
+          .from("ci_sections")
+          .select("*")
+          .eq("guideline_id", gl.id)
+          .order("position", { ascending: true });
+        if (secErr) throw secErr;
+        if (secs) setSections(secs);
+
+        // 3. Fetch assets
+        const { data: asts, error: astErr } = await (supabase as any)
+          .from("ci_assets")
+          .select("*")
+          .eq("guideline_id", gl.id);
+        if (astErr) throw astErr;
+        if (asts) setAssets(asts);
+      }
       
-    if (!gl) {
-      const { data: newGl, error } = await (supabase as any)
-        .from('ci_guidelines')
-        .insert({ project_id: projectId, theme: {} })
-        .select()
-        .single();
-      if (error) console.error("Error creating guideline:", error);
-      gl = newGl;
+      setSaveStatus("saved");
+    } catch (err: any) {
+      console.error("Failed to load CI Builder data:", err);
+      setLoadError(`Failed to load guideline data: ${err.message || err}`);
+      setSaveStatus("error");
+    } finally {
+      setLoading(false);
     }
-    setGuideline(gl);
-
-    if (gl) {
-      // 2. Fetch sections
-      const { data: secs } = await (supabase as any)
-        .from('ci_sections')
-        .select('*')
-        .eq('guideline_id', gl.id)
-        .order('position', { ascending: true });
-      if (secs) setSections(secs);
-
-      // 3. Fetch assets
-      const { data: asts } = await (supabase as any)
-        .from('ci_assets')
-        .select('*')
-        .eq('guideline_id', gl.id);
-      if (asts) setAssets(asts);
-    }
-    
-    setLoading(false);
   }
 
-  // --- CRUD Callbacks for Section Content & Assets ---
-
-  const handleUpdateSectionData = async (sectionId: string, newData: any) => {
-    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, data: newData } : s));
-    if (guideline?.id && !sectionId.startsWith("temp_")) {
-      await (supabase as any)
-        .from('ci_sections')
-        .update({ data: newData })
-        .eq('id', sectionId);
+  // --- Flush Pending Debounced Writes ---
+  const flushPendingSaves = useCallback(async (): Promise<boolean> => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
     }
+
+    if (pendingUpdatesRef.current.size === 0) {
+      setSaveStatus("saved");
+      setSaveErrorMsg(null);
+      return true;
+    }
+
+    setSaveStatus("saving");
+    const updatesToProcess = new Map(pendingUpdatesRef.current);
+    pendingUpdatesRef.current.clear();
+
+    try {
+      for (const [sectionId, update] of updatesToProcess.entries()) {
+        if (!sectionId) continue;
+        if (update.type === "data") {
+          const { error } = await (supabase as any)
+            .from("ci_sections")
+            .update({ data: update.payload })
+            .eq("id", sectionId);
+          if (error) throw error;
+        } else if (update.type === "fields") {
+          const { error } = await (supabase as any)
+            .from("ci_sections")
+            .update(update.payload)
+            .eq("id", sectionId);
+          if (error) throw error;
+        }
+      }
+
+      setSaveStatus("saved");
+      setSaveErrorMsg(null);
+      return true;
+    } catch (err: any) {
+      console.error("Failed to flush pending saves to Supabase:", err);
+      // Re-queue failed items
+      updatesToProcess.forEach((val, key) => pendingUpdatesRef.current.set(key, val));
+      setSaveStatus("error");
+      setSaveErrorMsg(err.message || "Failed to save edits to database");
+      return false;
+    }
+  }, [supabase]);
+
+  const scheduleDebouncedSave = (sectionId: string, type: "data" | "fields", payload: any) => {
+    setSaveStatus("saving");
+    pendingUpdatesRef.current.set(sectionId, { type, payload });
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      flushPendingSaves();
+    }, 600);
   };
 
-  const handleEditSectionFields = async (sectionId: string, fields: Partial<CISection>) => {
+  // --- CRUD Handlers ---
+
+  const handleUpdateSectionData = (sectionId: string, newData: any) => {
+    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, data: newData } : s));
+    scheduleDebouncedSave(sectionId, "data", newData);
+  };
+
+  const handleEditSectionFields = (sectionId: string, fields: Partial<CISection>) => {
     setSections(prev => prev.map(s => s.id === sectionId ? { ...s, ...fields } : s));
-    if (guideline?.id && !sectionId.startsWith("temp_")) {
-      await (supabase as any)
-        .from('ci_sections')
-        .update(fields)
-        .eq('id', sectionId);
-    }
+    scheduleDebouncedSave(sectionId, "fields", fields);
   };
 
   const handleAddAssetRecord = async (asset: Partial<CIAsset>) => {
     setAssets(prev => [...prev.filter(a => a.id !== asset.id), asset]);
-    if (guideline?.id && asset.id && !asset.id.startsWith("temp_")) {
-      await (supabase as any)
-        .from('ci_assets')
-        .upsert(asset);
+    if (guideline?.id && asset.id) {
+      setSaveStatus("saving");
+      try {
+        const { error } = await (supabase as any)
+          .from("ci_assets")
+          .upsert({ ...asset, guideline_id: guideline.id });
+        if (error) throw error;
+        setSaveStatus("saved");
+      } catch (err: any) {
+        console.error("Error saving asset record:", err);
+        setSaveStatus("error");
+        setSaveErrorMsg(err.message);
+      }
     }
   };
 
   const handleDeleteAssetRecord = async (assetId: string) => {
     setAssets(prev => prev.filter(a => a.id !== assetId));
     if (guideline?.id && assetId) {
-      await (supabase as any)
-        .from('ci_assets')
-        .delete()
-        .eq('id', assetId);
+      setSaveStatus("saving");
+      try {
+        const { error } = await (supabase as any)
+          .from("ci_assets")
+          .delete()
+          .eq("id", assetId);
+        if (error) throw error;
+        setSaveStatus("saved");
+      } catch (err: any) {
+        console.error("Error deleting asset record:", err);
+        setSaveStatus("error");
+        setSaveErrorMsg(err.message);
+      }
     }
   };
 
   const handleAddSection = async (entry: any) => {
+    if (!guideline?.id) return;
+    const realId = `sec_${crypto.randomUUID()}`;
     const newSection: Partial<CISection> = {
-      id: `sec_${Date.now()}`,
-      guideline_id: guideline?.id,
+      id: realId,
+      guideline_id: guideline.id,
       section_type: entry.section_type,
       eyebrow_label: entry.eyebrow_label,
       headline: entry.default_headline,
@@ -124,58 +230,132 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     };
 
     setSections(prev => [...prev, newSection]);
+    setSaveStatus("saving");
 
-    if (guideline?.id) {
-      await (supabase as any)
-        .from('ci_sections')
+    try {
+      const { error } = await (supabase as any)
+        .from("ci_sections")
         .insert(newSection);
+      if (error) throw error;
+      setSaveStatus("saved");
+    } catch (err: any) {
+      console.error("Error adding section:", err);
+      setSaveStatus("error");
+      setSaveErrorMsg(err.message);
     }
   };
 
-  // Handle manifest upload
+  const handleUpdateTheme = async (newTheme: CITheme) => {
+    setGuideline((prev: any) => ({ ...prev, theme: newTheme }));
+    if (guideline?.id) {
+      setSaveStatus("saving");
+      try {
+        const { error } = await (supabase as any)
+          .from("ci_guidelines")
+          .update({ theme: newTheme })
+          .eq("id", guideline.id);
+        if (error) throw error;
+        setSaveStatus("saved");
+      } catch (err: any) {
+        console.error("Error saving theme:", err);
+        setSaveStatus("error");
+        setSaveErrorMsg(err.message);
+      }
+    }
+  };
+
+  // Handle manifest upload with IMMEDIATE DB WRITE-THROUGH
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !guideline) return;
 
     if (sections.length > 0 || assets.length > 0) {
-      if (!window.confirm("You already have sections or assets in this guideline. Re-importing will add new sections and update assets additively. Existing copy edits will not be overwritten. Continue?")) {
-        if (e.target) e.target.value = '';
+      if (!window.confirm("Re-importing will add new sections and update assets additively. Existing copy edits will not be overwritten. Continue?")) {
+        if (e.target) e.target.value = "";
         return;
       }
     }
 
     setUploading(true);
+    setSaveStatus("saving");
     try {
       const text = await file.text();
       const manifest = JSON.parse(text);
       
       const parsed = parseManifest(manifest, sections);
-
       setImportReport(parsed.report);
       
-      const newSections = parsed.sections.map((s, i) => ({
-        ...s,
-        guideline_id: guideline.id,
-        position: s.position !== undefined ? s.position : i
-      }));
-      setSections(newSections);
-      
-      const newAssets = parsed.assets.map(a => ({
-        ...a,
-        guideline_id: guideline.id
-      }));
-      setAssets(prev => [...prev.filter(pa => !newAssets.find(na => na.id === pa.id)), ...newAssets]);
-      
-      if (parsed.themeSuggested && Object.keys(parsed.themeSuggested).length > 0) {
-        setGuideline({ ...guideline, theme: { ...guideline.theme, ...parsed.themeSuggested } });
+      // Assign real UUIDs to sections if temp_
+      const newSections = parsed.sections.map((s, i) => {
+        const isTemp = !s.id || s.id.startsWith("temp_");
+        return {
+          ...s,
+          id: isTemp ? `sec_${crypto.randomUUID()}` : s.id,
+          guideline_id: guideline.id,
+          position: s.position !== undefined ? s.position : i
+        };
+      });
+
+      // Map temp asset IDs to new real asset UUIDs
+      const assetIdMap = new Map<string, string>();
+      const newAssets = parsed.assets.map(a => {
+        const isTemp = !a.id || a.id.startsWith("temp_");
+        const realId = isTemp ? `ast_${crypto.randomUUID()}` : a.id!;
+        if (a.id) assetIdMap.set(a.id, realId);
+        return {
+          ...a,
+          id: realId,
+          guideline_id: guideline.id
+        };
+      });
+
+      // Update assetId references inside section data if mapped
+      newSections.forEach(sec => {
+        let dStr = JSON.stringify(sec.data || {});
+        assetIdMap.forEach((realId, tempId) => {
+          if (tempId && realId && dStr.includes(tempId)) {
+            dStr = dStr.replaceAll(tempId, realId);
+          }
+        });
+        sec.data = JSON.parse(dStr);
+      });
+
+      // BULK PERSIST TO SUPABASE IMMEDIATELY
+      if (newSections.length > 0) {
+        const { error: secErr } = await (supabase as any)
+          .from("ci_sections")
+          .upsert(newSections);
+        if (secErr) throw secErr;
       }
 
-    } catch (err) {
-      console.error(err);
-      alert("Failed to parse manifest. Please ensure it is valid JSON.");
+      if (newAssets.length > 0) {
+        const { error: astErr } = await (supabase as any)
+          .from("ci_assets")
+          .upsert(newAssets);
+        if (astErr) throw astErr;
+      }
+
+      const mergedTheme = { ...guideline.theme, ...parsed.themeSuggested };
+      if (parsed.themeSuggested && Object.keys(parsed.themeSuggested).length > 0) {
+        await (supabase as any)
+          .from("ci_guidelines")
+          .update({ theme: mergedTheme })
+          .eq("id", guideline.id);
+      }
+
+      setSections(newSections);
+      setAssets(prev => [...prev.filter(pa => !newAssets.find(na => na.id === pa.id)), ...newAssets]);
+      setGuideline({ ...guideline, theme: mergedTheme });
+      setSaveStatus("saved");
+
+    } catch (err: any) {
+      console.error("Error during manifest import & persistence:", err);
+      alert(`Failed to parse/save manifest: ${err.message || err}`);
+      setSaveStatus("error");
+      setSaveErrorMsg(err.message);
     } finally {
       setUploading(false);
-      if (e.target) e.target.value = '';
+      if (e.target) e.target.value = "";
     }
   };
 
@@ -183,17 +363,40 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     if (!guideline?.theme) return {};
     const t = guideline.theme;
     return {
-      '--ci-bg': t.backgroundColor || '#ffffff',
-      '--ci-text': t.textColor || '#111111',
-      '--ci-accent': t.accentColors?.[0] || '#000000',
-      '--ci-border': '#eaeaea',
-      backgroundColor: 'var(--ci-bg)',
-      color: 'var(--ci-text)',
-      fontFamily: t.fontFamily || 'Inter, sans-serif'
+      "--ci-bg": t.backgroundColor || "#ffffff",
+      "--ci-text": t.textColor || "#111111",
+      "--ci-accent": t.accentColors?.[0] || "#000000",
+      "--ci-border": "#eaeaea",
+      backgroundColor: "var(--ci-bg)",
+      color: "var(--ci-text)",
+      fontFamily: t.fontFamily || "Inter, sans-serif"
     } as React.CSSProperties;
   };
 
-  if (loading) return <div className="p-8 animate-pulse text-gray-500">Loading editor...</div>;
+  if (loading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-8 bg-white text-gray-500">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-3" />
+        <p className="font-medium text-sm">Loading CI Builder project...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-8 bg-white text-red-600">
+        <AlertTriangle className="w-10 h-10 mb-3" />
+        <h3 className="font-bold text-lg text-gray-900 mb-1">Failed to load guideline</h3>
+        <p className="text-sm text-gray-600 mb-4">{loadError}</p>
+        <button
+          onClick={loadData}
+          className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg text-xs hover:bg-blue-700"
+        >
+          Retry Loading
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full bg-white text-sm">
@@ -201,12 +404,36 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       {/* LEFT PANE: Admin Controls */}
       <div className="w-64 border-r border-gray-200 flex flex-col shrink-0">
         <div className="p-4 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-800 mb-1">CI Builder</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-semibold text-gray-800">CI Builder</h2>
+
+            {/* Top Bar Save Status Indicator */}
+            {saveStatus === "saving" && (
+              <span className="flex items-center gap-1 text-[11px] text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-full">
+                <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+              </span>
+            )}
+            {saveStatus === "saved" && (
+              <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">
+                <Check className="w-3 h-3" /> Saved
+              </span>
+            )}
+            {saveStatus === "error" && (
+              <button
+                onClick={flushPendingSaves}
+                className="flex items-center gap-1 text-[11px] text-red-600 font-medium bg-red-50 hover:bg-red-100 px-2 py-0.5 rounded-full border border-red-200"
+                title={saveErrorMsg || "Save error - click to retry"}
+              >
+                <AlertTriangle className="w-3 h-3" /> Retry Save
+              </button>
+            )}
+          </div>
+
           <p className="text-xs text-gray-500 mb-4">Edit brand guideline structure and assets.</p>
           
           <label className="flex-1 bg-white border border-gray-300 rounded px-3 py-1.5 text-xs font-medium text-center cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
             <UploadCloud className="w-4 h-4" />
-            {uploading ? "Parsing..." : "Upload Manifest"}
+            {uploading ? "Parsing & Saving..." : "Upload Manifest"}
             <input type="file" accept=".json" className="hidden" onChange={handleFileUpload} />
           </label>
         </div>
@@ -267,12 +494,23 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         </div>
 
         <div className="p-4 border-t border-gray-200 space-y-2">
+          {/* Explicit Save Control */}
+          <button 
+            onClick={flushPendingSaves}
+            disabled={saveStatus === "saving"}
+            className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white rounded px-3 py-1.5 font-medium hover:bg-black disabled:opacity-50 transition-colors"
+          >
+            <Save className="w-4 h-4" />
+            {saveStatus === "saving" ? "Saving Draft..." : "Save Draft"}
+          </button>
+
           <button 
             onClick={() => setShowThemePanel(true)}
-            className="w-full flex items-center justify-center gap-2 bg-white border border-gray-300 rounded px-3 py-1.5 font-medium hover:bg-gray-50"
+            className="w-full flex items-center justify-center gap-2 bg-white border border-gray-300 rounded px-3 py-1.5 font-medium hover:bg-gray-50 text-gray-700"
           >
             <Settings className="w-4 h-4" /> Theme Settings
           </button>
+
           <button 
             onClick={() => setShowPublishModal(true)}
             className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white rounded px-3 py-1.5 font-medium hover:bg-blue-700"
@@ -306,11 +544,24 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                     <select 
                       className="text-sm border border-gray-300 rounded-md p-1.5 min-w-[150px]"
                       value=""
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const secId = e.target.value;
                         if (secId) {
-                          setAssets(assets.map(a => selectedUnassigned.has(a.id!) ? { ...a, section_id: secId } : a));
+                          const updated = assets.map(a => selectedUnassigned.has(a.id!) ? { ...a, section_id: secId } : a);
+                          setAssets(updated);
                           setSelectedUnassigned(new Set());
+                          setSaveStatus("saving");
+                          try {
+                            const ids = Array.from(selectedUnassigned);
+                            await (supabase as any)
+                              .from("ci_assets")
+                              .update({ section_id: secId })
+                              .in("id", ids);
+                            setSaveStatus("saved");
+                          } catch (err: any) {
+                            setSaveStatus("error");
+                            setSaveErrorMsg(err.message);
+                          }
                         }
                       }}
                     >
@@ -379,10 +630,21 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                         <select 
                           className="text-xs border border-gray-200 rounded p-1.5 w-full bg-gray-50 cursor-pointer hover:bg-white"
                           value=""
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const secId = e.target.value;
                             if (secId) {
                               setAssets(assets.map(a => a.id === asset.id ? { ...a, section_id: secId } : a));
+                              setSaveStatus("saving");
+                              try {
+                                await (supabase as any)
+                                  .from("ci_assets")
+                                  .update({ section_id: secId })
+                                  .eq("id", asset.id);
+                                setSaveStatus("saved");
+                              } catch (err: any) {
+                                setSaveStatus("error");
+                                setSaveErrorMsg(err.message);
+                              }
                             }
                           }}
                         >
@@ -429,7 +691,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         <ThemePanel 
           guideline={guideline} 
           onClose={() => setShowThemePanel(false)}
-          onUpdate={(newTheme) => setGuideline({ ...guideline, theme: newTheme })}
+          onUpdate={handleUpdateTheme}
         />
       )}
 
@@ -438,7 +700,9 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           guideline={guideline} 
           sections={sections}
           assets={assets}
-          onClose={() => setShowPublishModal(false)} 
+          onClose={() => setShowPublishModal(false)}
+          onFlushSaves={flushPendingSaves}
+          saveStatus={saveStatus}
         />
       )}
 
