@@ -93,9 +93,11 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       const manifest = JSON.parse(text);
       const parsed = parseManifest(manifest);
 
-      // For MVP, we'll just set them in state. 
-      // In full implementation, we'd save to Supabase here and upload actual image files if provided via a ZIP or folder drag/drop.
-      // Since we only have a JSON manifest, we'll simulate it.
+      if (parsed.sections.length === 0) {
+        alert(`Manifest parsed, but 0 sections were matched. Try adding sections manually or check your JSON format.`);
+      } else {
+        alert("Manifest parsed successfully! (Note: Images are placeholders until actual files are uploaded to storage)");
+      }
       
       const newSections = parsed.sections.map((s, i) => ({
         ...s,
@@ -103,21 +105,25 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         guideline_id: guideline.id,
         position: i
       }));
-
       setSections(newSections);
-      setAssets(parsed.assets);
+      
+      const newAssets = parsed.assets.map(a => ({
+        ...a,
+        guideline_id: guideline.id
+      }));
+      setAssets(newAssets);
       
       // Update theme if suggestions exist
       if (parsed.themeSuggested && Object.keys(parsed.themeSuggested).length > 0) {
         setGuideline({ ...guideline, theme: { ...guideline.theme, ...parsed.themeSuggested } });
       }
 
-      alert("Manifest parsed successfully! (Note: Images are placeholders until actual files are uploaded to storage)");
     } catch (err) {
       console.error(err);
-      alert("Failed to parse manifest.");
+      alert("Failed to parse manifest. Please ensure it is valid JSON.");
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
   };
 
   const applyThemeToCSS = () => {
@@ -127,26 +133,24 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       '--ci-bg': t.backgroundColor || '#ffffff',
       '--ci-text': t.textColor || '#111111',
       '--ci-accent': t.accentColors?.[0] || '#000000',
-      '--ci-border': '#eaeaea', // could be computed based on bg
+      '--ci-border': '#eaeaea',
       backgroundColor: 'var(--ci-bg)',
       color: 'var(--ci-text)',
       fontFamily: t.fontFamily || 'Inter, sans-serif'
     } as React.CSSProperties;
   };
 
-  if (loading) return <div className="p-8">Loading Editor...</div>;
+  if (loading) return <div className="p-8 animate-pulse text-gray-500">Loading editor...</div>;
 
   return (
-    <div className="flex h-full bg-white overflow-hidden text-sm">
+    <div className="flex h-full bg-white text-sm">
       
-      {/* LEFT RAIL: Navigation & Admin Controls */}
-      <div className="w-64 border-r border-gray-200 bg-gray-50 flex flex-col">
+      {/* LEFT PANE: Admin Controls */}
+      <div className="w-64 border-r border-gray-200 flex flex-col shrink-0">
         <div className="p-4 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-800">CI Builder</h2>
-          <p className="text-xs text-gray-500 mt-1">Status: {guideline?.status}</p>
-        </div>
-        
-        <div className="p-4 flex gap-2">
+          <h2 className="font-semibold text-gray-800 mb-1">CI Builder</h2>
+          <p className="text-xs text-gray-500 mb-4">Edit brand guideline structure and assets.</p>
+          
           <label className="flex-1 bg-white border border-gray-300 rounded px-3 py-1.5 text-xs font-medium text-center cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
             <UploadCloud className="w-4 h-4" />
             {uploading ? "Parsing..." : "Upload Manifest"}
@@ -167,7 +171,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             ))
           )}
           
-          <div className="relative mt-2">
+          <div className="mt-2">
             <button 
               onClick={() => setShowAddSectionDropdown(!showAddSectionDropdown)}
               className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-xs p-2 w-full"
@@ -175,7 +179,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               <Plus className="w-3 h-3" /> Add Section
             </button>
             {showAddSectionDropdown && (
-              <div className="absolute left-0 mt-1 w-full bg-white border border-gray-200 shadow-lg rounded-md overflow-hidden z-10 py-1">
+              <div className="mt-1 w-full bg-white border border-gray-200 shadow-sm rounded-md overflow-hidden py-1">
                 {CI_GLOSSARY.map((entry) => (
                   <button
                     key={entry.section_type}
