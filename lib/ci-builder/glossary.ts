@@ -39,7 +39,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '04 · Typography',
     default_headline: 'Typography',
     prefixes: ['Typography', 'Type', 'Fonts'],
-    synonyms: ['font', 'typeface', 'text', 'typesetting'],
+    synonyms: ['font', 'fonts', 'typeface', 'text', 'typesetting'],
     description: 'Typeface families and typesetting scale',
   },
   {
@@ -133,8 +133,11 @@ export function matchSectionType(rawName: string): MatchResult {
   }
 
   // 4. Substring fallback match (any word in the string matches a prefix or synonym)
-  const allWords = parts.map(p => p.toLowerCase());
-  for (const word of allWords) {
+  // Check the full normalized name in lowercase to ensure "StartupFestLogo" matches "logo"
+  const fullLowercaseName = normalizedStr.toLowerCase();
+  
+  // Try to match the whole word if possible first from parts, then fallback to substring
+  for (const word of parts.map(p => p.toLowerCase())) {
     for (const entry of CI_GLOSSARY) {
       if (
         entry.prefixes.some(p => p.toLowerCase() === word) || 
@@ -142,6 +145,16 @@ export function matchSectionType(rawName: string): MatchResult {
       ) {
         return { type: entry.section_type, match_method: 'substring', parts };
       }
+    }
+  }
+
+  // Pure substring fallback
+  for (const entry of CI_GLOSSARY) {
+    if (
+      entry.prefixes.some(p => fullLowercaseName.includes(p.toLowerCase())) ||
+      entry.synonyms.some(s => fullLowercaseName.includes(s.toLowerCase()))
+    ) {
+      return { type: entry.section_type, match_method: 'substring', parts };
     }
   }
 

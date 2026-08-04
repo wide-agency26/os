@@ -12,6 +12,7 @@ export interface ParseResult {
     missingFiles: number;
     detectedNameKeys: string[];
     detectedFileKeys: string[];
+    missingFileRows: string[]; // Track which items had missing files
   };
 }
 
@@ -29,7 +30,8 @@ export function parseManifest(
     unassignedCount: 0,
     missingFiles: 0,
     detectedNameKeys: [] as string[],
-    detectedFileKeys: [] as string[]
+    detectedFileKeys: [] as string[],
+    missingFileRows: [] as string[]
   };
 
   // Populate map with existing sections to support additive behavior
@@ -58,66 +60,81 @@ export function parseManifest(
   const rawItems = Array.isArray(manifest) ? manifest : (manifest.items || []);
   report.totalItems = rawItems.length;
 
-  rawItems.forEach((item: ManifestItem) => {
+  rawItems.forEach((item: any) => {
     // 1. Flexible key mapping
-    const rawName = item.frame_name || item.name || item.title || item.layer;
-    const rawFile = item.file || item.filename || item.image;
+    const keys = Object.keys(item);
+    const nameKey = keys.find(k => ['frame_name', 'name', 'title', 'layer'].includes(k.toLowerCase()));
+    const fileKey = keys.find(k => ['file', 'filename', 'image'].includes(k.toLowerCase()));
+
+    const rawName = nameKey ? item[nameKey] : '';
+    const rawFile = fileKey ? item[fileKey] : '';
 
     // Track detected keys for reporting
-    if (item.frame_name) report.detectedNameKeys.push('frame_name');
-    if (item.name) report.detectedNameKeys.push('name');
-    if (item.title) report.detectedNameKeys.push('title');
-    if (item.layer) report.detectedNameKeys.push('layer');
-
-    if (item.file) report.detectedFileKeys.push('file');
-    if (item.filename) report.detectedFileKeys.push('filename');
-    if (item.image) report.detectedFileKeys.push('image');
+    if (nameKey && !report.detectedNameKeys.includes(nameKey)) report.detectedNameKeys.push(nameKey);
+    if (fileKey && !report.detectedFileKeys.includes(fileKey)) report.detectedFileKeys.push(fileKey);
 
     const nameStr = typeof rawName === 'string' ? rawName : '';
     const fileStr = typeof rawFile === 'string' ? rawFile : '';
 
     if (!fileStr) {
       report.missingFiles++;
+      report.missingFileRows.push(nameStr || 'Unknown Item');
     }
 
     const { type: sectionType, match_method, parts } = matchSectionType(nameStr);
     const tempAssetId = `temp_asset_${Math.random().toString(36).substring(2, 9)}`;
+    const isMissingFile = !fileStr;
 
     const baseAsset: Partial<CIAsset> = {
       id: tempAssetId,
       kind: sectionType || 'unmatched',
-      storage_path: fileStr,
+      storage_path: fileStr || '', // Ensure it's never undefined
       public_url: '', // To be resolved later
-      label: parts.length > 1 ? parts.slice(1).join(' ') : (nameStr || fileStr),
+      label: parts.length > 1 ? parts.slice(1).join(' ') : (nameStr || fileStr || 'Untitled Asset'),
       metadata: { 
         width: item.width, 
         height: item.height,
-        match_method 
+        match_method: match_method || 'none',
+        is_missing_file: isMissingFile
       }
     };
+
+    // Color extraction: always run if hex exists, regardless of section match
+    const hexMatch = nameStr.match(/#[0-9A-Fa-f]{6}/);
+    if (hexMatch) {
+      const hex = hexMatch[0];
+      const colorSec = getOrCreateSection('colors');
+      if (!colorSec.data.groups) colorSec.data.groups = [];
+      let groupLabel = 'Extracted';
+      
+      // If it matched colors section specifically, use its grouping logic
+      if (sectionType === 'colors') {
+         groupLabel = parts[1] || 'Primary';
+      }
+      
+      let group = colorSec.data.groups.find((g: any) => g.groupLabel === groupLabel);
+      if (!group) {
+        group = { groupLabel, swatches: [] };
+        colorSec.data.groups.push(group);
+      }
+      group.swatches.push({
+        id: `swatch_${Math.random().toString(36).substring(2, 9)}`,
+        name: nameStr.replace(hex, '').trim() || 'Color',
+        hex
+      });
+      
+      // Theme auto-suggestion
+      if (groupLabel.toLowerCase().includes('dark') || groupLabel.toLowerCase().includes('background')) {
+        if (!themeSuggested.backgroundColor) themeSuggested.backgroundColor = hex;
+      } else if (themeSuggested.accentColors.length < 3) {
+        themeSuggested.accentColors.push(hex);
+      }
+    }
 
     if (!sectionType) {
       report.unassignedCount++;
       baseAsset.section_id = null; // Explicitly unassigned
       assets.push(baseAsset);
-      
-      // Auto-extract colors even if section wasn't fully matched
-      const hexMatch = nameStr.match(/#[0-9A-Fa-f]{6}/);
-      if (hexMatch) {
-        const hex = hexMatch[0];
-        const colorSec = getOrCreateSection('colors');
-        if (!colorSec.data.groups) colorSec.data.groups = [];
-        let group = colorSec.data.groups.find((g: any) => g.groupLabel === 'Extracted');
-        if (!group) {
-          group = { groupLabel: 'Extracted', swatches: [] };
-          colorSec.data.groups.push(group);
-        }
-        group.swatches.push({
-          id: `swatch_${Math.random().toString(36).substring(2, 9)}`,
-          name: nameStr.replace(hex, '').trim() || 'Color',
-          hex
-        });
-      }
       return;
     }
 
@@ -127,36 +144,9 @@ export function parseManifest(
 
     switch (sectionType) {
       case 'colors': {
-        const groupLabel = parts[1] || 'Primary';
-        const swatchRaw = parts.slice(1).join(' ');
-        
-        let hex = '#000000';
-        const hexMatch = swatchRaw.match(/#[0-9A-Fa-f]{6}/);
-        if (hexMatch) hex = hexMatch[0];
-
-        const name = swatchRaw.replace(/#[0-9A-Fa-f]{6}/, '').trim() || 'Color';
-
-        if (!section.data.groups) section.data.groups = [];
-        let group = section.data.groups.find((g: any) => g.groupLabel === groupLabel);
-        if (!group) {
-          group = { groupLabel, swatches: [] };
-          section.data.groups.push(group);
-        }
-        
-        group.swatches.push({
-          id: `swatch_${Math.random().toString(36).substring(2, 9)}`,
-          name,
-          hex
-        });
-
-        // Theme auto-suggestion
-        if (groupLabel.toLowerCase().includes('dark') || groupLabel.toLowerCase().includes('background')) {
-          if (!themeSuggested.backgroundColor) themeSuggested.backgroundColor = hex;
-        } else if (themeSuggested.accentColors.length < 3) {
-          themeSuggested.accentColors.push(hex);
-        }
-        
-        if (fileStr) assets.push(baseAsset);
+        // Hex logic handled above globally for all items with hex codes.
+        // We still add the asset for colors if there's a file, but the swatch is already made.
+        assets.push(baseAsset);
         break;
       }
       
