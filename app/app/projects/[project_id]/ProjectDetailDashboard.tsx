@@ -96,7 +96,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
       // Fetch Project Users
       const { data: pUsers } = await (supabase as any)
         .from("erp_project_users")
-        .select(`id, project_role, user:user_id ( id, full_name, email )`)
+        .select(`id, project_role, user:user_id ( id, full_name )`)
         .eq("project_id", projectId);
       setProjectUsers(pUsers || []);
 
@@ -116,8 +116,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
       const { data: timesheets } = await (supabase as any)
         .from("erp_timesheets")
         .select(`
-          id, log_date, hours, billing_rate, note, 
-          employee:employee_id ( full_name )
+          id, log_date, hours, billing_rate, note
         `)
         .eq("project_id", projectId)
         .order("log_date", { ascending: false });
@@ -142,7 +141,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
       const { data: expenses } = await (supabase as any)
         .from("erp_expenses")
         .select(`
-          id, expense_date, expense_type, amount, status
+          id, expense_date, amount, status
         `)
         .eq("project_id", projectId)
         .order("expense_date", { ascending: false });
@@ -155,7 +154,7 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
       const { data: invoices } = await (supabase as any)
         .from("erp_invoices")
         .select(`
-          id, title, issue_date, grand_total, status
+          id, issue_date, grand_total, status
         `)
         .eq("project_id", projectId)
         .neq("status", "Cancelled")
