@@ -94,7 +94,7 @@ export function parseManifest(
       metadata: { 
         width: item.width, 
         height: item.height,
-        match_method: match_method || 'none',
+        match_method: match_method || null,
         is_missing_file: isMissingFile
       }
     };
