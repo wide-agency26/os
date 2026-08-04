@@ -5,6 +5,7 @@ import { AdminEditor } from "@/components/ci-builder/AdminEditor";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import { isFounder } from "@/lib/rbac";
 
 export default function CIBuilderPage() {
   const params = useParams();
@@ -16,15 +17,18 @@ export default function CIBuilderPage() {
     async function checkAuth() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
       
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
         
-      if (profile && (profile.role === "admin" || profile.role === "superadmin")) {
+      if (profile && isFounder(profile.role)) {
         setIsAdmin(true);
       }
       setLoading(false);

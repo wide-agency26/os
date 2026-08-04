@@ -6,6 +6,8 @@ import { Workspace } from "@/components/frappe-ui/Workspace";
 import { AdminEditor } from "@/components/ci-builder/AdminEditor";
 import { Loader2 } from "lucide-react";
 
+import { isFounder } from "@/lib/rbac";
+
 export default function CIBuilderHub() {
   const [projects, setProjects] = useState<{ id: string; title: string }[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -17,24 +19,29 @@ export default function CIBuilderHub() {
   useEffect(() => {
     async function loadInitialData() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
-      if (profile && (profile.role === "admin" || profile.role === "superadmin")) {
+      if (profile && isFounder(profile.role)) {
         setIsAdmin(true);
         
         // Fetch projects
-        const { data: projData } = await (supabase as any)
+        const { data: projData, error: projErr } = await (supabase as any)
           .from("projects")
           .select("id, title")
           .order("title");
           
-        if (projData && projData.length > 0) {
+        if (projErr) {
+          console.error("Error loading projects for CI Builder:", projErr);
+        } else if (projData && projData.length > 0) {
           setProjects(projData);
           setSelectedProjectId(projData[0].id);
         }
