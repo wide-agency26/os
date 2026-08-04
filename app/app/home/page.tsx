@@ -1,7 +1,35 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
+import { isFounder } from "@/lib/rbac";
 import { Workspace, Section, ShortcutCard } from "@/components/frappe-ui/Workspace";
-import { FileText, Users, Briefcase } from "lucide-react";
+import { FileText, Users, Briefcase, BookOpen } from "lucide-react";
 
 export default function HomeWorkspace() {
+  const router = useRouter();
+
+  useEffect(() => {
+    async function checkRole() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profile && !isFounder(profile.role)) {
+        // Redirect client role users directly to their company brand guidelines dashboard
+        router.push("/app/client-guidelines");
+      }
+    }
+    checkRole();
+  }, [router]);
+
   return (
     <Workspace>
       <div className="mb-8">
@@ -11,8 +39,9 @@ export default function HomeWorkspace() {
 
       <Section title="Your Shortcuts">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4">
+          <ShortcutCard title="Brand Guidelines" icon={BookOpen} href="/app/projects/ci-builder" />
+          <ShortcutCard title="Client Access Requests" icon={Users} href="/app/client-access" />
           <ShortcutCard title="Accounting" icon={FileText} href="/app/accounting" />
-          <ShortcutCard title="HR" icon={Users} href="/app/hr" />
           <ShortcutCard title="Projects" icon={Briefcase} href="/app/projects" />
         </div>
       </Section>

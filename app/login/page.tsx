@@ -8,9 +8,12 @@ import { WideLogo } from "@/components/brand/WideLogo";
 
 function LoginForm() {
   const searchParams = useSearchParams();
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -19,13 +22,44 @@ function LoginForm() {
     if (q) setError(decodeURIComponent(q));
   }, [searchParams]);
 
-  async function handleLogin(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
     setLoading(true);
 
     try {
       const supabase = createClient();
+
+      if (mode === "signup") {
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: fullName, role: "client" }
+          }
+        });
+
+        if (signUpErr) {
+          setError(signUpErr.message);
+          setLoading(false);
+          return;
+        }
+
+        if (signUpData.user) {
+          // Explicitly insert or update profile role as client
+          await supabase.from("profiles").upsert({
+            id: signUpData.user.id,
+            full_name: fullName,
+            role: "client"
+          });
+
+          setSuccessMsg("Account created successfully! Please sign in below.");
+          setMode("login");
+          setLoading(false);
+          return;
+        }
+      }
 
       // 1. Authenticate the user
       const { data: authData, error: authError } =
@@ -45,27 +79,6 @@ function LoginForm() {
         setLoading(false);
         return;
       }
-
-      // 2. Fetch the user's role from the profiles table
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", authData.user.id)
-        .single();
-
-      if (profileError || !profile) {
-        router.push("/login");
-        return;
-      }
-
-      const { data: workspace } = await supabase
-        .from("profiles")
-        .select("primary_account_id")
-        .eq("id", authData.user.id)
-        .maybeSingle();
-
-      const workspaceId =
-        (workspace?.primary_account_id as string | null) || authData.user.id;
 
       router.push("/app/home");
     } catch {
@@ -98,13 +111,56 @@ function LoginForm() {
           </p>
         </div>
 
+        {/* Mode Tabs */}
+        <div className="flex bg-surface-raised p-1 rounded-xl border border-border mb-6 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => { setMode("login"); setError(null); setSuccessMsg(null); }}
+            className={`flex-1 py-2 rounded-lg transition-all ${mode === "login" ? "bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-secondary"}`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode("signup"); setError(null); setSuccessMsg(null); }}
+            className={`flex-1 py-2 rounded-lg transition-all ${mode === "signup" ? "bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-secondary"}`}
+          >
+            Client Registration
+          </button>
+        </div>
+
         {/* Login Card */}
         <div className="bg-surface rounded-2xl border border-border p-8">
-          <form onSubmit={handleLogin} className="space-y-5">
-            {/* Error Message */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Error & Success Messages */}
             {error && (
               <div className="px-4 py-3 bg-danger/10 border border-danger/20 rounded-lg">
                 <p className="text-sm text-danger">{error}</p>
+              </div>
+            )}
+            {successMsg && (
+              <div className="px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                <p className="text-sm text-emerald-400">{successMsg}</p>
+              </div>
+            )}
+
+            {mode === "signup" && (
+              <div>
+                <label
+                  htmlFor="fullName"
+                  className="block text-[11px] font-medium text-text-muted uppercase tracking-wider mb-2"
+                >
+                  Full Name
+                </label>
+                <input
+                  id="fullName"
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Jane Doe"
+                  required
+                  className="w-full px-4 py-3 bg-surface-raised border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted/60 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-all"
+                />
               </div>
             )}
 
@@ -185,6 +241,8 @@ function LoginForm() {
                   </svg>
                   Authenticating...
                 </span>
+              ) : mode === "signup" ? (
+                "Create Client Account"
               ) : (
                 "Initialize Session"
               )}
