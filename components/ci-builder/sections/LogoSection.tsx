@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { CISection, CIAsset, LogoSectionData, LogoAsset, MinSizeCard } from "@/lib/ci-builder/types";
 import { SectionContainer } from "./SectionContainer";
-import { EditableText, EditableImage, EditableListItem, AddItemButton } from "../primitives";
+import { EditableText, EditableImage, EditableListItem, AddItemButton, CopyableValue } from "../primitives";
 import { Settings } from "lucide-react";
 
 export interface SectionProps {
@@ -282,22 +282,32 @@ export function LogoSection({
                   className="text-xs font-semibold text-[var(--ci-text-muted,#666)] uppercase mb-2"
                 />
                 <div className="flex items-baseline gap-1">
-                  <EditableText
-                    tag="span"
-                    value={ms.size}
-                    placeholder="32"
-                    onSave={(val) => updateMinSize(ms.id, "size", val)}
-                    isAdmin={isAdmin}
-                    className="text-2xl font-extrabold text-[var(--ci-accent,#000)]"
-                  />
-                  <EditableText
-                    tag="span"
-                    value={ms.unit}
-                    placeholder="px"
-                    onSave={(val) => updateMinSize(ms.id, "unit", val)}
-                    isAdmin={isAdmin}
-                    className="text-xs font-mono uppercase text-gray-500"
-                  />
+                  {isAdmin ? (
+                    <>
+                      <EditableText
+                        tag="span"
+                        value={ms.size}
+                        placeholder="32"
+                        onSave={(val) => updateMinSize(ms.id, "size", val)}
+                        isAdmin={isAdmin}
+                        className="text-2xl font-extrabold text-[var(--ci-accent,#000)]"
+                      />
+                      <EditableText
+                        tag="span"
+                        value={ms.unit}
+                        placeholder="px"
+                        onSave={(val) => updateMinSize(ms.id, "unit", val)}
+                        isAdmin={isAdmin}
+                        className="text-xs font-mono uppercase text-gray-500"
+                      />
+                    </>
+                  ) : (
+                    <CopyableValue
+                      value={`${ms.size}${ms.unit}`}
+                      label={`${ms.useCase} min size`}
+                      className="text-2xl font-extrabold text-[var(--ci-accent,#000)]"
+                    />
+                  )}
                 </div>
               </EditableListItem>
             ))}

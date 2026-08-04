@@ -4,3 +4,4 @@ export * from "./EditableColor";
 export * from "./EditableListItem";
 export * from "./AddItemButton";
 export * from "./AssetPickerModal";
+export * from "./CopyableValue";

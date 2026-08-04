@@ -3,6 +3,9 @@
 import React from "react";
 import { CISection } from "@/lib/ci-builder/types";
 import { EditableText } from "../primitives/EditableText";
+import { Sparkles } from "lucide-react";
+import { toPromptText } from "@/lib/ci-builder/prompts";
+import { triggerToast } from "../Toast";
 
 export interface SectionContainerProps {
   section: Partial<CISection>;
@@ -23,20 +26,41 @@ export function SectionContainer({
     }
   };
 
+  const handleCopySectionPrompt = () => {
+    const text = toPromptText(section);
+    navigator.clipboard.writeText(text);
+    const label = section.eyebrow_label || section.headline || section.section_type || "Section";
+    triggerToast(`"${label}" prompt copied`);
+  };
+
   return (
-    <section id={section.section_type} className="py-24 border-b border-[var(--ci-border,#eaeaea)] scroll-mt-12">
+    <section id={section.section_type} className="py-20 border-b border-[var(--ci-border,#eaeaea)] scroll-mt-16">
       <div className="max-w-5xl mx-auto px-6">
-        <div className="mb-16">
-          {(section.eyebrow_label || isAdmin) && (
-            <EditableText
-              tag="p"
-              value={section.eyebrow_label || ""}
-              placeholder="EYEBROW LABEL"
-              onSave={(val) => handleSaveField("eyebrow_label", val)}
-              isAdmin={isAdmin}
-              className="text-[var(--ci-accent,#000)] font-semibold tracking-wider text-sm mb-4 uppercase"
-            />
-          )}
+        <div className="mb-14">
+          <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+            {(section.eyebrow_label || isAdmin) && (
+              <EditableText
+                tag="p"
+                value={section.eyebrow_label || ""}
+                placeholder="EYEBROW LABEL"
+                onSave={(val) => handleSaveField("eyebrow_label", val)}
+                isAdmin={isAdmin}
+                className="text-[var(--ci-accent,#000)] font-bold tracking-wider text-xs uppercase"
+              />
+            )}
+
+            {/* Public Section Action: Copy as Prompt */}
+            {!isAdmin && (
+              <button
+                onClick={handleCopySectionPrompt}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100/80 hover:bg-gray-200/80 text-gray-700 text-xs font-semibold rounded-lg transition-colors select-none border border-gray-200/60 shadow-sm shrink-0"
+                title="Copy section rules formatted for AI prompts"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                <span>Copy as Prompt</span>
+              </button>
+            )}
+          </div>
 
           {(section.headline || isAdmin) && (
             <div className="text-4xl md:text-5xl font-bold tracking-tight text-[var(--ci-text,#111)]">

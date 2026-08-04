@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { CISection, CIAsset, GridFramesSectionData, FrameCard } from "@/lib/ci-builder/types";
 import { SectionContainer } from "./SectionContainer";
-import { EditableText, EditableImage, EditableListItem, AddItemButton } from "../primitives";
+import { EditableText, EditableImage, EditableListItem, AddItemButton, CopyableValue } from "../primitives";
 import { Settings } from "lucide-react";
 
 export interface SectionProps {
@@ -143,13 +143,14 @@ export function GridFramesSection({
                     <EditableText
                       tag="h4"
                       value={frame.label}
-                      placeholder="Template Title"
+                      placeholder="Frame Title"
                       onSave={(val) => updateFrame(frame.id, { label: val })}
                       isAdmin={isAdmin}
-                      className="font-bold text-base text-[var(--ci-text,#111)]"
+                      className="font-bold text-sm text-[var(--ci-text,#111)]"
                     />
-                    <span className="text-[10px] font-mono font-bold uppercase bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                      {frame.aspectRatio || "1:1"}
+
+                    <span className="text-xs font-mono font-bold text-[var(--ci-accent,#0066ff)] bg-blue-50 px-2 py-0.5 rounded">
+                      <CopyableValue value={frame.aspectRatio || "1:1"} label={`${frame.label} ratio`} />
                     </span>
                   </div>
 

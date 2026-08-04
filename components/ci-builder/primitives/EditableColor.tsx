@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Pencil, Check, X, Copy } from "lucide-react";
 import { ColorSwatch } from "@/lib/ci-builder/types";
+import { triggerToast } from "../Toast";
+import { CopyableValue } from "./CopyableValue";
 
 export interface EditableColorProps {
   swatch: ColorSwatch;
@@ -49,6 +51,7 @@ export function EditableColor({
   const copyHex = () => {
     navigator.clipboard.writeText(swatch.hex);
     setCopied(true);
+    triggerToast(`"${swatch.name || swatch.hex}" copied`);
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -85,14 +88,18 @@ export function EditableColor({
         <p className="font-medium text-[var(--ci-text,#111)] text-xs truncate" title={swatch.name}>
           {swatch.name}
         </p>
-        <div className="flex items-center justify-between mt-1">
-          <p className="text-[var(--ci-text-muted,#666)] text-[11px] uppercase font-mono tracking-wide">
-            {swatch.hex}
-          </p>
+        <div className="flex items-center justify-between mt-1 text-[11px] font-mono">
+          <CopyableValue
+            value={swatch.hex}
+            label={swatch.name || swatch.hex}
+            className="text-[var(--ci-text-muted,#666)] uppercase font-mono tracking-wide"
+          />
           {swatch.cssVar && (
-            <p className="text-[10px] text-gray-400 font-mono truncate max-w-[80px]" title={swatch.cssVar}>
-              {swatch.cssVar}
-            </p>
+            <CopyableValue
+              value={swatch.cssVar}
+              label={`${swatch.name} CSS Variable`}
+              className="text-[10px] text-gray-400 font-mono truncate max-w-[80px]"
+            />
           )}
         </div>
       </div>

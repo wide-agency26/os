@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { CISection, CIAsset, ButtonsSectionData, ButtonSample, StateColors } from "@/lib/ci-builder/types";
 import { SectionContainer } from "./SectionContainer";
-import { EditableText, EditableListItem, AddItemButton } from "../primitives";
+import { EditableText, EditableListItem, AddItemButton, CopyableValue } from "../primitives";
 import { Settings } from "lucide-react";
 
 export interface SectionProps {
@@ -134,7 +134,7 @@ export function ButtonsSection({
                   </div>
 
                   {/* Rendered Button Sample */}
-                  <div className="h-28 bg-gray-50 rounded-xl border border-dashed border-gray-200 flex items-center justify-center p-4 mb-6">
+                  <div className="h-28 bg-gray-50 rounded-xl border border-dashed border-gray-200 flex items-center justify-center p-4 mb-4">
                     <button
                       style={btnStyle}
                       className="px-6 py-3 rounded-xl font-semibold text-sm border-2 transition-all shadow-sm flex items-center gap-2"
@@ -148,6 +148,15 @@ export function ButtonsSection({
                       />
                     </button>
                   </div>
+
+                  {/* Copyable Spec Values for Current State */}
+                  {!isAdmin && (
+                    <div className="flex items-center gap-3 text-[11px] font-mono text-gray-500 mb-2 flex-wrap">
+                      {curColors.bg && <CopyableValue value={curColors.bg} label={`${btn.label} (${activeTab}) bg`} displayValue={`bg: ${curColors.bg}`} />}
+                      {curColors.text && <CopyableValue value={curColors.text} label={`${btn.label} (${activeTab}) text`} displayValue={`text: ${curColors.text}`} />}
+                      {curColors.border && <CopyableValue value={curColors.border} label={`${btn.label} (${activeTab}) border`} displayValue={`border: ${curColors.border}`} />}
+                    </div>
+                  )}
                 </div>
 
                 {/* State Color Config Toggle */}

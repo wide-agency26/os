@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { CISection, CIAsset, TypographySectionData, TypeRow, TypeScaleEntry } from "@/lib/ci-builder/types";
 import { SectionContainer } from "./SectionContainer";
-import { EditableText, EditableListItem, AddItemButton } from "../primitives";
+import { EditableText, EditableListItem, AddItemButton, CopyableValue } from "../primitives";
 import { Settings, X } from "lucide-react";
 
 export interface SectionProps {
@@ -94,7 +94,6 @@ export function TypographySection({
                 fontWeight: row.fontWeight || "normal",
                 lineHeight: row.lineHeight || "1.4"
               };
-              const specDisplay = `${row.fontSize || "32px"} / ${row.lineHeight || "1.2"} • ${row.fontWeight || "700"}`;
 
               return (
                 <EditableListItem
@@ -114,14 +113,24 @@ export function TypographySection({
                       className="font-bold text-sm text-[var(--ci-text,#111)] uppercase tracking-wider"
                     />
 
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-mono text-gray-500 bg-gray-50 px-2 py-1 rounded">
-                        {specDisplay}
-                      </span>
+                    <div className="flex items-center gap-2 flex-wrap text-xs font-mono text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg">
+                      {row.fontFamily && (
+                        <CopyableValue value={row.fontFamily} label={`${row.label} Font`} className="font-sans font-medium" />
+                      )}
+                      {row.fontSize && (
+                        <CopyableValue value={row.fontSize} label={`${row.label} Size`} />
+                      )}
+                      {row.fontWeight && (
+                        <CopyableValue value={row.fontWeight} label={`${row.label} Weight`} displayValue={`w:${row.fontWeight}`} />
+                      )}
+                      {row.lineHeight && (
+                        <CopyableValue value={row.lineHeight} label={`${row.label} Line Height`} displayValue={`lh:${row.lineHeight}`} />
+                      )}
+
                       {isAdmin && (
                         <button
                           onClick={() => setActiveSpecRowId(activeSpecRowId === row.id ? null : row.id)}
-                          className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                          className="p-1 text-gray-400 hover:text-blue-600 rounded ml-1"
                           title="Configure Font Family, Weight, Size"
                         >
                           <Settings className="w-4 h-4" />
