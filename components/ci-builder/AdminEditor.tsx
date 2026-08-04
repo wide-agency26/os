@@ -327,8 +327,8 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                       </div>
                       
                       <div className="p-3">
-                        <div className="text-xs font-semibold text-gray-800 truncate mb-1" title={asset.label}>{asset.label}</div>
-                        <div className="text-[10px] text-gray-500 truncate mb-2" title={asset.storage_path}>{asset.storage_path}</div>
+                        <div className="text-xs font-semibold text-gray-800 truncate mb-1" title={asset.label || ''}>{asset.label}</div>
+                        <div className="text-[10px] text-gray-500 truncate mb-2" title={asset.storage_path || ''}>{asset.storage_path}</div>
                         
                         <select 
                           className="text-xs border border-gray-200 rounded p-1.5 w-full bg-gray-50 cursor-pointer hover:bg-white"
