@@ -29,8 +29,11 @@ export function parseManifest(manifest: ManifestJson): ParseResult {
     return sectionsMap.get(type)!;
   };
 
-  manifest.items.forEach(item => {
-    const sectionType = getSectionTypeByPrefix(item.frame_name);
+  // Normalize items array
+  const rawItems = Array.isArray(manifest) ? manifest : (manifest.items || []);
+
+  rawItems.forEach((item: ManifestItem) => {
+    const sectionType = getSectionTypeByPrefix(item.frame_name || '');
     
     if (!sectionType) {
       unmatched.push(item);
