@@ -150,9 +150,9 @@ export function PublishModal({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900">Successfully Published & Verified!</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Successfully Published!</h3>
               <p className="text-sm text-gray-500">
-                Your brand guideline snapshot is verified in the database and live for clients.
+                Your brand guideline snapshot has been saved to the database. Share the link below or check your client portal to view.
               </p>
 
               <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg flex items-center gap-2">

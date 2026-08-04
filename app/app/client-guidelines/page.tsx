@@ -51,7 +51,6 @@ function GuidelinesContent() {
           .select(`
             id,
             slug,
-            brand_name,
             updated_at,
             projects!inner (
               id,
@@ -81,7 +80,7 @@ function GuidelinesContent() {
             return {
               id: g.id,
               slug: g.slug,
-              brand_name: g.brand_name || proj?.title || "Brand Guideline",
+              brand_name: proj?.title || cust?.company || "Brand Guideline",
               project_title: proj?.title || "Brand Guideline Project",
               company_name: cust?.company || cust?.name || "WIDE Client",
               updated_at: g.updated_at
