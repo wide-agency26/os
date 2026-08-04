@@ -30,6 +30,10 @@ export default function CIBuilderHub() {
         .eq("id", user.id)
         .maybeSingle();
 
+      console.log("[CI Builder Debug] User ID:", user.id);
+      console.log("[CI Builder Debug] Profile Role:", profile?.role);
+      console.log("[CI Builder Debug] isFounder:", isFounder(profile?.role));
+
       if (profile && isFounder(profile.role)) {
         setIsAdmin(true);
         
@@ -39,6 +43,10 @@ export default function CIBuilderHub() {
           .select("id, title")
           .order("title");
           
+        console.log("[CI Builder Debug] Projects Query Error:", projErr);
+        console.log("[CI Builder Debug] Projects Query Count:", projData?.length ?? 0);
+        console.log("[CI Builder Debug] Projects Query Data:", projData);
+
         if (projErr) {
           console.error("Error loading projects for CI Builder:", projErr);
         } else if (projData && projData.length > 0) {
