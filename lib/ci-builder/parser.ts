@@ -1,24 +1,50 @@
 import { ManifestJson, ManifestItem, SectionType, CISection, CIAsset, ColorSwatch, ColorGroup, LogoAsset, FrameCard, BackgroundGroup, ApplicationCard, DoDontItem } from './types';
-import { CI_GLOSSARY, getSectionTypeByPrefix } from './glossary';
+import { CI_GLOSSARY, matchSectionType } from './glossary';
 
 export interface ParseResult {
-  sections: Partial<CISection>[]; // We use Partial because they don't have DB IDs yet
-  assets: Partial<CIAsset>[];
-  unmatched: ManifestItem[];
+  sections: Partial<CISection>[]; // Existing + new sections
+  assets: Partial<CIAsset>[]; // All items parsed
   themeSuggested: any;
+  report: {
+    totalItems: number;
+    assignedCount: number;
+    unassignedCount: number;
+    missingFiles: number;
+    detectedNameKeys: string[];
+    detectedFileKeys: string[];
+  };
 }
 
-export function parseManifest(manifest: ManifestJson): ParseResult {
+export function parseManifest(
+  manifest: ManifestJson,
+  existingSections: Partial<CISection>[] = []
+): ParseResult {
   const sectionsMap = new Map<SectionType, Partial<CISection>>();
   const assets: Partial<CIAsset>[] = [];
-  const unmatched: ManifestItem[] = [];
   const themeSuggested: any = { accentColors: [] };
+
+  const report = {
+    totalItems: 0,
+    assignedCount: 0,
+    unassignedCount: 0,
+    missingFiles: 0,
+    detectedNameKeys: [] as string[],
+    detectedFileKeys: [] as string[]
+  };
+
+  // Populate map with existing sections to support additive behavior
+  existingSections.forEach(sec => {
+    if (sec.section_type) {
+      sectionsMap.set(sec.section_type, { ...sec });
+    }
+  });
 
   // Helper to ensure section exists
   const getOrCreateSection = (type: SectionType) => {
     if (!sectionsMap.has(type)) {
       const glos = CI_GLOSSARY.find(g => g.section_type === type);
       sectionsMap.set(type, {
+        id: `temp_${Math.random().toString(36).substring(2, 9)}`,
         section_type: type,
         eyebrow_label: glos?.eyebrow_label || '',
         headline: glos?.default_headline || '',
@@ -29,45 +55,84 @@ export function parseManifest(manifest: ManifestJson): ParseResult {
     return sectionsMap.get(type)!;
   };
 
-  // Normalize items array
   const rawItems = Array.isArray(manifest) ? manifest : (manifest.items || []);
+  report.totalItems = rawItems.length;
 
   rawItems.forEach((item: ManifestItem) => {
-    const sectionType = getSectionTypeByPrefix(item.frame_name || '');
-    
-    if (!sectionType) {
-      unmatched.push(item);
-      return;
+    // 1. Flexible key mapping
+    const rawName = item.frame_name || item.name || item.title || item.layer;
+    const rawFile = item.file || item.filename || item.image;
+
+    // Track detected keys for reporting
+    if (item.frame_name) report.detectedNameKeys.push('frame_name');
+    if (item.name) report.detectedNameKeys.push('name');
+    if (item.title) report.detectedNameKeys.push('title');
+    if (item.layer) report.detectedNameKeys.push('layer');
+
+    if (item.file) report.detectedFileKeys.push('file');
+    if (item.filename) report.detectedFileKeys.push('filename');
+    if (item.image) report.detectedFileKeys.push('image');
+
+    const nameStr = typeof rawName === 'string' ? rawName : '';
+    const fileStr = typeof rawFile === 'string' ? rawFile : '';
+
+    if (!fileStr) {
+      report.missingFiles++;
     }
 
-    const section = getOrCreateSection(sectionType);
-    const parts = item.frame_name.split('/').map(s => s.trim());
-    // parts[0] is the prefix (e.g. Logo)
-    // parts[1] and onwards are specific to the type
-
-    // Temporary ID for linking assets before DB insertion
-    const tempAssetId = `temp_${Math.random().toString(36).substr(2, 9)}`;
+    const { type: sectionType, match_method, parts } = matchSectionType(nameStr);
+    const tempAssetId = `temp_asset_${Math.random().toString(36).substring(2, 9)}`;
 
     const baseAsset: Partial<CIAsset> = {
       id: tempAssetId,
-      kind: sectionType, // default
-      storage_path: item.file,
-      public_url: '', // will be resolved on upload
-      label: parts[1] || item.file,
-      metadata: { width: item.width, height: item.height }
+      kind: sectionType || 'unmatched',
+      storage_path: fileStr,
+      public_url: '', // To be resolved later
+      label: parts.length > 1 ? parts.slice(1).join(' ') : (nameStr || fileStr),
+      metadata: { 
+        width: item.width, 
+        height: item.height,
+        match_method 
+      }
     };
+
+    if (!sectionType) {
+      report.unassignedCount++;
+      baseAsset.section_id = null; // Explicitly unassigned
+      assets.push(baseAsset);
+      
+      // Auto-extract colors even if section wasn't fully matched
+      const hexMatch = nameStr.match(/#[0-9A-Fa-f]{6}/);
+      if (hexMatch) {
+        const hex = hexMatch[0];
+        const colorSec = getOrCreateSection('colors');
+        if (!colorSec.data.groups) colorSec.data.groups = [];
+        let group = colorSec.data.groups.find((g: any) => g.groupLabel === 'Extracted');
+        if (!group) {
+          group = { groupLabel: 'Extracted', swatches: [] };
+          colorSec.data.groups.push(group);
+        }
+        group.swatches.push({
+          id: `swatch_${Math.random().toString(36).substring(2, 9)}`,
+          name: nameStr.replace(hex, '').trim() || 'Color',
+          hex
+        });
+      }
+      return;
+    }
+
+    report.assignedCount++;
+    const section = getOrCreateSection(sectionType);
+    baseAsset.section_id = section.id;
 
     switch (sectionType) {
       case 'colors': {
-        // e.g. Colors / Neon / Cyan #00ECFF
         const groupLabel = parts[1] || 'Primary';
-        const swatchRaw = parts[2] || parts[1];
+        const swatchRaw = parts.slice(1).join(' ');
         
         let hex = '#000000';
         const hexMatch = swatchRaw.match(/#[0-9A-Fa-f]{6}/);
-        if (hexMatch) {
-          hex = hexMatch[0];
-        }
+        if (hexMatch) hex = hexMatch[0];
 
         const name = swatchRaw.replace(/#[0-9A-Fa-f]{6}/, '').trim() || 'Color';
 
@@ -78,12 +143,11 @@ export function parseManifest(manifest: ManifestJson): ParseResult {
           section.data.groups.push(group);
         }
         
-        const swatch: ColorSwatch = {
-          id: `swatch_${Math.random().toString(36).substr(2, 9)}`,
+        group.swatches.push({
+          id: `swatch_${Math.random().toString(36).substring(2, 9)}`,
           name,
           hex
-        };
-        group.swatches.push(swatch);
+        });
 
         // Theme auto-suggestion
         if (groupLabel.toLowerCase().includes('dark') || groupLabel.toLowerCase().includes('background')) {
@@ -92,53 +156,43 @@ export function parseManifest(manifest: ManifestJson): ParseResult {
           themeSuggested.accentColors.push(hex);
         }
         
-        // Colors don't necessarily need asset entries if they are just swatches, but we can store the swatch img if needed.
-        if (item.file) {
-          assets.push(baseAsset);
-        }
+        if (fileStr) assets.push(baseAsset);
         break;
       }
       
       case 'logo': {
-        // Logo / Primary / Light
-        const type = parts[1] || 'Logo';
+        const typeLabel = parts[1] || 'Logo';
         const stageRaw = (parts[2] || 'any').toLowerCase();
         const stage = ['dark', 'light'].includes(stageRaw) ? stageRaw : 'any';
 
         if (!section.data.logos) section.data.logos = [];
-        
-        const logoAsset: LogoAsset = {
+        section.data.logos.push({
           assetId: tempAssetId,
-          label: type,
+          label: typeLabel,
           stage: stage as 'dark' | 'light' | 'any'
-        };
-        section.data.logos.push(logoAsset);
+        });
         assets.push({ ...baseAsset, kind: 'logo' });
         break;
       }
 
       case 'grid_frames': {
-        // Frame / 1x1 / Speaker
         const ratio = parts[1] || '1:1';
         const label = parts[2] || 'Frame';
         
         if (!section.data.frames) section.data.frames = [];
-        
-        const frameCard: FrameCard = {
-          id: `frame_${Math.random().toString(36).substr(2, 9)}`,
+        section.data.frames.push({
+          id: `frame_${Math.random().toString(36).substring(2, 9)}`,
           label,
           aspectRatio: ratio,
           assetId: tempAssetId
-        };
-        section.data.frames.push(frameCard);
+        });
         assets.push({ ...baseAsset, kind: 'frame' });
         break;
       }
 
       case 'backgrounds': {
-        // Backgrounds / Web / 1
         const groupLabel = parts[1] || 'Backgrounds';
-        const label = parts[2] || 'Bg';
+        const label = parts.slice(2).join(' ') || 'Bg';
 
         if (!section.data.groups) section.data.groups = [];
         let group = section.data.groups.find((g: any) => g.groupLabel === groupLabel);
@@ -148,7 +202,7 @@ export function parseManifest(manifest: ManifestJson): ParseResult {
         }
 
         group.assets.push({
-          id: `bg_${Math.random().toString(36).substr(2, 9)}`,
+          id: `bg_${Math.random().toString(36).substring(2, 9)}`,
           assetId: tempAssetId,
           label
         });
@@ -157,12 +211,10 @@ export function parseManifest(manifest: ManifestJson): ParseResult {
       }
 
       case 'applications': {
-        // Applications / E-Ticket
-        const label = parts[1] || 'Mockup';
-        
+        const label = parts.slice(1).join(' ') || 'Mockup';
         if (!section.data.apps) section.data.apps = [];
         section.data.apps.push({
-          id: `app_${Math.random().toString(36).substr(2, 9)}`,
+          id: `app_${Math.random().toString(36).substring(2, 9)}`,
           label,
           assetId: tempAssetId
         });
@@ -171,14 +223,13 @@ export function parseManifest(manifest: ManifestJson): ParseResult {
       }
 
       case 'dos_donts': {
-        // DoDont / Do / Clearspace
         const typeRaw = (parts[1] || 'do').toLowerCase();
         const isDo = typeRaw === 'do';
-        const caption = parts[2] || 'Usage';
+        const caption = parts.slice(2).join(' ') || 'Usage';
 
         if (!section.data.items) section.data.items = [];
         section.data.items.push({
-          id: `rule_${Math.random().toString(36).substr(2, 9)}`,
+          id: `rule_${Math.random().toString(36).substring(2, 9)}`,
           type: isDo ? 'do' : 'dont',
           caption,
           assetId: tempAssetId
@@ -188,17 +239,20 @@ export function parseManifest(manifest: ManifestJson): ParseResult {
       }
 
       default: {
-        // For anything else (like buttons or typography that might just be images exported instead of css)
         assets.push(baseAsset);
         break;
       }
     }
   });
 
+  // Deduplicate keys for report
+  report.detectedNameKeys = Array.from(new Set(report.detectedNameKeys));
+  report.detectedFileKeys = Array.from(new Set(report.detectedFileKeys));
+
   return {
     sections: Array.from(sectionsMap.values()),
     assets,
-    unmatched,
-    themeSuggested
+    themeSuggested,
+    report
   };
 }

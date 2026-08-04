@@ -5,6 +5,7 @@ export interface GlossaryEntry {
   eyebrow_label: string;
   default_headline: string;
   prefixes: string[]; // Match against Figma frame first segment
+  synonyms: string[]; // Fallback synonym matches
   description: string;
 }
 
@@ -14,6 +15,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '01 · Overview',
     default_headline: 'Brand Overview',
     prefixes: ['Overview'],
+    synonyms: ['intro', 'about', 'introduction', 'brand'],
     description: 'Hero/intro section with core brand statements',
   },
   {
@@ -21,6 +23,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '02 · Logo',
     default_headline: 'Primary Logo',
     prefixes: ['Logo'],
+    synonyms: ['logos', 'wordmark', 'brandmark', 'logomark', 'symbol'],
     description: 'Logo variants, clearspace, and minimum sizes',
   },
   {
@@ -28,6 +31,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '03 · Colors',
     default_headline: 'Brand Colors',
     prefixes: ['Colors', 'Color'],
+    synonyms: ['colours', 'colour', 'palette', 'swatch', 'swatches'],
     description: 'Primary and secondary color palettes',
   },
   {
@@ -35,6 +39,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '04 · Typography',
     default_headline: 'Typography',
     prefixes: ['Typography', 'Type', 'Fonts'],
+    synonyms: ['font', 'typeface', 'text', 'typesetting'],
     description: 'Typeface families and typesetting scale',
   },
   {
@@ -42,6 +47,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '05 · UI Elements',
     default_headline: 'Buttons & Inputs',
     prefixes: ['Buttons', 'UI'],
+    synonyms: ['button', 'input', 'elements', 'components', 'controls'],
     description: 'Interactive component states',
   },
   {
@@ -49,6 +55,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '06 · Layout',
     default_headline: 'Grids & Frames',
     prefixes: ['Grid', 'Frame', 'Frames', 'Layout'],
+    synonyms: ['grids', 'layout', 'structure', 'spacing'],
     description: 'Structural grids and aspect ratio containers',
   },
   {
@@ -56,6 +63,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '07 · Backgrounds',
     default_headline: 'Background Assets',
     prefixes: ['Backgrounds', 'Background', 'BGs'],
+    synonyms: ['bg', 'backdrop', 'texture', 'textures'],
     description: 'Abstract and branded backgrounds',
   },
   {
@@ -63,6 +71,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '08 · Imagery',
     default_headline: 'Photography & Imagery',
     prefixes: ['Imagery', 'Photo', 'Photography'],
+    synonyms: ['photos', 'images', 'pictures', 'direction'],
     description: 'Art direction and photo style',
   },
   {
@@ -70,6 +79,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '09 · Voice',
     default_headline: 'Voice & Tone',
     prefixes: ['Voice', 'Tone', 'Language'],
+    synonyms: ['copy', 'writing', 'copywriting', 'messaging'],
     description: 'Copywriting principles',
   },
   {
@@ -77,6 +87,7 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '10 · Applications',
     default_headline: 'In Practice',
     prefixes: ['Applications', 'Mockups', 'InUse'],
+    synonyms: ['application', 'mockup', 'practice', 'examples'],
     description: 'Real-world brand mockups',
   },
   {
@@ -84,19 +95,55 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
     eyebrow_label: '11 · Rules',
     default_headline: "Do's and Don'ts",
     prefixes: ['DoDont', 'DosDonts', 'Rules'],
+    synonyms: ['guidelines', 'correct', 'incorrect', 'right', 'wrong', 'do', 'dont', 'do\'s', 'don\'ts'],
     description: 'Usage rules and common mistakes',
   },
 ];
 
-export function getSectionTypeByPrefix(frameName: string): SectionType | null {
-  const parts = frameName.split('/');
-  if (parts.length === 0) return null;
-  const prefix = parts[0].trim();
+export interface MatchResult {
+  type: SectionType | null;
+  match_method: 'exact' | 'synonym' | 'substring' | null;
+  parts: string[];
+}
+
+export function matchSectionType(rawName: string): MatchResult {
+  // 1. Normalize delimiters
+  // Split by '/', '-', '_', '>', or multiple spaces
+  const normalizedStr = rawName.replace(/[\/\-\_\>]/g, ' ').replace(/\s+/g, ' ').trim();
+  const parts = normalizedStr.split(' ');
   
+  if (parts.length === 0 || !parts[0]) {
+    return { type: null, match_method: null, parts: [] };
+  }
+
+  const prefix = parts[0].toLowerCase();
+
+  // 2. Exact match (Prefixes)
   for (const entry of CI_GLOSSARY) {
-    if (entry.prefixes.some(p => p.toLowerCase() === prefix.toLowerCase())) {
-      return entry.section_type;
+    if (entry.prefixes.some(p => p.toLowerCase() === prefix)) {
+      return { type: entry.section_type, match_method: 'exact', parts };
     }
   }
-  return null;
+
+  // 3. Synonym match (first part matches a synonym)
+  for (const entry of CI_GLOSSARY) {
+    if (entry.synonyms.some(s => s.toLowerCase() === prefix)) {
+      return { type: entry.section_type, match_method: 'synonym', parts };
+    }
+  }
+
+  // 4. Substring fallback match (any word in the string matches a prefix or synonym)
+  const allWords = parts.map(p => p.toLowerCase());
+  for (const word of allWords) {
+    for (const entry of CI_GLOSSARY) {
+      if (
+        entry.prefixes.some(p => p.toLowerCase() === word) || 
+        entry.synonyms.some(s => s.toLowerCase() === word)
+      ) {
+        return { type: entry.section_type, match_method: 'substring', parts };
+      }
+    }
+  }
+
+  return { type: null, match_method: null, parts };
 }

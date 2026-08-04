@@ -1,3 +1,20 @@
+export type ManifestItem = {
+  frame_name?: string;
+  name?: string;
+  title?: string;
+  layer?: string;
+  
+  file?: string;
+  filename?: string;
+  image?: string;
+  
+  width?: number;
+  height?: number;
+  [key: string]: any;
+};
+
+export type ManifestJson = { items?: ManifestItem[] } | ManifestItem[];
+
 export type SectionType = 
   | 'overview'
   | 'logo'
@@ -55,7 +72,10 @@ export interface CIAsset {
   public_url: string;
   label: string | null;
   caption: string | null;
-  metadata: any;
+  metadata: {
+    match_method?: 'exact' | 'synonym' | 'substring' | 'manual' | null;
+    [key: string]: any;
+  };
   sort_order: number;
 }
 
@@ -172,15 +192,3 @@ export type OverviewSectionData = {
   tonalityCards?: string[];
 };
 
-// --- Manifest Types ---
-
-export interface ManifestItem {
-  frame_name: string;
-  file: string;
-  width?: number;
-  height?: number;
-}
-
-export interface ManifestJson {
-  items: ManifestItem[];
-}

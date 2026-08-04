@@ -87,31 +87,41 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     const file = e.target.files?.[0];
     if (!file || !guideline) return;
 
+    if (sections.length > 0) {
+      if (!window.confirm("You already have sections in this guideline. Re-importing will add new sections and update assets. Existing copy edits will not be overwritten. Continue?")) {
+        return;
+      }
+    }
+
     setUploading(true);
     try {
       const text = await file.text();
       const manifest = JSON.parse(text);
-      const parsed = parseManifest(manifest);
+      
+      const parsed = parseManifest(manifest, sections);
 
-      if (parsed.sections.length === 0) {
-        alert(`Manifest parsed, but 0 sections were matched. Try adding sections manually or check your JSON format.`);
-      } else {
-        alert("Manifest parsed successfully! (Note: Images are placeholders until actual files are uploaded to storage)");
-      }
+      alert(`Import Report:
+- Total items found: ${parsed.report.totalItems}
+- Auto-assigned: ${parsed.report.assignedCount}
+- Unassigned: ${parsed.report.unassignedCount}
+- Missing files: ${parsed.report.missingFiles}
+
+Name keys detected: ${parsed.report.detectedNameKeys.join(', ') || 'None'}
+File keys detected: ${parsed.report.detectedFileKeys.join(', ') || 'None'}`);
       
       const newSections = parsed.sections.map((s, i) => ({
         ...s,
-        id: `temp_${i}`,
         guideline_id: guideline.id,
-        position: i
+        position: s.position !== undefined ? s.position : i
       }));
       setSections(newSections);
       
+      // Keep existing assets + newly parsed assets (in a real app we'd merge by ID)
       const newAssets = parsed.assets.map(a => ({
         ...a,
         guideline_id: guideline.id
       }));
-      setAssets(newAssets);
+      setAssets(prev => [...prev.filter(pa => !newAssets.find(na => na.id === pa.id)), ...newAssets]);
       
       // Update theme if suggestions exist
       if (parsed.themeSuggested && Object.keys(parsed.themeSuggested).length > 0) {
@@ -123,6 +133,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       alert("Failed to parse manifest. Please ensure it is valid JSON.");
     } finally {
       setUploading(false);
+      if (e.target) e.target.value = ''; // Reset input
     }
   };
 
@@ -159,7 +170,10 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
-          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Sections</h3>
+          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex justify-between">
+            <span>Sections</span>
+            {sections.length > 0 && <span className="text-gray-400">{sections.length}</span>}
+          </h3>
           {sections.length === 0 ? (
             <p className="text-gray-400 text-xs italic">No sections. Upload a manifest to begin.</p>
           ) : (
@@ -195,6 +209,47 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
+
+          {/* Unassigned Assets Panel */}
+          {assets.filter(a => a.section_id === null).length > 0 && (
+            <div className="mt-6 border-t border-gray-200 pt-4">
+              <h3 className="text-xs font-medium text-amber-600 uppercase tracking-wider mb-2 flex items-center justify-between">
+                <span>Unassigned Assets</span>
+                <span className="bg-amber-100 text-amber-800 py-0.5 px-2 rounded-full text-[10px] font-bold">
+                  {assets.filter(a => a.section_id === null).length}
+                </span>
+              </h3>
+              <p className="text-[10px] text-gray-500 mb-2 leading-tight">These assets were imported but couldn't be automatically assigned.</p>
+              
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                {assets.filter(a => a.section_id === null).map((asset) => (
+                  <div key={asset.id} className="bg-amber-50 p-2 rounded border border-amber-200 flex flex-col gap-1">
+                    <span className="text-xs text-gray-800 truncate font-medium" title={asset.label || asset.storage_path}>
+                      {asset.label || asset.storage_path}
+                    </span>
+                    <span className="text-[9px] text-gray-500 truncate" title={asset.storage_path}>
+                      {asset.storage_path}
+                    </span>
+                    <select 
+                      className="text-xs border border-gray-200 rounded p-1 w-full bg-white mt-1 cursor-pointer"
+                      value=""
+                      onChange={(e) => {
+                        const secId = e.target.value;
+                        if (secId) {
+                          setAssets(assets.map(a => a.id === asset.id ? { ...a, section_id: secId } : a));
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Assign to...</option>
+                      {sections.map(s => (
+                        <option key={s.id} value={s.id}>{s.eyebrow_label || s.section_type}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-4 border-t border-gray-200 space-y-2">
