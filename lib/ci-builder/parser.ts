@@ -1,4 +1,4 @@
-import { ManifestJson, ManifestItem, SectionType, CISection, CIAsset } from './types';
+import { ManifestJson, ManifestItem, SectionType, CISection, CIAsset, generateUUID } from './types';
 import { CI_GLOSSARY, matchSectionType } from './glossary';
 
 export interface ParseResult {
@@ -119,7 +119,7 @@ function parseDesignTokensManifest(
     if (!sectionsMap.has(type)) {
       const glos = CI_GLOSSARY.find(g => g.section_type === type);
       sectionsMap.set(type, {
-        id: `temp_${Math.random().toString(36).substring(2, 9)}`,
+        id: generateUUID(),
         section_type: type,
         eyebrow_label: glos?.eyebrow_label || '',
         headline: glos?.default_headline || '',
@@ -181,7 +181,7 @@ function parseDesignTokensManifest(
       assignedCount++;
       const hex = rgbToHex(entry.value);
       const swatchId = `swatch_${Math.random().toString(36).substring(2, 9)}`;
-      const assetId = `temp_asset_${Math.random().toString(36).substring(2, 9)}`;
+      const assetId = generateUUID();
 
       group.swatches.push({
         id: swatchId,
@@ -248,7 +248,7 @@ function parseDesignTokensManifest(
       const sizes = Array.isArray(font.sizes) ? font.sizes.join(', ') : (font.sizes || font.fontSize || font.size || '16px');
       const weights = Array.isArray(font.weights) ? font.weights.join(', ') : (font.weights || font.fontWeight || font.weight || '400');
       const rowId = `type_${Math.random().toString(36).substring(2, 9)}`;
-      const assetId = `temp_asset_${Math.random().toString(36).substring(2, 9)}`;
+      const assetId = generateUUID();
 
       typographySection.data.rows.push({
         id: rowId,
@@ -335,7 +335,7 @@ function parseFlatItemsManifest(
     if (!sectionsMap.has(type)) {
       const glos = CI_GLOSSARY.find(g => g.section_type === type);
       sectionsMap.set(type, {
-        id: `temp_${Math.random().toString(36).substring(2, 9)}`,
+        id: generateUUID(),
         section_type: type,
         eyebrow_label: glos?.eyebrow_label || '',
         headline: glos?.default_headline || '',
@@ -371,7 +371,7 @@ function parseFlatItemsManifest(
     }
 
     const { type: sectionType, match_method, parts } = matchSectionType(nameStr);
-    const tempAssetId = `temp_asset_${Math.random().toString(36).substring(2, 9)}`;
+    const tempAssetId = generateUUID();
     const isMissingFile = !fileStr;
 
     const baseAsset: Partial<CIAsset> = {

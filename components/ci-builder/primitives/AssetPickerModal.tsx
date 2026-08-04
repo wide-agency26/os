@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { X, UploadCloud, Image as ImageIcon, Check } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
-import { CIAsset } from "@/lib/ci-builder/types";
+import { CIAsset, generateUUID } from "@/lib/ci-builder/types";
 import { BRAND_GUIDELINES_BUCKET, sanitizeStorageFileName } from "@/lib/brand-guideline/storage";
 
 export interface AssetPickerModalProps {
@@ -63,7 +63,7 @@ export function AssetPickerModal({
 
       // 3. Create asset record in database
       const newAssetPayload: Partial<CIAsset> = {
-        id: `ast_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        id: generateUUID(),
         guideline_id: guidelineId,
         kind: compatibleKind || "general",
         storage_path: storagePath,

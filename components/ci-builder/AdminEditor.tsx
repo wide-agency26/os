@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { CISection, CIAsset, CITheme } from "@/lib/ci-builder/types";
+import { CISection, CIAsset, CITheme, generateUUID } from "@/lib/ci-builder/types";
+
+function isValidUUID(str?: string): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
 import { SectionRenderer } from "./sections/index";
 import { parseManifest } from "@/lib/ci-builder/parser";
 import { CI_GLOSSARY } from "@/lib/ci-builder/glossary";
@@ -217,7 +222,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
   const handleAddSection = async (entry: any) => {
     if (!guideline?.id) return;
-    const realId = `sec_${crypto.randomUUID()}`;
+    const realId = generateUUID();
     const newSection: Partial<CISection> = {
       id: realId,
       guideline_id: guideline.id,
@@ -285,36 +290,52 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       const parsed = parseManifest(manifest, sections);
       setImportReport(parsed.report);
       
-      // Assign real UUIDs to sections if temp_
+      // Map old/non-UUID section IDs to valid UUIDs
+      const sectionIdMap = new Map<string, string>();
       const newSections = parsed.sections.map((s, i) => {
-        const isTemp = !s.id || s.id.startsWith("temp_");
+        const oldId = s.id || "";
+        const validId = isValidUUID(oldId) ? oldId : generateUUID();
+        if (oldId && oldId !== validId) {
+          sectionIdMap.set(oldId, validId);
+        }
         return {
           ...s,
-          id: isTemp ? `sec_${crypto.randomUUID()}` : s.id,
+          id: validId,
           guideline_id: guideline.id,
           position: s.position !== undefined ? s.position : i
         };
       });
 
-      // Map temp asset IDs to new real asset UUIDs
+      // Map old/non-UUID asset IDs to valid UUIDs
       const assetIdMap = new Map<string, string>();
       const newAssets = parsed.assets.map(a => {
-        const isTemp = !a.id || a.id.startsWith("temp_");
-        const realId = isTemp ? `ast_${crypto.randomUUID()}` : a.id!;
-        if (a.id) assetIdMap.set(a.id, realId);
+        const oldId = a.id || "";
+        const validId = isValidUUID(oldId) ? oldId : generateUUID();
+        if (oldId && oldId !== validId) {
+          assetIdMap.set(oldId, validId);
+        }
+
+        let secId = a.section_id;
+        if (secId && sectionIdMap.has(secId)) {
+          secId = sectionIdMap.get(secId)!;
+        } else if (secId && !isValidUUID(secId)) {
+          secId = null;
+        }
+
         return {
           ...a,
-          id: realId,
-          guideline_id: guideline.id
+          id: validId,
+          guideline_id: guideline.id,
+          section_id: secId
         };
       });
 
       // Update assetId references inside section data if mapped
       newSections.forEach(sec => {
         let dStr = JSON.stringify(sec.data || {});
-        assetIdMap.forEach((realId, tempId) => {
-          if (tempId && realId && dStr.includes(tempId)) {
-            dStr = dStr.replaceAll(tempId, realId);
+        assetIdMap.forEach((validId, oldId) => {
+          if (oldId && validId && dStr.includes(oldId)) {
+            dStr = dStr.replaceAll(oldId, validId);
           }
         });
         sec.data = JSON.parse(dStr);
