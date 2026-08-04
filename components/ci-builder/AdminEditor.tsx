@@ -5,6 +5,7 @@ import { createClient } from "@/utils/supabase/client";
 import { CISection, CIAsset } from "@/lib/ci-builder/types";
 import { SectionRenderer } from "./sections/index";
 import { parseManifest } from "@/lib/ci-builder/parser";
+import { CI_GLOSSARY } from "@/lib/ci-builder/glossary";
 import { Settings, Share, UploadCloud, Plus, GripVertical } from "lucide-react";
 import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
@@ -17,7 +18,22 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showAddSectionDropdown, setShowAddSectionDropdown] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  const handleAddSection = (entry: any) => {
+    const newSection: Partial<CISection> = {
+      id: `temp_${Date.now()}`,
+      guideline_id: guideline?.id,
+      section_type: entry.section_type,
+      eyebrow_label: entry.eyebrow_label,
+      headline: entry.default_headline,
+      position: sections.length,
+      is_visible: true,
+      data: {}
+    };
+    setSections([...sections, newSection]);
+  };
 
   const supabase = createClient();
 
@@ -151,9 +167,30 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             ))
           )}
           
-          <button className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-xs p-2 mt-2">
-            <Plus className="w-3 h-3" /> Add Section
-          </button>
+          <div className="relative mt-2">
+            <button 
+              onClick={() => setShowAddSectionDropdown(!showAddSectionDropdown)}
+              className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-xs p-2 w-full"
+            >
+              <Plus className="w-3 h-3" /> Add Section
+            </button>
+            {showAddSectionDropdown && (
+              <div className="absolute left-0 mt-1 w-full bg-white border border-gray-200 shadow-lg rounded-md overflow-hidden z-10 py-1">
+                {CI_GLOSSARY.map((entry) => (
+                  <button
+                    key={entry.section_type}
+                    onClick={() => {
+                      handleAddSection(entry);
+                      setShowAddSectionDropdown(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100"
+                  >
+                    {entry.eyebrow_label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="p-4 border-t border-gray-200 space-y-2">
