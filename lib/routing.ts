@@ -41,6 +41,7 @@ export function homePathForRole(
   const r = normalizeRole(role);
   if (isFounder(r)) return adminPaths.dashboard();
   if (r === "prospect") return "/login";
+  if (r === "client") return "/app/client-guidelines";
   if (workspaceClientId) return clientPaths.dashboard(workspaceClientId);
   return "/login";
 }
@@ -73,6 +74,14 @@ export function assertRouteAllowed(
 ): { allowed: true } | { allowed: false; redirectTo: string } {
   const r = role;
 
+  // Protect /app/... staff routes
+  if (pathname.startsWith("/app")) {
+    const isClientAllowedAppRoute = pathname === "/app/client-guidelines" || pathname === "/app/home";
+    if (!isFounder(r) && !isClientAllowedAppRoute) {
+      return { allowed: false, redirectTo: "/app/client-guidelines" };
+    }
+  }
+
   if (pathname.startsWith("/admin")) {
     if (!isFounder(r)) {
       return { allowed: false, redirectTo: homePathForRole(r) };
@@ -91,8 +100,8 @@ export function assertRouteAllowed(
     }
   }
 
-  if (isClient(r) && pathname.startsWith("/admin")) {
-    return { allowed: false, redirectTo: homePathForRole(r) };
+  if (isClient(r) && (pathname.startsWith("/admin") || (pathname.startsWith("/app") && pathname !== "/app/client-guidelines" && pathname !== "/app/home"))) {
+    return { allowed: false, redirectTo: "/app/client-guidelines" };
   }
 
   return { allowed: true };

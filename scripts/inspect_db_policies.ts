@@ -68,6 +68,13 @@ async function inspect() {
   if (guidelines && guidelines.length > 0) {
     console.log("Guidelines:", guidelines);
   }
+
+  console.log("\n=== 5. Check company_members table ===");
+  const { data: members, error: memErr } = await adminSupabase
+    .from('company_members')
+    .select('*');
+  console.log("company_members error:", memErr?.message || "None");
+  console.log("company_members count:", members?.length || 0);
 }
 
 inspect();

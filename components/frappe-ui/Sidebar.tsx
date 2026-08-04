@@ -29,14 +29,18 @@ type ModuleItem = {
   href: string;
   icon: any;
   items?: SubItem[];
+  founderOnly?: boolean;
+  clientOnly?: boolean;
 };
 
 const MODULES: ModuleItem[] = [
   { name: "Home", href: "/app/home", icon: Home },
+  { name: "Brand Guidelines", href: "/app/client-guidelines", icon: Briefcase, clientOnly: true },
   { 
     name: "Accounting", 
     href: "/app/accounting", 
     icon: FileText,
+    founderOnly: true,
     items: [
       { name: "Dashboard", href: "/app/accounting" },
       { name: "Sales Invoices", href: "/app/accounting/sales-invoice" },
@@ -47,16 +51,18 @@ const MODULES: ModuleItem[] = [
     name: "CRM", 
     href: "/app/crm", 
     icon: Users,
+    founderOnly: true,
     items: [
       { name: "Customers", href: "/app/crm" },
       { name: "New Customer", href: "/app/crm/new" }
     ]
   },
-  { name: "HR", href: "/app/hr", icon: Users },
+  { name: "HR", href: "/app/hr", icon: Users, founderOnly: true },
   { 
     name: "Projects", 
     href: "/app/projects", 
     icon: Briefcase,
+    founderOnly: true,
     items: [
       { name: "Overview", href: "/app/projects" },
       { name: "Projects", href: "/app/projects/project" },
@@ -69,7 +75,7 @@ const MODULES: ModuleItem[] = [
       { name: "Client Access Requests", href: "/app/client-access", founderOnly: true }
     ]
   },
-  { name: "Settings", href: "/app/settings", icon: Settings },
+  { name: "Settings", href: "/app/settings", icon: Settings, founderOnly: true },
 ];
 
 export function Sidebar() {
@@ -153,7 +159,13 @@ export function Sidebar() {
         <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3 mt-2">
           Modules
         </div>
-        {MODULES.map((mod) => {
+        {MODULES
+          .filter((mod) => {
+            if (mod.founderOnly && !isFounderRole) return false;
+            if (mod.clientOnly && isFounderRole) return false;
+            return true;
+          })
+          .map((mod) => {
           const isActive = pathname.startsWith(mod.href) && mod.href !== "/app/home" || pathname === mod.href;
           const isExpanded = expanded[mod.name];
           const Icon = mod.icon;
