@@ -33,9 +33,9 @@ export default function NewProjectPage() {
       
       const { data: clientsData } = await (supabase as any)
         .from("crm_customers")
-        .select("id, name, company")
-        .eq("status", "Client")
-        .order("name", { ascending: true });
+        .select("id, name, company, status, lead_status")
+        .or("status.eq.Client,lead_status.eq.Won")
+        .order("company", { ascending: true });
       setClients(clientsData || []);
 
       const { data: templatesData } = await (supabase as any)

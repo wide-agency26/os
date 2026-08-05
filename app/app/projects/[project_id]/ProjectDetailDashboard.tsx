@@ -101,7 +101,10 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
       setProjectUsers(pUsers || []);
 
       // Fetch All Profiles (for assigning new users)
-      const { data: allProfiles } = await supabase.from("profiles").select("id, full_name").order("full_name");
+      const { data: allProfiles } = await supabase
+        .from("profiles")
+        .select("id, full_name, role, company_name")
+        .order("full_name");
       setAllUsers(allProfiles || []);
 
       // Fetch Project Updates
@@ -451,9 +454,16 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
                  <div className="flex items-center gap-2 bg-gray-50 p-2 rounded border border-gray-200">
                    <select value={newUserId} onChange={e => setNewUserId(e.target.value)} className="px-2 py-1.5 border border-gray-300 rounded text-[13px] bg-white">
                      <option value="">Select User...</option>
-                     {allUsers.filter(u => !projectUsers.some(pu => pu.user?.id === u.id)).map(u => (
-                       <option key={u.id} value={u.id}>{u.full_name}</option>
-                     ))}
+                     {allUsers.filter(u => !projectUsers.some(pu => pu.user?.id === u.id)).map(u => {
+                       const name = u.full_name?.trim() || u.company_name || `User (${u.id.slice(0, 8)})`;
+                       const isStaff = u.role === 'superadmin' || u.role === 'admin';
+                       const badge = isStaff ? '🛠️ [Staff]' : u.company_name ? `👤 [Client - ${u.company_name}]` : '👤 [Client]';
+                       return (
+                         <option key={u.id} value={u.id}>
+                           {badge} {name}
+                         </option>
+                       );
+                     })}
                    </select>
                    <select value={newUserRole} onChange={e => setNewUserRole(e.target.value)} className="px-2 py-1.5 border border-gray-300 rounded text-[13px] bg-white">
                      <option value="Member">Member</option>

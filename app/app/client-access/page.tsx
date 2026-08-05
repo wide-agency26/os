@@ -159,6 +159,14 @@ export default function ClientAccessPage() {
 
   const handleApprove = async (requestId: string) => {
     const { data: { user } } = await supabase.auth.getUser();
+    
+    // Fetch request details to get user_id & company_id
+    const { data: req } = await (supabase as any)
+      .from("company_members")
+      .select("user_id, company_id")
+      .eq("id", requestId)
+      .single();
+
     await (supabase as any)
       .from("company_members")
       .update({
@@ -167,6 +175,22 @@ export default function ClientAccessPage() {
         reviewed_at: new Date().toISOString()
       })
       .eq("id", requestId);
+
+    if (req?.company_id && req?.user_id) {
+      const { data: cData } = await (supabase as any)
+        .from("crm_customers")
+        .select("company, name")
+        .eq("id", req.company_id)
+        .single();
+
+      if (cData) {
+        const cName = cData.company || cData.name || "Client Org";
+        await supabase
+          .from("profiles")
+          .update({ company_name: cName })
+          .eq("id", req.user_id);
+      }
+    }
 
     loadData();
   };
@@ -216,6 +240,20 @@ export default function ClientAccessPage() {
     if (insertErr) {
       alert(`Failed to grant access: ${insertErr.message}`);
     } else {
+      const { data: cData } = await (supabase as any)
+        .from("crm_customers")
+        .select("company, name")
+        .eq("id", selectedCompanyId)
+        .single();
+
+      if (cData) {
+        const cName = cData.company || cData.name || "Client Org";
+        await supabase
+          .from("profiles")
+          .update({ company_name: cName })
+          .eq("id", selectedUserId);
+      }
+
       setShowAddModal(false);
       setSelectedUserId("");
       setSelectedCompanyId("");
