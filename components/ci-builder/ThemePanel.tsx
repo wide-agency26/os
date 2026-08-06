@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { CITheme } from "@/lib/ci-builder/types";
 import { X } from "lucide-react";
+import { ciFieldMonoClass, ciSelectClass } from "./primitives/formStyles";
 
 interface ThemePanelProps {
   guideline: any;
@@ -20,7 +21,7 @@ export function ThemePanel({ guideline, onClose, onUpdate }: ThemePanelProps) {
   };
 
   return (
-    <div className="absolute top-0 right-0 h-full w-80 bg-white border-l border-gray-200 shadow-xl z-50 flex flex-col">
+    <div className="absolute top-0 right-0 h-full w-80 bg-white text-gray-900 border-l border-gray-200 shadow-xl z-50 flex flex-col">
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <h3 className="font-semibold text-gray-800">Theme Settings</h3>
         <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded text-gray-500">
@@ -36,13 +37,13 @@ export function ThemePanel({ guideline, onClose, onUpdate }: ThemePanelProps) {
               type="color" 
               value={theme.backgroundColor || "#ffffff"} 
               onChange={(e) => handleChange('backgroundColor', e.target.value)}
-              className="w-8 h-8 rounded cursor-pointer border border-gray-300"
+              className="w-8 h-8 rounded cursor-pointer border border-gray-300 bg-white"
             />
             <input 
               type="text" 
               value={theme.backgroundColor || "#ffffff"}
               onChange={(e) => handleChange('backgroundColor', e.target.value)}
-              className="flex-1 border border-gray-300 rounded px-2 text-sm uppercase font-mono"
+              className={`flex-1 uppercase ${ciFieldMonoClass}`}
             />
           </div>
         </div>
@@ -54,13 +55,13 @@ export function ThemePanel({ guideline, onClose, onUpdate }: ThemePanelProps) {
               type="color" 
               value={theme.textColor || "#111111"} 
               onChange={(e) => handleChange('textColor', e.target.value)}
-              className="w-8 h-8 rounded cursor-pointer border border-gray-300"
+              className="w-8 h-8 rounded cursor-pointer border border-gray-300 bg-white"
             />
             <input 
               type="text" 
               value={theme.textColor || "#111111"}
               onChange={(e) => handleChange('textColor', e.target.value)}
-              className="flex-1 border border-gray-300 rounded px-2 text-sm uppercase font-mono"
+              className={`flex-1 uppercase ${ciFieldMonoClass}`}
             />
           </div>
         </div>
@@ -70,7 +71,7 @@ export function ThemePanel({ guideline, onClose, onUpdate }: ThemePanelProps) {
           <select 
             value={theme.fontFamily || "Inter, sans-serif"}
             onChange={(e) => handleChange('fontFamily', e.target.value)}
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            className={`w-full ${ciSelectClass}`}
           >
             <option value="Inter, sans-serif">Inter</option>
             <option value="Roboto, sans-serif">Roboto</option>

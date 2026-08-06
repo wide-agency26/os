@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Section } from "@/components/frappe-ui/Workspace";
-import { CheckCircle, Clock, DollarSign, Activity, Edit2 } from "lucide-react";
+import { CheckCircle, Clock, DollarSign, Activity, Edit2, Eye } from "lucide-react";
 import FrappeGantt from "@/components/FrappeGantt";
 import { Plus, Trash, Users, Mail, Calendar as CalendarIcon, CheckSquare } from "lucide-react";
 import Link from "next/link";
@@ -287,7 +287,14 @@ export function ProjectDetailDashboard({ projectId }: { projectId: string }) {
             </div>
             <p className="text-gray-500 mt-1">{project.scope || "No scope provided."}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Link
+              href={`/app/client-reports?project_id=${projectId}`}
+              className="px-4 py-2 bg-white border border-indigo-200 text-indigo-800 rounded text-[13px] font-medium hover:bg-indigo-50 transition-colors flex items-center gap-2"
+              title="Open the client report viewer for this project"
+            >
+              <Eye size={14} /> Preview as client
+            </Link>
             <Link href={`/app/projects/project/${projectId}`} className="px-4 py-2 bg-white border border-gray-300 rounded text-[13px] font-medium text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2">
               <Edit2 size={14} /> Edit Project
             </Link>

@@ -5,7 +5,7 @@ import {
   normalizeRole,
   type PortalRole,
 } from "@/lib/rbac";
-import { adminPaths, clientPaths } from "@/lib/wide-os/paths";
+import { clientPaths } from "@/lib/wide-os/paths";
 
 export type SidebarPortalRole = "superadmin" | "client_manager" | "client";
 
@@ -39,7 +39,8 @@ export function homePathForRole(
   prospectId?: string
 ): string {
   const r = normalizeRole(role);
-  if (isFounder(r)) return adminPaths.dashboard();
+  // WIDE Portal staff land in the /app cockpit (not legacy /admin routes)
+  if (isFounder(r)) return "/app/home";
   if (r === "prospect") return "/login";
   if (r === "client") return "/app/client-guidelines";
   if (workspaceClientId) return clientPaths.dashboard(workspaceClientId);
@@ -74,9 +75,14 @@ export function assertRouteAllowed(
 ): { allowed: true } | { allowed: false; redirectTo: string } {
   const r = role;
 
-  // Protect /app/... staff routes
+  // Protect /app/... staff routes — clients may use guidelines + related client surfaces
   if (pathname.startsWith("/app")) {
-    const isClientAllowedAppRoute = pathname === "/app/client-guidelines" || pathname === "/app/home";
+    const isClientAllowedAppRoute =
+      pathname === "/app/client-guidelines" ||
+      pathname === "/app/client-reports" ||
+      pathname === "/app/client-files" ||
+      pathname === "/app/home" ||
+      pathname.startsWith("/app/client-guidelines/");
     if (!isFounder(r) && !isClientAllowedAppRoute) {
       return { allowed: false, redirectTo: "/app/client-guidelines" };
     }
@@ -100,7 +106,16 @@ export function assertRouteAllowed(
     }
   }
 
-  if (isClient(r) && (pathname.startsWith("/admin") || (pathname.startsWith("/app") && pathname !== "/app/client-guidelines" && pathname !== "/app/home"))) {
+  if (
+    isClient(r) &&
+    (pathname.startsWith("/admin") ||
+      (pathname.startsWith("/app") &&
+        pathname !== "/app/client-guidelines" &&
+        pathname !== "/app/client-reports" &&
+        pathname !== "/app/client-files" &&
+        pathname !== "/app/home" &&
+        !pathname.startsWith("/app/client-guidelines/")))
+  ) {
     return { allowed: false, redirectTo: "/app/client-guidelines" };
   }
 

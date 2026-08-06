@@ -149,7 +149,7 @@ export function TypographySection({
                           value={row.fontFamily || ""}
                           onChange={(e) => updateTypeRow(row.id, { fontFamily: e.target.value })}
                           placeholder="Inter, sans-serif"
-                          className="w-full border rounded px-2 py-1 bg-white font-mono text-xs"
+                          className="w-full border rounded px-2 py-1 bg-white text-gray-900 font-mono text-xs placeholder:text-gray-400"
                         />
                       </div>
                       <div>
@@ -159,7 +159,7 @@ export function TypographySection({
                           value={row.fontSize || ""}
                           onChange={(e) => updateTypeRow(row.id, { fontSize: e.target.value })}
                           placeholder="32px"
-                          className="w-full border rounded px-2 py-1 bg-white font-mono text-xs"
+                          className="w-full border rounded px-2 py-1 bg-white text-gray-900 font-mono text-xs placeholder:text-gray-400"
                         />
                       </div>
                       <div>
@@ -169,7 +169,7 @@ export function TypographySection({
                           value={row.fontWeight || ""}
                           onChange={(e) => updateTypeRow(row.id, { fontWeight: e.target.value })}
                           placeholder="700"
-                          className="w-full border rounded px-2 py-1 bg-white font-mono text-xs"
+                          className="w-full border rounded px-2 py-1 bg-white text-gray-900 font-mono text-xs placeholder:text-gray-400"
                         />
                       </div>
                       <div>
@@ -179,7 +179,7 @@ export function TypographySection({
                           value={row.lineHeight || ""}
                           onChange={(e) => updateTypeRow(row.id, { lineHeight: e.target.value })}
                           placeholder="1.2"
-                          className="w-full border rounded px-2 py-1 bg-white font-mono text-xs"
+                          className="w-full border rounded px-2 py-1 bg-white text-gray-900 font-mono text-xs placeholder:text-gray-400"
                         />
                       </div>
                     </div>

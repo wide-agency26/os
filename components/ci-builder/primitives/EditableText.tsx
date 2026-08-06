@@ -72,6 +72,13 @@ export function EditableText({
   };
 
   if (isEditing) {
+    // Keep typography sizing from style, but never inherit light theme text onto white fields.
+    const editStyle: React.CSSProperties = {
+      ...(style || {}),
+      color: "#111827",
+      backgroundColor: "#ffffff",
+    };
+
     return (
       <div className="relative inline-block w-full z-20" onClick={(e) => e.stopPropagation()}>
         {multiline ? (
@@ -82,8 +89,8 @@ export function EditableText({
             onKeyDown={handleKeyDown}
             onBlur={handleSave}
             placeholder={placeholder}
-            className={`w-full p-2 border-2 border-blue-500 rounded bg-white text-gray-900 shadow-lg outline-none font-normal text-base resize-y min-h-[100px]`}
-            style={style}
+            className="w-full p-2 border-2 border-blue-500 rounded bg-white text-gray-900 shadow-lg outline-none font-normal text-base resize-y min-h-[100px] placeholder:text-gray-400"
+            style={editStyle}
           />
         ) : (
           <input
@@ -94,8 +101,8 @@ export function EditableText({
             onKeyDown={handleKeyDown}
             onBlur={handleSave}
             placeholder={placeholder}
-            className={`w-full p-1.5 border-2 border-blue-500 rounded bg-white text-gray-900 shadow-md outline-none font-normal text-base`}
-            style={style}
+            className="w-full p-1.5 border-2 border-blue-500 rounded bg-white text-gray-900 shadow-md outline-none font-normal text-base placeholder:text-gray-400"
+            style={editStyle}
           />
         )}
         <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500">

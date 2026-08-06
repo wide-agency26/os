@@ -2,6 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { getWorkspaceClientId } from "@/lib/workspace";
+import type { Json } from "@/types/supabase";
 
 export async function logPortalActivity(
   clientId: string,
@@ -20,7 +21,7 @@ export async function logPortalActivity(
     actor_id: user.id,
     event_type: eventType,
     title,
-    meta: meta ?? {},
+    meta: (meta ?? {}) as Json,
   });
 }
 
@@ -53,7 +54,7 @@ export async function touchLastPortalVisit() {
     actor_id: user.id,
     event_type: "portal_visit",
     title: "Opened the portal",
-    meta: {},
+    meta: {} as Json,
   });
 }
 
@@ -84,6 +85,6 @@ export async function recordVaultDownload(fileId: string) {
     actor_id: user.id,
     event_type: openedExternal ? "file_opened" : "file_download",
     title: openedExternal ? `Opened “${file.label}”` : `Downloaded “${file.label}”`,
-    meta: openedExternal ? { file_id: fileId, external: true } : { file_id: fileId },
+    meta: (openedExternal ? { file_id: fileId, external: true } : { file_id: fileId }) as Json,
   });
 }

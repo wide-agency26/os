@@ -50,6 +50,25 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/*
+  Root layout is dark (body text is near-white). Portaled dialogs and light
+  admin forms inherit that, which makes white-on-white inputs unreadable.
+  Force readable defaults on form controls; dark UIs can override explicitly.
+*/
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]),
+textarea,
+select {
+  color-scheme: light;
+  color: #111827;
+  background-color: #ffffff;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+  opacity: 1;
+}
+
 /* Smooth transitions for sidebar */
 .sidebar-transition {
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
@@ -103,3 +122,37 @@ body {
 .pulse-subtle {
   animation: pulse-subtle 2s ease-in-out infinite;
 }
+
+/* Client executive report — print / PDF export */
+@media print {
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .no-print,
+  aside,
+  nav,
+  [data-sidebar],
+  .sidebar-backdrop {
+    display: none !important;
+  }
+
+  .client-report-viewer,
+  .report-print-surface {
+    break-inside: avoid;
+  }
+
+  .client-report-viewer .shadow-sm,
+  .client-report-viewer .shadow-md {
+    box-shadow: none !important;
+  }
+}
+

@@ -1,5 +1,6 @@
 import { requireSuperadmin } from "@/lib/auth-guards";
 import type { PackageTier } from "@/lib/reports/report-types";
+import type { Json } from "@/types/supabase";
 
 export const maxDuration = 10;
 
@@ -75,7 +76,7 @@ export async function POST(
       report_period_start: body.period_start,
       report_period_end: body.period_end,
       package_tier: tier,
-      input_payload: body.input_payload ?? {},
+      input_payload: (body.input_payload ?? {}) as Json,
       status: "draft",
       created_by: gate.user.id,
     })

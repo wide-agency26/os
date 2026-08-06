@@ -199,7 +199,7 @@ export function ButtonsSection({
                                     type="text"
                                     value={colors.bg || ""}
                                     onChange={(e) => updateStateColors(btn.id, stateKey, "bg", e.target.value)}
-                                    className="w-full border rounded px-1.5 py-0.5 font-mono text-[10px]"
+                                    className="w-full border rounded px-1.5 py-0.5 font-mono text-[10px] bg-white text-gray-900"
                                     placeholder="#0066FF"
                                   />
                                 </div>
@@ -218,7 +218,7 @@ export function ButtonsSection({
                                     type="text"
                                     value={colors.text || ""}
                                     onChange={(e) => updateStateColors(btn.id, stateKey, "text", e.target.value)}
-                                    className="w-full border rounded px-1.5 py-0.5 font-mono text-[10px]"
+                                    className="w-full border rounded px-1.5 py-0.5 font-mono text-[10px] bg-white text-gray-900"
                                     placeholder="#FFFFFF"
                                   />
                                 </div>
@@ -237,7 +237,7 @@ export function ButtonsSection({
                                     type="text"
                                     value={colors.border || ""}
                                     onChange={(e) => updateStateColors(btn.id, stateKey, "border", e.target.value)}
-                                    className="w-full border rounded px-1.5 py-0.5 font-mono text-[10px]"
+                                    className="w-full border rounded px-1.5 py-0.5 font-mono text-[10px] bg-white text-gray-900"
                                     placeholder="#0066FF"
                                   />
                                 </div>

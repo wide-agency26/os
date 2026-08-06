@@ -8,6 +8,7 @@ import {
   normalizeVaultExternalUrl,
 } from "@/lib/vault/external-links";
 import { createClient } from "@/utils/supabase/server";
+import type { Json } from "@/types/supabase";
 
 const VAULT_BUCKET = "client-vault";
 
@@ -82,6 +83,7 @@ export async function adminAddVaultExternalLink(
     external_url,
     external_provider,
     file_name,
+    original_filename: file_name,
     mime_type: null,
     size_bytes: null,
     version,
@@ -100,7 +102,7 @@ export async function adminAddVaultExternalLink(
     actor_id: gate.user!.id,
     event_type: "file_linked",
     title: `Linked: ${label}`,
-    meta: { external_url, external_provider: external_provider ?? "other_https" },
+    meta: { external_url, external_provider: external_provider ?? "other_https" } as Json,
   });
 
   revalidatePath("/admin/files");
@@ -158,6 +160,7 @@ export async function adminUploadVaultFile(
     label,
     storage_path: objectPath,
     file_name: file.name,
+    original_filename: file.name,
     mime_type: file.type || null,
     size_bytes: file.size,
     version,
@@ -176,7 +179,7 @@ export async function adminUploadVaultFile(
     actor_id: gate.user!.id,
     event_type: "file_uploaded",
     title: `New file: ${label}`,
-    meta: { path: objectPath, category },
+    meta: { path: objectPath, category } as Json,
   });
 
   revalidatePath("/admin/files");

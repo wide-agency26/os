@@ -1,12 +1,15 @@
 import { Workspace } from "@/components/frappe-ui/Workspace";
-import { ProjectDetailDashboard } from "./ProjectDetailDashboard";
+import { ProjectOverviewClient } from "@/components/pm/ProjectOverviewClient";
 
-export default async function ProjectDetailPage({ params }: { params: Promise<{ project_id: string }> }) {
+export default async function ProjectPmOverviewPage({
+  params,
+}: {
+  params: Promise<{ project_id: string }>;
+}) {
   const { project_id } = await params;
-
   return (
     <Workspace>
-      <ProjectDetailDashboard projectId={project_id} />
+      <ProjectOverviewClient projectId={project_id} />
     </Workspace>
   );
 }

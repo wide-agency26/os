@@ -37,16 +37,16 @@ export default function CIBuilderPage() {
   }, []);
 
   if (loading) {
-    return <Workspace><div className="p-8 text-center">Loading CI Builder...</div></Workspace>;
+    return <Workspace wide><div className="p-8 text-center">Loading CI Builder...</div></Workspace>;
   }
 
   if (!isAdmin) {
-    return <Workspace><div className="p-8 text-center text-red-500">Access Denied. Admins only.</div></Workspace>;
+    return <Workspace wide><div className="p-8 text-center text-red-500">Access Denied. Admins only.</div></Workspace>;
   }
 
   return (
-    <Workspace>
-      <div className="flex flex-col h-[calc(100vh-64px)] -m-6">
+    <Workspace wide>
+      <div className="flex flex-col h-[calc(100vh-64px)] -mx-2 sm:-mx-4">
         {/* Full bleed editor within the workspace */}
         <AdminEditor projectId={projectId} />
       </div>

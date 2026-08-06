@@ -2,14 +2,17 @@
 
 ## Your project reference
 
-Production project (WIDE OS V1):
+Active project (WIDE OS 2.0 — linked locally):
 
 ```text
-lzwmnxvirbocupqciqnp
+fxjntpgyikryuczaxqlv
 ```
 
-URL: `https://lzwmnxvirbocupqciqnp.supabase.co`  
-Dashboard: https://supabase.com/dashboard/project/lzwmnxvirbocupqciqnp
+URL: `https://fxjntpgyikryuczaxqlv.supabase.co`  
+Dashboard: https://supabase.com/dashboard/project/fxjntpgyikryuczaxqlv  
+App: https://os-bice-nine.vercel.app
+
+> Older docs mentioned `lzwmnxvirbocupqciqnp` (WIDE-OS-Prod) — that project is inactive; do not push migrations there.
 
 ---
 
@@ -120,7 +123,7 @@ Set in Vercel → Project → Settings → Environment Variables:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server only)
-- `NEXT_PUBLIC_SITE_URL` = your Vercel URL
+- `NEXT_PUBLIC_SITE_URL` = `https://os-bice-nine.vercel.app`
 
 Never commit `.env.local` to Git.
 

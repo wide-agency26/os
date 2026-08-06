@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAgencyStaff } from "@/lib/auth-guards";
 import { generateJsonFromGateway, hasGatewayCredentials } from "@/lib/ai/gateway-json";
 import { createClient } from "@/utils/supabase/server";
+import type { Json } from "@/types/supabase";
 
 export type AiHqState = { error?: string; success?: string };
 
@@ -45,7 +46,7 @@ export async function submitAiHqPrompt(
   const { error } = await supabase.from("ai_hq_jobs").insert({
     workspace_id: workspaceId,
     prompt,
-    result_json: resultJson,
+    result_json: resultJson as Json,
     is_draft: true,
     status: "queued",
     created_by: user?.id ?? null,

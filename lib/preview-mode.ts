@@ -1,9 +1,6 @@
 import type { PortalRole } from "@/lib/rbac";
 import { isUuid } from "@/lib/routing";
-import {
-  adminPaths,
-  clientPaths,
-} from "@/lib/wide-os/paths";
+import { clientPaths } from "@/lib/wide-os/paths";
 
 export const PREVIEW_COOKIE_ROLE = "wide_preview_role";
 export const PREVIEW_COOKIE_CLIENT = "wide_preview_client_id";
@@ -67,7 +64,7 @@ export function previewHomePath(preview: PreviewContext): string {
     case "client":
       return clientPaths.dashboard(preview.clientId!);
     default:
-      return adminPaths.dashboard();
+      return "/app/home";
   }
 }
 

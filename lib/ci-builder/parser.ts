@@ -6,7 +6,7 @@ export interface ParseResult {
   assets: Partial<CIAsset>[]; // All items parsed
   themeSuggested: any;
   report: {
-    format?: 'items_manifest' | 'design_tokens' | 'unknown';
+    format?: 'items_manifest' | 'design_tokens' | 'node_tree' | 'unknown';
     totalItems: number;
     assignedCount: number;
     unassignedCount: number;
@@ -68,17 +68,232 @@ export function parseManifest(
 
   const isArray = Array.isArray(manifest);
   const hasItems = !isArray && Boolean(manifest.items || manifest.frames || manifest.layers);
-  const hasDesignTokens = !isArray && Boolean(manifest.designTokens || manifest.structure);
+  const hasDesignTokens =
+    !isArray &&
+    Boolean(manifest.designTokens) &&
+    !looksLikeNodeTree(manifest);
+  // "structure" alone used to mean design tokens — only if it looks token-like, not a node tree
+  const hasTokenStructure =
+    !isArray &&
+    Boolean(manifest.structure) &&
+    !looksLikeNodeTree(manifest) &&
+    !looksLikeNodeTree(manifest.structure) &&
+    (Boolean(manifest.designTokens) ||
+      typeof manifest.structure === "object" &&
+        (manifest.structure.colors ||
+          manifest.structure.fonts ||
+          manifest.structure.typography));
 
   if (isArray || hasItems) {
     const result = parseFlatItemsManifest(manifest, existingSections);
     result.report.format = 'items_manifest';
     return result;
-  } else if (hasDesignTokens) {
-    return parseDesignTokensManifest(manifest, existingSections);
-  } else {
-    return buildUnknownFormatReport(manifest, existingSections);
   }
+
+  if (hasDesignTokens || hasTokenStructure) {
+    return parseDesignTokensManifest(manifest, existingSections);
+  }
+
+  // Figma / HTML-tree style exports: { id, type, name, tag, attr, children }
+  if (looksLikeNodeTree(manifest) || looksLikeNodeTree(manifest.document) || looksLikeNodeTree(manifest.root)) {
+    const root = looksLikeNodeTree(manifest)
+      ? manifest
+      : looksLikeNodeTree(manifest.document)
+        ? manifest.document
+        : manifest.root;
+    const items = flattenNodeTreeToItems(root);
+    const result = parseFlatItemsManifest({ items }, existingSections);
+    result.report.format = 'node_tree';
+    result.report.message = `Parsed node-tree JSON (${items.length} layers). Frame names were matched to Brand Guideline sections.`;
+    result.report.detectedNameKeys = Array.from(
+      new Set([...(result.report.detectedNameKeys || []), 'name', 'type', 'tag'])
+    );
+    return result;
+  }
+
+  // Array of node trees
+  if (
+    !isArray &&
+    Array.isArray(manifest.nodes) &&
+    manifest.nodes.some((n: any) => looksLikeNodeTree(n))
+  ) {
+    const items = manifest.nodes.flatMap((n: any) => flattenNodeTreeToItems(n));
+    const result = parseFlatItemsManifest({ items }, existingSections);
+    result.report.format = 'node_tree';
+    result.report.message = `Parsed node-tree JSON (${items.length} layers from ${manifest.nodes.length} roots).`;
+    return result;
+  }
+
+  return buildUnknownFormatReport(manifest, existingSections);
+}
+
+/** Detect DOM/Figma-plugin tree: id + name + children (and often type/tag/attr). */
+export function looksLikeNodeTree(node: any): boolean {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return false;
+  const hasChildren = Array.isArray(node.children);
+  const hasIdentity =
+    typeof node.name === 'string' ||
+    typeof node.id === 'string' ||
+    typeof node.id === 'number';
+  const hasTreeHints =
+    typeof node.type === 'string' ||
+    typeof node.tag === 'string' ||
+    (node.attr && typeof node.attr === 'object') ||
+    (node.attrs && typeof node.attrs === 'object');
+  // Root with only children array of trees
+  if (hasChildren && hasIdentity) return true;
+  if (hasChildren && hasTreeHints) return true;
+  // Single leaf still counts if it looks like a node (for nested detection)
+  if (hasIdentity && hasTreeHints) return true;
+  return false;
+}
+
+const INTERESTING_NODE_TYPES = new Set([
+  'FRAME',
+  'COMPONENT',
+  'COMPONENT_SET',
+  'INSTANCE',
+  'GROUP',
+  'SECTION',
+  'PAGE',
+  'RECTANGLE',
+  'ELLIPSE',
+  'VECTOR',
+  'BOOLEAN_OPERATION',
+  'STAR',
+  'LINE',
+  'POLYGON',
+  'TEXT',
+  'IMAGE',
+  'element',
+  'img',
+  'div',
+  'section',
+  'svg',
+]);
+
+/**
+ * Walk a node tree and emit flat manifest items compatible with parseFlatItemsManifest.
+ */
+export function flattenNodeTreeToItems(root: any): ManifestItem[] {
+  const items: ManifestItem[] = [];
+  const seen = new Set<string>();
+
+  const visit = (node: any, pathNames: string[]) => {
+    if (!node || typeof node !== 'object') return;
+
+    const name =
+      (typeof node.name === 'string' && node.name) ||
+      (typeof node.title === 'string' && node.title) ||
+      (typeof node.tag === 'string' && node.tag) ||
+      '';
+    const type = String(node.type || node.tag || '').toUpperCase();
+    const tag = String(node.tag || '').toLowerCase();
+    const nextPath = name ? [...pathNames, name] : pathNames;
+
+    const attr = node.attr || node.attrs || node.attributes || {};
+    const file =
+      pickFileRef(node, attr) ||
+      '';
+
+    const width =
+      node.width ??
+      attr.width ??
+      node.absoluteBoundingBox?.width ??
+      undefined;
+    const height =
+      node.height ??
+      attr.height ??
+      node.absoluteBoundingBox?.height ??
+      undefined;
+
+    // Prefer section-like names on THIS node (Logo/…, Colors/…).
+    // Do not use full path matching — short synonyms like "do" falsely hit "Document".
+    const match = name ? matchSectionType(name) : { type: null };
+
+    const skipType =
+      type === 'DOCUMENT' ||
+      type === 'CANVAS' ||
+      type === 'PAGE' ||
+      tag === 'document';
+
+    const shouldEmit =
+      !skipType && Boolean(name) && (Boolean(match.type) || Boolean(file));
+
+    if (shouldEmit) {
+      const pathName = nextPath.join('/');
+      const dedupeKey = `${node.id || ''}::${pathName}::${file}`;
+      if (!seen.has(dedupeKey)) {
+        seen.add(dedupeKey);
+        const frameName = name || pathName;
+
+        // Hex in name or attr
+        let colorHex: string | undefined;
+        const hexFromName = frameName.match(/#[0-9A-Fa-f]{6}/);
+        if (hexFromName) colorHex = hexFromName[0];
+        else if (typeof attr.fill === 'string' && attr.fill.startsWith('#')) colorHex = attr.fill;
+        else if (typeof attr.color === 'string' && attr.color.startsWith('#')) colorHex = attr.color;
+        else if (typeof attr['background-color'] === 'string') {
+          const m = String(attr['background-color']).match(/#[0-9A-Fa-f]{6}/);
+          if (m) colorHex = m[0];
+        } else if (node.fills?.[0]?.color) {
+          const c = node.fills[0].color;
+          if (typeof c.r === 'number') {
+            const r = Math.round(c.r * 255).toString(16).padStart(2, '0');
+            const g = Math.round(c.g * 255).toString(16).padStart(2, '0');
+            const b = Math.round(c.b * 255).toString(16).padStart(2, '0');
+            colorHex = `#${r}${g}${b}`;
+          }
+        }
+
+        const item: ManifestItem = {
+          frame_name: colorHex && !frameName.includes('#') ? `${frameName} ${colorHex}` : frameName,
+          name: frameName,
+          file: file || undefined,
+          filename: file || undefined,
+          image: file || undefined,
+          width: width != null ? Number(width) : undefined,
+          height: height != null ? Number(height) : undefined,
+          id: node.id,
+          type: node.type || node.tag,
+          tag: node.tag,
+        };
+        items.push(item);
+      }
+    }
+
+    const children = Array.isArray(node.children) ? node.children : [];
+    for (const child of children) visit(child, nextPath);
+  };
+
+  visit(root, []);
+  return items;
+}
+
+function pickFileRef(node: any, attr: Record<string, any>): string {
+  const candidates = [
+    node.file,
+    node.filename,
+    node.image,
+    node.src,
+    node.url,
+    attr.src,
+    attr.href,
+    attr['data-src'],
+    attr['data-file'],
+    attr['data-image'],
+    attr.file,
+    attr.filename,
+    attr.image,
+    // nested export paths some plugins use
+    node.export?.file,
+    node.asset?.url,
+    node.asset?.path,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return '';
 }
 
 function buildUnknownFormatReport(manifest: any, existingSections: Partial<CISection>[] = []): ParseResult {
@@ -96,7 +311,7 @@ function buildUnknownFormatReport(manifest: any, existingSections: Partial<CISec
       detectedNameKeys: detectedKeys,
       detectedFileKeys: [],
       missingFileRows: [],
-      message: `Unrecognized JSON format. Expected a flat items manifest (with 'items' array) or a Figma Design Tokens export (with 'designTokens' or 'structure' keys). Found top-level keys: ${detectedKeys.join(', ') || 'none'}`
+      message: `Unrecognized JSON format. Expected a flat items manifest (with 'items' array), a Figma Design Tokens export (with 'designTokens'), or a node-tree export (with 'id'/'name'/'children', optionally 'tag'/'attr'). Found top-level keys: ${detectedKeys.join(', ') || 'none'}`
     }
   };
 }

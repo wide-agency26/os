@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
+import type { Json } from "@/types/supabase";
 import { revalidatePath } from "next/cache";
 import { buildGuidelineFromUpload } from "@/lib/brand-guideline/extract";
 import { mergeWithDefaults } from "@/lib/brand-guideline/defaults";
@@ -67,9 +68,9 @@ export async function saveBrandGuideline(clientId: string, document: unknown) {
     const { error } = await supabase
       .from("brand_hubs")
       .update({
-        guideline_document: doc as unknown as Record<string, unknown>,
-        brand_colors: doc.colors.neons.slice(0, 8).map((c) => ({ name: c.name, hex: c.hex })),
-        typography: { primary: doc.typography.fontFamily.split(",")[0]?.trim() ?? "Inter" },
+        guideline_document: doc as unknown as Json,
+        brand_colors: doc.colors.neons.slice(0, 8).map((c) => ({ name: c.name, hex: c.hex })) as Json,
+        typography: { primary: doc.typography.fontFamily.split(",")[0]?.trim() ?? "Inter" } as Json,
       })
       .eq("id", hub.id);
 
@@ -77,9 +78,9 @@ export async function saveBrandGuideline(clientId: string, document: unknown) {
   } else {
     const { error } = await supabase.from("brand_hubs").insert({
       client_id: clientId,
-      guideline_document: doc as unknown as Record<string, unknown>,
-      brand_colors: doc.colors.neons.slice(0, 8).map((c) => ({ name: c.name, hex: c.hex })),
-      typography: { primary: doc.typography.fontFamily.split(",")[0]?.trim() ?? "Inter" },
+      guideline_document: doc as unknown as Json,
+      brand_colors: doc.colors.neons.slice(0, 8).map((c) => ({ name: c.name, hex: c.hex })) as Json,
+      typography: { primary: doc.typography.fontFamily.split(",")[0]?.trim() ?? "Inter" } as Json,
     });
 
     if (error) return { error: error.message };

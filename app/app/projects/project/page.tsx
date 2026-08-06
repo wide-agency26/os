@@ -6,10 +6,18 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import { GateIcon, StaleBadge } from "@/components/pm/PmBadges";
+
+type PmSignal = {
+  lastActivity: string | null;
+  hasGate: boolean;
+  hasTasks: boolean;
+};
 
 export default function ProjectListView() {
   const router = useRouter();
   const [projects, setProjects] = useState<any[]>([]);
+  const [signals, setSignals] = useState<Record<string, PmSignal>>({});
   const [loading, setLoading] = useState(true);
 
   // Selection state
@@ -34,6 +42,41 @@ export default function ProjectListView() {
       .order("created_at", { ascending: false });
     
     setProjects(data || []);
+
+    const ids = (data || []).map((p: any) => p.id);
+    if (ids.length) {
+      const { data: tasks } = await (supabase as any)
+        .from("pm_tasks")
+        .select("project_id, status, is_gate, last_activity_at")
+        .in("project_id", ids);
+
+      const map: Record<string, PmSignal> = {};
+      for (const id of ids) {
+        map[id] = { lastActivity: null, hasGate: false, hasTasks: false };
+      }
+      for (const t of tasks || []) {
+        const s = map[t.project_id];
+        if (!s) continue;
+        s.hasTasks = true;
+        if (
+          !s.lastActivity ||
+          new Date(t.last_activity_at) > new Date(s.lastActivity)
+        ) {
+          s.lastActivity = t.last_activity_at;
+        }
+        if (
+          t.is_gate &&
+          t.status !== "done" &&
+          t.status !== "cancelled"
+        ) {
+          s.hasGate = true;
+        }
+      }
+      setSignals(map);
+    } else {
+      setSignals({});
+    }
+
     setLoading(false);
   };
 
@@ -143,6 +186,7 @@ export default function ProjectListView() {
                 />
               </th>
               <th className="px-4 py-3 font-medium text-gray-600">Project Name</th>
+              <th className="px-4 py-3 font-medium text-gray-600">Signals</th>
               <th className="px-4 py-3 font-medium text-gray-600">Type</th>
               <th className="px-4 py-3 font-medium text-gray-600">Customer</th>
               <th className="px-4 py-3 font-medium text-gray-600">Status</th>
@@ -154,9 +198,9 @@ export default function ProjectListView() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="p-8 text-center text-gray-500">Loading...</td></tr>
+              <tr><td colSpan={9} className="p-8 text-center text-gray-500">Loading...</td></tr>
             ) : projects.length === 0 ? (
-              <tr><td colSpan={8} className="p-8 text-center text-gray-500">No projects found.</td></tr>
+              <tr><td colSpan={9} className="p-8 text-center text-gray-500">No projects found.</td></tr>
             ) : (
               projects.map((p, idx) => (
                 <tr 
@@ -174,6 +218,12 @@ export default function ProjectListView() {
                     />
                   </td>
                   <td className="px-4 py-3 font-medium text-gray-900">{p.title}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      {signals[p.id]?.hasGate ? <GateIcon /> : null}
+                      <StaleBadge lastActivityAt={signals[p.id]?.lastActivity} />
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-gray-600">{p.project_type?.name || "-"}</td>
                   <td className="px-4 py-3 text-gray-600">{p.client?.company || p.client?.name || "-"}</td>
                   <td className="px-4 py-3">

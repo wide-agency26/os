@@ -2,8 +2,9 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
+import { homePathForRole } from "@/lib/routing";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { WideLogo } from "@/components/brand/WideLogo";
 
 function LoginForm() {
@@ -15,7 +16,6 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   useEffect(() => {
     const q = searchParams.get("error");
@@ -80,7 +80,15 @@ function LoginForm() {
         return;
       }
 
-      router.push("/app/home");
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+
+      const dest = homePathForRole(profile?.role);
+      // Hard nav so proxy + cookies settle cleanly after auth
+      window.location.assign(dest);
     } catch {
       setError("An unexpected error occurred. Please try again.");
       setLoading(false);

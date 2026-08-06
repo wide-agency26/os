@@ -2,8 +2,7 @@
 
 import React from "react";
 import { XCircle, Building2, LogOut, ArrowRight } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
-import { useRouter } from "next/navigation";
+import { performSignOut } from "@/lib/auth/sign-out";
 
 interface RejectedAccessCardProps {
   companyName: string;
@@ -11,12 +10,8 @@ interface RejectedAccessCardProps {
 }
 
 export function RejectedAccessCard({ companyName, onSelectDifferentCompany }: RejectedAccessCardProps) {
-  const router = useRouter();
-
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
+  const handleSignOut = () => {
+    void performSignOut();
   };
 
   return (

@@ -127,7 +127,7 @@ export function GridFramesSection({
                     <select
                       value={frame.aspectRatio || "1:1"}
                       onChange={(e) => updateFrame(frame.id, { aspectRatio: e.target.value })}
-                      className="bg-white border rounded px-2 py-1"
+                      className="bg-white text-gray-900 border rounded px-2 py-1"
                     >
                       <option value="1:1">1:1 (Square)</option>
                       <option value="4:5">4:5 (Portrait)</option>

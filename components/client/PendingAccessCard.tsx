@@ -2,20 +2,15 @@
 
 import React from "react";
 import { Clock, ShieldCheck, LogOut } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
-import { useRouter } from "next/navigation";
+import { performSignOut } from "@/lib/auth/sign-out";
 
 interface PendingAccessCardProps {
   companyName: string;
 }
 
 export function PendingAccessCard({ companyName }: PendingAccessCardProps) {
-  const router = useRouter();
-
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
+  const handleSignOut = () => {
+    void performSignOut();
   };
 
   return (

@@ -35,6 +35,7 @@ export interface DetectionResult {
 
 // ── Date patterns ──────────────────────────────────────────────────
 const DATE_PATTERNS = [
+  /^\d{8}$/,                                       // 20260611 (GA4)
   /^\d{4}-\d{1,2}-\d{1,2}$/,                    // 2024-1-15
   /^\d{4}-\d{1,2}-\d{1,2}[T\s]\d{1,2}:\d{2}/,   // 2024-01-15 15:30:00
   /^\d{1,2}\/\d{1,2}\/\d{2,4}$/,                // 1/15/2024 or 1/15/24
@@ -47,6 +48,12 @@ const DATE_PATTERNS = [
 function looksLikeDate(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
+  if (/^\d{8}$/.test(trimmed)) {
+    const y = Number(trimmed.slice(0, 4));
+    const m = Number(trimmed.slice(4, 6));
+    const d = Number(trimmed.slice(6, 8));
+    return y >= 1990 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31;
+  }
   return DATE_PATTERNS.some((p) => p.test(trimmed));
 }
 

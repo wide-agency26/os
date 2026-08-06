@@ -10,10 +10,13 @@ function isValidUUID(str?: string): boolean {
 }
 import { SectionRenderer } from "./sections/index";
 import { parseManifest } from "@/lib/ci-builder/parser";
+import { applyImportResult } from "@/lib/ci-builder/import/apply-import-result";
 import { CI_GLOSSARY } from "@/lib/ci-builder/glossary";
-import { Settings, Share, UploadCloud, Plus, GripVertical, CheckSquare, Square, X, AlertTriangle, Layers, Save, Check, Loader2 } from "lucide-react";
+import { Settings, Share, Plus, GripVertical, CheckSquare, Square, X, AlertTriangle, Layers, Save, Check, Loader2, Trash2 } from "lucide-react";
 import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
+import { ImportPanel } from "./ImportPanel";
+import { resetCiGuideline } from "@/app/actions/ci-builder";
 
 export function AdminEditor({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
@@ -29,6 +32,8 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const [showThemePanel, setShowThemePanel] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [showAddSectionDropdown, setShowAddSectionDropdown] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [importReport, setImportReport] = useState<any>(null);
   const [selectedUnassigned, setSelectedUnassigned] = useState<Set<string>>(new Set());
@@ -270,13 +275,15 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   };
 
   // Handle manifest upload with IMMEDIATE DB WRITE-THROUGH
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !guideline) return;
+  const handleJsonFile = async (file: File) => {
+    if (!guideline) return;
 
     if (sections.length > 0 || assets.length > 0) {
-      if (!window.confirm("Re-importing will add new sections and update assets additively. Existing copy edits will not be overwritten. Continue?")) {
-        if (e.target) e.target.value = "";
+      if (
+        !window.confirm(
+          "Re-importing will add new sections and update assets additively. Existing copy edits will not be overwritten. Continue?"
+        )
+      ) {
         return;
       }
     }
@@ -286,89 +293,24 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     try {
       const text = await file.text();
       const manifest = JSON.parse(text);
-      
       const parsed = parseManifest(manifest, sections);
       setImportReport(parsed.report);
-      
-      // Map old/non-UUID section IDs to valid UUIDs
-      const sectionIdMap = new Map<string, string>();
-      const newSections = parsed.sections.map((s, i) => {
-        const oldId = s.id || "";
-        const validId = isValidUUID(oldId) ? oldId : generateUUID();
-        if (oldId && oldId !== validId) {
-          sectionIdMap.set(oldId, validId);
-        }
-        return {
-          ...s,
-          id: validId,
-          guideline_id: guideline.id,
-          position: s.position !== undefined ? s.position : i
-        };
+
+      const applied = await applyImportResult(supabase, parsed, {
+        guidelineId: guideline.id,
+        existingTheme: guideline.theme,
+        mode: "additive",
+        source: "json",
+        rawPayload: { fileName: file.name, format: parsed.report.format },
       });
 
-      // Map old/non-UUID asset IDs to valid UUIDs
-      const assetIdMap = new Map<string, string>();
-      const newAssets = parsed.assets.map(a => {
-        const oldId = a.id || "";
-        const validId = isValidUUID(oldId) ? oldId : generateUUID();
-        if (oldId && oldId !== validId) {
-          assetIdMap.set(oldId, validId);
-        }
-
-        let secId = a.section_id;
-        if (secId && sectionIdMap.has(secId)) {
-          secId = sectionIdMap.get(secId)!;
-        } else if (secId && !isValidUUID(secId)) {
-          secId = null;
-        }
-
-        return {
-          ...a,
-          id: validId,
-          guideline_id: guideline.id,
-          section_id: secId
-        };
-      });
-
-      // Update assetId references inside section data if mapped
-      newSections.forEach(sec => {
-        let dStr = JSON.stringify(sec.data || {});
-        assetIdMap.forEach((validId, oldId) => {
-          if (oldId && validId && dStr.includes(oldId)) {
-            dStr = dStr.replaceAll(oldId, validId);
-          }
-        });
-        sec.data = JSON.parse(dStr);
-      });
-
-      // BULK PERSIST TO SUPABASE IMMEDIATELY
-      if (newSections.length > 0) {
-        const { error: secErr } = await (supabase as any)
-          .from("ci_sections")
-          .upsert(newSections);
-        if (secErr) throw secErr;
-      }
-
-      if (newAssets.length > 0) {
-        const { error: astErr } = await (supabase as any)
-          .from("ci_assets")
-          .upsert(newAssets);
-        if (astErr) throw astErr;
-      }
-
-      const mergedTheme = { ...guideline.theme, ...parsed.themeSuggested };
-      if (parsed.themeSuggested && Object.keys(parsed.themeSuggested).length > 0) {
-        await (supabase as any)
-          .from("ci_guidelines")
-          .update({ theme: mergedTheme })
-          .eq("id", guideline.id);
-      }
-
-      setSections(newSections);
-      setAssets(prev => [...prev.filter(pa => !newAssets.find(na => na.id === pa.id)), ...newAssets]);
-      setGuideline({ ...guideline, theme: mergedTheme });
+      setSections(applied.sections);
+      setAssets((prev) => [
+        ...prev.filter((pa) => !applied.assets.find((na) => na.id === pa.id)),
+        ...applied.assets,
+      ]);
+      setGuideline({ ...guideline, theme: applied.theme });
       setSaveStatus("saved");
-
     } catch (err: any) {
       console.error("Error during manifest import & persistence:", err);
       alert(`Failed to parse/save manifest: ${err.message || err}`);
@@ -376,8 +318,36 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       setSaveErrorMsg(err.message);
     } finally {
       setUploading(false);
-      if (e.target) e.target.value = "";
     }
+  };
+
+  const handleFigmaImported = (result: {
+    sections: any[];
+    assets: any[];
+    theme: any;
+    report: any;
+    figma?: { fileKey?: string; fileName?: string; version?: string };
+  }) => {
+    setImportReport(result.report);
+    if (result.sections?.length) setSections(result.sections);
+    if (result.assets) setAssets(result.assets);
+    setGuideline((g: any) =>
+      g
+        ? {
+            ...g,
+            theme: result.theme || g.theme,
+            ...(result.figma?.fileKey
+              ? {
+                  figma_file_key: result.figma.fileKey,
+                  figma_file_name: result.figma.fileName,
+                  figma_file_version: result.figma.version,
+                  figma_last_imported_at: new Date().toISOString(),
+                }
+              : {}),
+          }
+        : g
+    );
+    setSaveStatus("saved");
   };
 
   const applyThemeToCSS = () => {
@@ -451,12 +421,22 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           </div>
 
           <p className="text-xs text-gray-500 mb-4">Edit brand guideline structure and assets.</p>
-          
-          <label className="flex-1 bg-white border border-gray-300 rounded px-3 py-1.5 text-xs font-medium text-center cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
-            <UploadCloud className="w-4 h-4" />
-            {uploading ? "Parsing & Saving..." : "Upload Manifest"}
-            <input type="file" accept=".json" className="hidden" onChange={handleFileUpload} />
-          </label>
+
+          {guideline?.id && (
+            <ImportPanel
+              guidelineId={guideline.id}
+              projectId={projectId}
+              uploading={uploading}
+              linkedFigma={{
+                fileKey: guideline.figma_file_key || null,
+                fileName: guideline.figma_file_name || null,
+                version: guideline.figma_file_version || null,
+                lastImportedAt: guideline.figma_last_imported_at || null,
+              }}
+              onJsonFile={handleJsonFile}
+              onFigmaImported={handleFigmaImported}
+            />
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -465,7 +445,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             {sections.length > 0 && <span className="text-gray-400">{sections.length}</span>}
           </h3>
           {sections.length === 0 ? (
-            <p className="text-gray-400 text-xs italic">No sections. Upload a manifest or click + Add Section.</p>
+            <p className="text-gray-400 text-xs italic">No sections. Import from JSON or Figma, or click + Add Section.</p>
           ) : (
             sections.map((sec) => (
               <div key={sec.id} className="flex items-center gap-2 p-2 rounded hover:bg-gray-200 cursor-pointer group">
@@ -538,6 +518,14 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           >
             <Share className="w-4 h-4" /> Publish
           </button>
+
+          <button
+            type="button"
+            onClick={() => setShowResetConfirm(true)}
+            className="w-full flex items-center justify-center gap-2 bg-white border border-red-200 text-red-700 rounded px-3 py-1.5 font-medium hover:bg-red-50"
+          >
+            <Trash2 className="w-4 h-4" /> Reset guideline
+          </button>
         </div>
       </div>
 
@@ -563,7 +551,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                   <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-amber-200 shadow-sm">
                     <span className="text-sm font-medium text-gray-700 px-2">{selectedUnassigned.size} selected</span>
                     <select 
-                      className="text-sm border border-gray-300 rounded-md p-1.5 min-w-[150px]"
+                      className="text-sm border border-gray-300 rounded-md p-1.5 min-w-[150px] bg-white text-gray-900"
                       value=""
                       onChange={async (e) => {
                         const secId = e.target.value;
@@ -649,7 +637,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                         <div className="text-[10px] text-gray-500 truncate mb-2" title={asset.storage_path || ''}>{asset.storage_path}</div>
                         
                         <select 
-                          className="text-xs border border-gray-200 rounded p-1.5 w-full bg-gray-50 cursor-pointer hover:bg-white"
+                          className="text-xs border border-gray-200 rounded p-1.5 w-full bg-gray-50 text-gray-900 cursor-pointer hover:bg-white"
                           value=""
                           onChange={async (e) => {
                             const secId = e.target.value;
@@ -727,6 +715,66 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         />
       )}
 
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white text-gray-900 rounded-2xl p-6 shadow-2xl max-w-md w-full space-y-4 border border-gray-100">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <h4 className="font-semibold text-gray-900 text-sm">Reset brand guideline?</h4>
+            </div>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              This permanently deletes all sections, assets, and published versions for this project
+              and returns the guideline to an empty draft. Clients will no longer see a published
+              version until you publish again. This cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={resetting}
+                onClick={() => setShowResetConfirm(false)}
+                className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={resetting}
+                onClick={async () => {
+                  setResetting(true);
+                  const result = await resetCiGuideline(projectId);
+                  setResetting(false);
+                  if (!result.ok) {
+                    setSaveStatus("error");
+                    setSaveErrorMsg(result.error || "Reset failed");
+                    setShowResetConfirm(false);
+                    return;
+                  }
+                  setShowResetConfirm(false);
+                  pendingUpdatesRef.current.clear();
+                  setSections([]);
+                  setAssets([]);
+                  setSaveStatus("saved");
+                  await loadData();
+                }}
+                className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {resetting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Resetting…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" /> Delete all &amp; start fresh
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {importReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
@@ -754,7 +802,11 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                     <div className="bg-blue-50 rounded-xl p-4 text-center">
                       <div className="text-3xl font-bold text-blue-600 mb-1">{importReport.totalItems}</div>
                       <div className="text-xs font-medium text-blue-800 uppercase tracking-wide">
-                        {importReport.format === 'design_tokens' ? 'Tokens Found' : 'Assets Found'}
+                        {importReport.format === 'design_tokens'
+                          ? 'Tokens Found'
+                          : importReport.format === 'node_tree'
+                            ? 'Layers Found'
+                            : 'Assets Found'}
                       </div>
                     </div>
                     <div className="bg-green-50 rounded-xl p-4 text-center">

@@ -4,12 +4,20 @@ import { ReactNode } from "react";
 
 interface WorkspaceProps {
   children: ReactNode;
+  /** Wider content shell (e.g. Brand Guideline Builder). Default max-w-5xl. */
+  wide?: boolean;
 }
 
-export function Workspace({ children }: WorkspaceProps) {
+export function Workspace({ children, wide = false }: WorkspaceProps) {
   return (
     <div className="flex-1 overflow-y-auto bg-white">
-      <div className="max-w-5xl mx-auto p-8">
+      <div
+        className={
+          wide
+            ? "w-full max-w-[1440px] mx-auto px-4 py-4 sm:px-6"
+            : "max-w-5xl mx-auto p-8"
+        }
+      >
         {children}
       </div>
     </div>

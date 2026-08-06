@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Mail, RefreshCw, LogOut, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
-import { useRouter } from "next/navigation";
+import { performSignOut } from "@/lib/auth/sign-out";
 
 interface AwaitingEmailCardProps {
   email?: string;
@@ -12,7 +12,6 @@ interface AwaitingEmailCardProps {
 export function AwaitingEmailCard({ email }: AwaitingEmailCardProps) {
   const [resending, setResending] = useState(false);
   const [sent, setSent] = useState(false);
-  const router = useRouter();
 
   const handleResend = async () => {
     if (!email) return;
@@ -31,10 +30,8 @@ export function AwaitingEmailCard({ email }: AwaitingEmailCardProps) {
     }
   };
 
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
+  const handleSignOut = () => {
+    void performSignOut();
   };
 
   return (

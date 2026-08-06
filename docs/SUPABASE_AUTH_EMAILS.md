@@ -5,11 +5,12 @@ Client invitation emails use `inviteUserByEmail` with `redirectTo` = `{NEXT_PUBL
 ## Fix localhost links in production
 
 1. **Supabase Dashboard** → Authentication → **URL configuration**
-   - **Site URL**: `https://wide-os-wide-agency26s-projects.vercel.app` (your production URL, no trailing slash)
-   - **Redirect URLs**: add `https://your-domain.com/auth/callback` and `http://localhost:3000/auth/callback` for local dev
+   - **Site URL**: `https://os-bice-nine.vercel.app` (production URL, no trailing slash)
+   - **Redirect URLs**: add `https://os-bice-nine.vercel.app/auth/callback` and `http://localhost:3000/auth/callback` for local dev
 
-2. **Vercel** (and local `.env.local` for production testing):
-   - `NEXT_PUBLIC_SITE_URL` = same production URL
+2. **Vercel** (and local `.env.local`):
+   - Production/Preview: `NEXT_PUBLIC_SITE_URL=https://os-bice-nine.vercel.app`
+   - Development: `NEXT_PUBLIC_SITE_URL=http://localhost:3000`
 
 3. **Email templates** (Authentication → Email templates → **Invite user**):
 

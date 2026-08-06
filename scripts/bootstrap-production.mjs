@@ -61,7 +61,15 @@ async function main() {
     return;
   }
 
-  const primary = users[0];
+  // Prefer an existing superadmin; otherwise promote the earliest auth user.
+  const { data: existingSuperadmins } = await admin
+    .from("profiles")
+    .select("id, role")
+    .eq("role", "superadmin")
+    .limit(1);
+
+  const primary =
+    users.find((u) => u.id === existingSuperadmins?.[0]?.id) ?? users[0];
   const email = primary.email ?? "";
   const fullName =
     (primary.user_metadata?.full_name ||
@@ -69,16 +77,9 @@ async function main() {
       email.split("@")[0] ||
       "Admin") + "";
 
-  const { data: existingProfile } = await admin
-    .from("profiles")
-    .select("id, role, email")
-    .eq("id", primary.id)
-    .maybeSingle();
-
   const { error: profileErr } = await admin.from("profiles").upsert(
     {
       id: primary.id,
-      email: email || existingProfile?.email || "admin@wide.local",
       full_name: fullName,
       role: "superadmin",
     },
@@ -145,72 +146,42 @@ async function main() {
     console.log(`\n✓ Demo prospect: /prospect/${prospect.id}/proposal`);
   }
 
-  const { data: clientProfiles } = await admin
-    .from("profiles")
-    .select("id")
-    .eq("role", "client")
+  // Demo project is company-scoped (crm_customers).
+  const { data: companies } = await admin
+    .from("crm_customers")
+    .select("id, name")
     .limit(1);
 
-  const clientId = clientProfiles?.[0]?.id;
-  if (clientId) {
-    const { error: gateErr } = await admin.from("client_delivery_gates").upsert(
-      {
-        client_id: clientId,
-        creative_routes: [
-          {
-            id: "route-a",
-            name: "Bold clarity",
-            logic: "Lead with proof",
-            tone: "Confident",
-            creative: "High contrast",
-            execution: "Hero + case studies",
-          },
-          {
-            id: "route-b",
-            name: "Warm craft",
-            logic: "Human-first",
-            tone: "Approachable",
-            creative: "Organic textures",
-            execution: "Story-led homepage",
-          },
-        ],
-      },
-      { onConflict: "client_id" }
-    );
-    if (gateErr) console.warn("client_delivery_gates:", gateErr.message);
-    else console.log(`✓ Kickoff gates for client ${clientId}`);
-
+  const companyId = companies?.[0]?.id;
+  if (companyId) {
     const { count: projectCount } = await admin
       .from("projects")
       .select("id", { count: "exact", head: true })
-      .eq("client_id", clientId)
+      .eq("client_id", companyId)
       .eq("title", "Brand identity refresh");
 
     if ((projectCount ?? 0) === 0) {
       const end = new Date();
       end.setDate(end.getDate() + 90);
       const { error: projErr } = await admin.from("projects").insert({
-        client_id: clientId,
+        client_id: companyId,
         title: "Brand identity refresh",
         scope:
           "Logo system, palette, typography, and living guidelines in the portal.",
         status: "running",
         start_date: new Date().toISOString().slice(0, 10),
         end_date: end.toISOString().slice(0, 10),
-        deliverables: [
-          { name: "Logo system (primary + alternates)", done: true },
-          { name: "Color & type tokens", done: true },
-          { name: "Brand guidelines (portal)", done: false },
-          { name: "Social templates", done: false },
-        ],
+        lead_admin_id: primary.id,
+        notes:
+          "Demo project seeded for portal testing (logo, tokens, guidelines, social templates).",
       });
       if (projErr) console.warn("projects insert:", projErr.message);
-      else console.log(`✓ Demo project for client ${clientId}`);
+      else console.log(`✓ Demo project for company ${companies[0].name}`);
     } else {
-      console.log("Demo project already exists for client.");
+      console.log("Demo project already exists for company.");
     }
   } else {
-    console.log("\nNo client profile yet — invite a client to seed project + kickoff gates.");
+    console.log("\nNo crm_customers yet — create a company to seed a demo project.");
   }
 
   console.log("\nDone.");

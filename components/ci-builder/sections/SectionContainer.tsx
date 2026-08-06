@@ -35,7 +35,7 @@ export function SectionContainer({
 
   return (
     <section id={section.section_type} className="py-20 border-b border-[var(--ci-border,#eaeaea)] scroll-mt-16">
-      <div className="max-w-5xl mx-auto px-6">
+      <div className="w-full max-w-[1440px] mx-auto px-6 lg:px-10">
         <div className="mb-14">
           <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
             {(section.eyebrow_label || isAdmin) && (

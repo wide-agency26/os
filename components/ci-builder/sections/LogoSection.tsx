@@ -160,7 +160,7 @@ export function LogoSection({
                         <select
                           value={logo.stage || "light"}
                           onChange={(e) => updateLogoVariant(itemKey, { stage: e.target.value as any })}
-                          className="bg-white border rounded px-1.5 py-0.5"
+                          className="bg-white text-gray-900 border rounded px-1.5 py-0.5"
                         >
                           <option value="light">Light</option>
                           <option value="dark">Dark</option>
@@ -172,7 +172,7 @@ export function LogoSection({
                         <select
                           value={logo.fit || "contain"}
                           onChange={(e) => updateLogoVariant(itemKey, { fit: e.target.value as any })}
-                          className="bg-white border rounded px-1.5 py-0.5"
+                          className="bg-white text-gray-900 border rounded px-1.5 py-0.5"
                         >
                           <option value="contain">Contain</option>
                           <option value="cover">Cover</option>

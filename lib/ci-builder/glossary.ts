@@ -132,27 +132,25 @@ export function matchSectionType(rawName: string): MatchResult {
     }
   }
 
-  // 4. Substring fallback match (any word in the string matches a prefix or synonym)
-  // Check the full normalized name in lowercase to ensure "StartupFestLogo" matches "logo"
+  // 4. Substring fallback match — skip very short synonyms (e.g. "do" in "Document")
   const fullLowercaseName = normalizedStr.toLowerCase();
-  
-  // Try to match the whole word if possible first from parts, then fallback to substring
+
   for (const word of parts.map(p => p.toLowerCase())) {
     for (const entry of CI_GLOSSARY) {
       if (
         entry.prefixes.some(p => p.toLowerCase() === word) || 
-        entry.synonyms.some(s => s.toLowerCase() === word)
+        entry.synonyms.some(s => s.toLowerCase() === word && s.length >= 3)
       ) {
         return { type: entry.section_type, match_method: 'substring', parts };
       }
     }
   }
 
-  // Pure substring fallback
+  // Pure substring fallback — require synonym length >= 4 to avoid "do"/"bg" noise
   for (const entry of CI_GLOSSARY) {
     if (
       entry.prefixes.some(p => fullLowercaseName.includes(p.toLowerCase())) ||
-      entry.synonyms.some(s => fullLowercaseName.includes(s.toLowerCase()))
+      entry.synonyms.some(s => s.length >= 4 && fullLowercaseName.includes(s.toLowerCase()))
     ) {
       return { type: entry.section_type, match_method: 'substring', parts };
     }
