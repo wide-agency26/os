@@ -11,6 +11,7 @@ import {
 } from "@/components/pm/PmBadges";
 import { assignPlaybookToProject } from "@/app/actions/pm";
 import { PM_ICONS } from "@/lib/pm/icons";
+import Link from "next/link";
 
 type Props = { projectId: string };
 
@@ -120,7 +121,11 @@ export function ProjectOverviewClient({ projectId }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-gray-600">Status: {project?.status || "—"}</span>
             <StaleBadge lastActivityAt={lastActivity} />
-            <ReviewQueueBadge count={reviewCount} />
+            {reviewCount > 0 ? (
+              <Link href={`/app/projects/${projectId}/review`}>
+                <ReviewQueueBadge count={reviewCount} />
+              </Link>
+            ) : null}
             {project?.pm_cycle_key ? (
               <span className="inline-flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
                 <PM_ICONS.recurring className="w-3.5 h-3.5" />
@@ -207,6 +212,14 @@ export function ProjectOverviewClient({ projectId }: Props) {
               <li>{openTasks.filter((t) => t.status === "in_progress").length} in progress</li>
               <li>{openTasks.filter((t) => t.status === "blocked").length} blocked</li>
               <li>{tasks.filter((t) => t.status === "done").length} done</li>
+              <li>
+                <Link
+                  href={`/app/projects/${projectId}/review`}
+                  className="underline hover:text-gray-900"
+                >
+                  {reviewCount} in review queue
+                </Link>
+              </li>
             </ul>
           </div>
         </aside>
