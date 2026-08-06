@@ -84,16 +84,7 @@ const MODULES: ModuleItem[] = [
     icon: Briefcase,
     founderOnly: true,
     items: [
-      {
-        name: "Projects",
-        href: "/app/projects/project",
-        items: [
-          { name: "Tasks", href: "/app/projects/task" },
-          { name: "Timesheets", href: "/app/projects/timesheet" },
-          { name: "Project Templates", href: "/app/projects/project-template" },
-          { name: "Project Types", href: "/app/projects/project-type" },
-        ],
-      },
+      { name: "Projects", href: "/app/projects/project" },
       {
         name: "Reports",
         href: "/app/projects/report",

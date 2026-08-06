@@ -118,9 +118,15 @@ export function CompanyOverviewClient() {
         <p className="text-sm text-gray-500 mt-1">
           Birds-eye across all clients and projects · sorted by staleness
         </p>
-        <p className="text-sm mt-2 flex items-center gap-2 text-red-700">
+        <p
+          className={`text-sm mt-2 flex items-center gap-2 ${
+            staleCount === 0 ? "text-emerald-700" : "text-red-700"
+          }`}
+        >
           <PM_ICONS.stale className="w-4 h-4" />
-          {staleCount} project{staleCount === 1 ? "" : "s"} need attention (≥{staleAfter}d quiet)
+          {staleCount === 0
+            ? `All clear — 0 projects need attention (≥${staleAfter}d quiet)`
+            : `${staleCount} project${staleCount === 1 ? "" : "s"} need attention (≥${staleAfter}d quiet)`}
         </p>
       </div>
 

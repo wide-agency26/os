@@ -8,6 +8,8 @@ import {
   Timer,
   Palette,
   BarChart3,
+  ArrowUpRight,
+  ArrowLeft,
 } from "lucide-react";
 import { PM_ICONS } from "@/lib/pm/icons";
 
@@ -16,8 +18,18 @@ const TABS = [
   { name: "Tasks", href: (id: string) => `/app/projects/${id}/tasks`, icon: CheckSquare },
   { name: "Timesheet", href: (id: string) => `/app/projects/${id}/timesheet`, icon: Timer },
   { name: "Cost Center", href: (id: string) => `/app/projects/${id}/cost`, icon: PM_ICONS.costCenter },
-  { name: "CI Builder", href: (id: string) => `/app/projects/${id}/ci-builder`, icon: Palette, external: true },
-  { name: "Reports", href: (_id: string) => `/app/projects/report`, icon: BarChart3, external: true },
+  {
+    name: "CI Builder",
+    href: (id: string) => `/app/projects/${id}/ci-builder`,
+    icon: Palette,
+    external: true,
+  },
+  {
+    name: "Reports",
+    href: (_id: string) => `/app/projects/report`,
+    icon: BarChart3,
+    external: true,
+  },
 ] as const;
 
 export function ProjectPmShell({
@@ -36,7 +48,13 @@ export function ProjectPmShell({
   return (
     <div>
       <div className="mb-6">
-        <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Project</p>
+        <Link
+          href="/app/projects/project"
+          className="inline-flex items-center gap-1 text-xs uppercase tracking-wide text-gray-400 mb-1 hover:text-gray-700 transition-colors"
+        >
+          <ArrowLeft className="w-3 h-3" />
+          Projects
+        </Link>
         <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
         {clientLabel ? (
           <p className="text-sm text-gray-500 mt-1">{clientLabel}</p>
@@ -46,8 +64,10 @@ export function ProjectPmShell({
       <nav className="flex flex-wrap gap-1 border-b border-gray-200 mb-6">
         {TABS.map((tab) => {
           const href = tab.href(projectId);
-          const active =
-            "exact" in tab && tab.exact
+          const isExternal = "external" in tab && tab.external;
+          const active = isExternal
+            ? false
+            : "exact" in tab && tab.exact
               ? pathname === href
               : pathname === href || pathname.startsWith(`${href}/`);
           const Icon = tab.icon;
@@ -63,6 +83,9 @@ export function ProjectPmShell({
             >
               <Icon className="w-3.5 h-3.5" />
               {tab.name}
+              {isExternal ? (
+                <ArrowUpRight className="w-3 h-3 opacity-70" aria-hidden />
+              ) : null}
             </Link>
           );
         })}

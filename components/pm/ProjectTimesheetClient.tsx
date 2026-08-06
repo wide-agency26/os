@@ -3,15 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { ProjectPmShell } from "@/components/pm/ProjectPmShell";
+import { TaskStatusBadge } from "@/components/pm/PmBadges";
 
 type Props = { projectId: string };
-
-function hoursBetween(start: string | null, end: string | null): number | null {
-  if (!start || !end) return null;
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  if (ms <= 0) return null;
-  return Math.round((ms / (1000 * 60 * 60)) * 10) / 10;
-}
 
 export function ProjectTimesheetClient({ projectId }: Props) {
   const [project, setProject] = useState<any>(null);
@@ -31,7 +25,7 @@ export function ProjectTimesheetClient({ projectId }: Props) {
       const { data: taskRows } = await (supabase as any)
         .from("pm_tasks")
         .select(
-          "id, title, default_role, status, started_at, completed_at, estimated_duration_hours, phase_label"
+          "id, title, default_role, status, estimated_duration_hours, phase_label"
         )
         .eq("project_id", projectId)
         .order("sort_order", { ascending: true });
@@ -43,26 +37,22 @@ export function ProjectTimesheetClient({ projectId }: Props) {
 
   const rows = useMemo(() => {
     return tasks
-      .filter((t) => t.started_at || t.status === "done")
-      .map((t) => {
-        const actual = hoursBetween(t.started_at, t.completed_at ?? new Date().toISOString());
-        const estimated = Number(t.estimated_duration_hours || 0);
-        return {
-          ...t,
-          actual,
-          estimated,
-          delta: actual != null ? Math.round((actual - estimated) * 10) / 10 : null,
-        };
-      });
+      .filter((t) => t.status !== "cancelled")
+      .map((t) => ({
+        ...t,
+        estimated: Number(t.estimated_duration_hours || 0),
+      }));
   }, [tasks]);
 
   const totals = useMemo(() => {
     return rows.reduce(
       (acc, r) => ({
         estimated: acc.estimated + (r.estimated || 0),
-        actual: acc.actual + (r.actual || 0),
+        remaining:
+          acc.remaining +
+          (r.status === "done" ? 0 : r.estimated || 0),
       }),
-      { estimated: 0, actual: 0 }
+      { estimated: 0, remaining: 0 }
     );
   }, [rows]);
 
@@ -77,17 +67,18 @@ export function ProjectTimesheetClient({ projectId }: Props) {
       clientLabel={project?.client?.company || project?.client?.name}
     >
       <p className="text-sm text-gray-500 mb-4">
-        Derived from task status transitions (in progress → done). No manual entry.
+        Estimated hours from the playbook. Actual hours are paused until we have a
+        reliable time source — no auto-running clock.
       </p>
 
       <div className="flex gap-6 text-sm mb-4">
         <div>
-          <span className="text-gray-500">Estimated </span>
+          <span className="text-gray-500">Playbook estimate </span>
           <span className="font-medium">{totals.estimated.toFixed(1)}h</span>
         </div>
         <div>
-          <span className="text-gray-500">Actual </span>
-          <span className="font-medium">{totals.actual.toFixed(1)}h</span>
+          <span className="text-gray-500">Remaining (open tasks) </span>
+          <span className="font-medium">{totals.remaining.toFixed(1)}h</span>
         </div>
       </div>
 
@@ -97,16 +88,16 @@ export function ProjectTimesheetClient({ projectId }: Props) {
             <tr>
               <th className="px-3 py-2">Task</th>
               <th className="px-3 py-2">Role</th>
+              <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Est.</th>
               <th className="px-3 py-2">Actual</th>
-              <th className="px-3 py-2">Δ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-3 py-6 text-gray-500 text-center">
-                  No timed work yet. Move tasks to In progress, then Done.
+                  No tasks yet. Assign a package playbook from Overview.
                 </td>
               </tr>
             ) : (
@@ -114,24 +105,11 @@ export function ProjectTimesheetClient({ projectId }: Props) {
                 <tr key={r.id}>
                   <td className="px-3 py-2 text-gray-900">{r.title}</td>
                   <td className="px-3 py-2 text-gray-500">{r.default_role || "—"}</td>
-                  <td className="px-3 py-2">{r.estimated}h</td>
                   <td className="px-3 py-2">
-                    {r.actual != null ? `${r.actual}h` : "—"}
-                    {r.status !== "done" && r.started_at ? (
-                      <span className="text-xs text-sky-700 ml-1">(running)</span>
-                    ) : null}
+                    <TaskStatusBadge status={r.status} />
                   </td>
-                  <td
-                    className={`px-3 py-2 ${
-                      r.delta != null && r.delta > 0
-                        ? "text-amber-700"
-                        : r.delta != null && r.delta < 0
-                          ? "text-emerald-700"
-                          : "text-gray-400"
-                    }`}
-                  >
-                    {r.delta != null ? `${r.delta > 0 ? "+" : ""}${r.delta}h` : "—"}
-                  </td>
+                  <td className="px-3 py-2">{r.estimated}h</td>
+                  <td className="px-3 py-2 text-gray-400">—</td>
                 </tr>
               ))
             )}

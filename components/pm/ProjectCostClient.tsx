@@ -130,7 +130,8 @@ export function ProjectCostClient({ projectId }: Props) {
     >
       <p className="text-sm text-gray-500 mb-4 flex items-center gap-2">
         <Icon className="w-4 h-4" />
-        Period {period} · rates are stubs until Roles & Rates is connected
+        Period {period} · planned figures use playbook estimated hours × stub rates
+        (actual hours not wired yet)
       </p>
 
       <div className="grid gap-4 sm:grid-cols-3 mb-6">
