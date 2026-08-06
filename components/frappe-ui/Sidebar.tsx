@@ -86,7 +86,7 @@ const MODULES: ModuleItem[] = [
     items: [
       { name: "Projects", href: "/app/projects/project" },
       {
-        name: "Reports",
+        name: "Report builder",
         href: "/app/projects/report",
         items: [
           { name: "Data Hub", href: "/app/projects/report-data" },
