@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { CISection, CIAsset, CITheme, generateUUID } from "@/lib/ci-builder/types";
+import { CISection, CIAsset, CITheme, generateUUID, cssFontStack } from "@/lib/ci-builder/types";
 
 function isValidUUID(str?: string): boolean {
   if (!str) return false;
@@ -17,6 +17,15 @@ import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
 import { ImportPanel } from "./ImportPanel";
 import { resetCiGuideline } from "@/app/actions/ci-builder";
+import { triggerToast, ToastContainer } from "./Toast";
+
+function themeHasFonts(theme: any): boolean {
+  if (!theme) return false;
+  if (Array.isArray(theme.availableFonts) && theme.availableFonts.length > 0) {
+    return true;
+  }
+  return Boolean(theme.primaryFont || theme.fontFamily);
+}
 
 export function AdminEditor({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
@@ -37,6 +46,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const [uploading, setUploading] = useState(false);
   const [importReport, setImportReport] = useState<any>(null);
   const [selectedUnassigned, setSelectedUnassigned] = useState<Set<string>>(new Set());
+  const [dragSectionId, setDragSectionId] = useState<string | null>(null);
 
   const supabase = createClient();
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -274,6 +284,55 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     }
   };
 
+  const persistSectionOrder = async (ordered: Partial<CISection>[]) => {
+    setSaveStatus("saving");
+    try {
+      await Promise.all(
+        ordered.map((sec, index) => {
+          if (!sec.id || !isValidUUID(sec.id)) return Promise.resolve();
+          return (supabase as any)
+            .from("ci_sections")
+            .update({ position: index })
+            .eq("id", sec.id);
+        })
+      );
+      setSaveStatus("saved");
+    } catch (err: any) {
+      console.error("Error saving section order:", err);
+      setSaveStatus("error");
+      setSaveErrorMsg(err.message || "Failed to save section order");
+    }
+  };
+
+  const reorderSections = (fromId: string, toId: string) => {
+    if (!fromId || !toId || fromId === toId) return;
+    setSections((prev) => {
+      const next = [...prev];
+      const fromIdx = next.findIndex((s) => s.id === fromId);
+      const toIdx = next.findIndex((s) => s.id === toId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      const withPos = next.map((s, i) => ({ ...s, position: i }));
+      void persistSectionOrder(withPos);
+      return withPos;
+    });
+  };
+
+  const discoveredFonts = (() => {
+    const set = new Set<string>();
+    for (const sec of sections) {
+      if (sec.section_type !== "typography") continue;
+      const rows = sec.data?.rows || [];
+      for (const row of rows) {
+        if (row?.fontFamily && row.fontFamily !== "—") {
+          set.add(String(row.fontFamily).trim());
+        }
+      }
+    }
+    return Array.from(set);
+  })();
+
   // Handle manifest upload with IMMEDIATE DB WRITE-THROUGH
   const handleJsonFile = async (file: File) => {
     if (!guideline) return;
@@ -311,6 +370,15 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       ]);
       setGuideline({ ...guideline, theme: applied.theme });
       setSaveStatus("saved");
+      if (!themeHasFonts(applied.theme)) {
+        triggerToast(
+          "Import done — no fonts detected. Open Theme Settings to set primary / secondary / tertiary manually."
+        );
+      } else {
+        triggerToast(
+          `Fonts ready: ${(applied.theme as CITheme).primaryFont || "primary"} set in Theme Settings`
+        );
+      }
     } catch (err: any) {
       console.error("Error during manifest import & persistence:", err);
       alert(`Failed to parse/save manifest: ${err.message || err}`);
@@ -348,19 +416,38 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         : g
     );
     setSaveStatus("saved");
+    if (!themeHasFonts(result.theme)) {
+      triggerToast(
+        "Figma import done — no fonts detected. Open Theme Settings to set typefaces + fallbacks."
+      );
+    } else {
+      const names = (result.theme as CITheme)?.availableFonts?.slice(0, 3) || [];
+      triggerToast(
+        `Figma fonts imported: ${names.join(", ") || (result.theme as CITheme).primaryFont}. Review Theme Settings.`
+      );
+    }
   };
 
   const applyThemeToCSS = () => {
     if (!guideline?.theme) return {};
-    const t = guideline.theme;
+    const t = guideline.theme as CITheme;
     return {
       "--ci-bg": t.backgroundColor || "#ffffff",
       "--ci-text": t.textColor || "#111111",
       "--ci-accent": t.accentColors?.[0] || "#000000",
       "--ci-border": "#eaeaea",
+      "--ci-font": cssFontStack(t.primaryFont || t.fontFamily, t.primaryFontFallback),
+      "--ci-font-secondary": cssFontStack(
+        t.secondaryFont || t.primaryFont || t.fontFamily,
+        t.secondaryFontFallback || t.primaryFontFallback
+      ),
+      "--ci-font-tertiary": cssFontStack(
+        t.tertiaryFont || t.secondaryFont,
+        t.tertiaryFontFallback
+      ),
       backgroundColor: "var(--ci-bg)",
       color: "var(--ci-text)",
-      fontFamily: t.fontFamily || "Inter, sans-serif"
+      fontFamily: "var(--ci-font)",
     } as React.CSSProperties;
   };
 
@@ -448,9 +535,39 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             <p className="text-gray-400 text-xs italic">No sections. Import from JSON or Figma, or click + Add Section.</p>
           ) : (
             sections.map((sec) => (
-              <div key={sec.id} className="flex items-center gap-2 p-2 rounded hover:bg-gray-200 cursor-pointer group">
-                <GripVertical className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 cursor-grab" />
-                <a href={`#${sec.section_type}`} className="flex-1 truncate text-gray-700">{sec.eyebrow_label || sec.section_type}</a>
+              <div
+                key={sec.id}
+                draggable
+                onDragStart={(e) => {
+                  setDragSectionId(sec.id || null);
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", sec.id || "");
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fromId =
+                    e.dataTransfer.getData("text/plain") || dragSectionId;
+                  if (fromId && sec.id) reorderSections(fromId, sec.id);
+                  setDragSectionId(null);
+                }}
+                onDragEnd={() => setDragSectionId(null)}
+                className={`flex items-center gap-2 p-2 rounded hover:bg-gray-200 cursor-grab active:cursor-grabbing group ${
+                  dragSectionId === sec.id ? "opacity-50 bg-gray-200" : ""
+                }`}
+              >
+                <GripVertical className="w-3 h-3 text-gray-400 opacity-50 group-hover:opacity-100 shrink-0" />
+                <a
+                  href={`#${sec.section_type}`}
+                  className="flex-1 truncate text-gray-700"
+                  onClick={(e) => e.stopPropagation()}
+                  draggable={false}
+                >
+                  {sec.eyebrow_label || sec.section_type}
+                </a>
               </div>
             ))
           )}
@@ -698,7 +815,8 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
       {showThemePanel && (
         <ThemePanel 
-          guideline={guideline} 
+          guideline={guideline}
+          discoveredFonts={discoveredFonts}
           onClose={() => setShowThemePanel(false)}
           onUpdate={handleUpdateTheme}
         />
@@ -877,6 +995,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+      <ToastContainer />
     </div>
   );
 }

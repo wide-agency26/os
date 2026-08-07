@@ -49,12 +49,44 @@ export function normalizeTypography(opts: {
         });
       }
     }
-    if (st.fontFamily && !themeSuggested.fontFamily) {
-      themeSuggested.fontFamily = st.fontFamily;
-    }
   });
 
   scale.sort((a, b) => a.px - b.px);
+
+  // Rank typefaces by usage frequency → primary / secondary / tertiary
+  const fontCounts = new Map<string, number>();
+  walkNodes(file.document, (n) => {
+    if (n.type !== "TEXT" || !n.style?.fontFamily) return;
+    const fam = n.style.fontFamily.trim();
+    if (!fam) return;
+    fontCounts.set(fam, (fontCounts.get(fam) || 0) + 1);
+  });
+  for (const sample of styleSamples.values()) {
+    if (sample.fontFamily) {
+      const fam = sample.fontFamily.trim();
+      fontCounts.set(fam, (fontCounts.get(fam) || 0) + 1);
+    }
+  }
+  const rankedFonts = Array.from(fontCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([name]) => name);
+
+  if (rankedFonts.length) {
+    themeSuggested.availableFonts = rankedFonts;
+    themeSuggested.primaryFont = rankedFonts[0];
+    themeSuggested.secondaryFont = rankedFonts[1] || rankedFonts[0];
+    themeSuggested.tertiaryFont = rankedFonts[2] || rankedFonts[1] || rankedFonts[0];
+    themeSuggested.fontFamily = rankedFonts[0];
+    if (!themeSuggested.primaryFontFallback) {
+      themeSuggested.primaryFontFallback = "system-ui, -apple-system, sans-serif";
+    }
+    if (!themeSuggested.secondaryFontFallback) {
+      themeSuggested.secondaryFontFallback = "Georgia, 'Times New Roman', serif";
+    }
+    if (!themeSuggested.tertiaryFontFallback) {
+      themeSuggested.tertiaryFontFallback = "ui-monospace, SFMono-Regular, Menlo, monospace";
+    }
+  }
 
   for (const [styleId, meta] of textStyles) {
     const sample = styleSamples.get(styleId);

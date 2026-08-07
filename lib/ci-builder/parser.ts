@@ -456,10 +456,12 @@ function parseDesignTokensManifest(
     const typographySection = getOrCreateSection('typography');
     if (!typographySection.data.rows) typographySection.data.rows = [];
 
+    const families: string[] = [];
     fontEntries.forEach((font) => {
       totalTokenCount++;
       assignedCount++;
       const family = font.family || font.name || font.fontFamily || 'Primary Font';
+      if (family && !families.includes(family)) families.push(family);
       const sizes = Array.isArray(font.sizes) ? font.sizes.join(', ') : (font.sizes || font.fontSize || font.size || '16px');
       const weights = Array.isArray(font.weights) ? font.weights.join(', ') : (font.weights || font.fontWeight || font.weight || '400');
       const rowId = `type_${Math.random().toString(36).substring(2, 9)}`;
@@ -470,6 +472,7 @@ function parseDesignTokensManifest(
         label: family,
         specLine1: `Sizes: ${sizes}`,
         specLine2: `Weights: ${weights}`,
+        fontFamily: family,
         sampleText: 'The quick brown fox jumps over the lazy dog'
       });
 
@@ -490,6 +493,23 @@ function parseDesignTokensManifest(
 
       assets.push(baseAsset);
     });
+
+    if (families.length) {
+      themeSuggested.availableFonts = families;
+      themeSuggested.primaryFont = families[0];
+      themeSuggested.secondaryFont = families[1] || families[0];
+      themeSuggested.tertiaryFont = families[2] || families[1] || families[0];
+      themeSuggested.fontFamily = families[0];
+      themeSuggested.primaryFontFallback =
+        themeSuggested.primaryFontFallback ||
+        "system-ui, -apple-system, sans-serif";
+      themeSuggested.secondaryFontFallback =
+        themeSuggested.secondaryFontFallback ||
+        "Georgia, 'Times New Roman', serif";
+      themeSuggested.tertiaryFontFallback =
+        themeSuggested.tertiaryFontFallback ||
+        "ui-monospace, SFMono-Regular, Menlo, monospace";
+    }
   }
 
   // 3. Spacing & Effects stashed

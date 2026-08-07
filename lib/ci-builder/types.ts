@@ -57,8 +57,30 @@ export interface CITheme {
   backgroundColor?: string;
   textColor?: string;
   accentColors?: string[];
+  /** @deprecated Prefer primaryFont + primaryFontFallback */
   fontFamily?: string;
+  primaryFont?: string;
+  secondaryFont?: string;
+  tertiaryFont?: string;
+  primaryFontFallback?: string;
+  secondaryFontFallback?: string;
+  tertiaryFontFallback?: string;
+  /** Distinct typefaces discovered from Figma/JSON import */
+  availableFonts?: string[];
   borderRadius?: string;
+}
+
+/** Build a CSS font-family stack from a brand face + fallback. */
+export function cssFontStack(
+  font?: string | null,
+  fallback?: string | null
+): string {
+  const fb = (fallback || "system-ui, -apple-system, sans-serif").trim();
+  const raw = (font || "").trim();
+  if (!raw) return fb;
+  const needsQuotes = /\s/.test(raw) && !/^['"]/.test(raw);
+  const face = needsQuotes ? `'${raw.replace(/'/g, "")}'` : raw;
+  return `${face}, ${fb}`;
 }
 
 export interface CISection {

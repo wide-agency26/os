@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { SectionRenderer } from "@/components/ci-builder/sections";
-import { CITheme, CISection, CIAsset } from "@/lib/ci-builder/types";
+import { CITheme, CISection, CIAsset, cssFontStack } from "@/lib/ci-builder/types";
 import {
   Sparkles,
   Menu,
@@ -67,7 +67,18 @@ export function PublicGuidelineClient({
     "--ci-text": theme?.textColor || "#111827",
     "--ci-accent": theme?.accentColors?.[0] || "#0066FF",
     "--ci-border": "#eaeaea",
-    "--ci-font": theme?.fontFamily || "Inter, sans-serif",
+    "--ci-font": cssFontStack(
+      theme?.primaryFont || theme?.fontFamily,
+      theme?.primaryFontFallback
+    ),
+    "--ci-font-secondary": cssFontStack(
+      theme?.secondaryFont || theme?.primaryFont || theme?.fontFamily,
+      theme?.secondaryFontFallback || theme?.primaryFontFallback
+    ),
+    "--ci-font-tertiary": cssFontStack(
+      theme?.tertiaryFont || theme?.secondaryFont,
+      theme?.tertiaryFontFallback
+    ),
   } as React.CSSProperties;
 
   const activeSection = visibleSections.find((s) => s.section_type === activeSectionId);
