@@ -16,10 +16,16 @@ async function figmaFetch<T>(
   accessToken: string,
   init?: RequestInit
 ): Promise<T> {
+  // Personal access tokens (figd_…) must use X-Figma-Token.
+  // OAuth access tokens use Authorization: Bearer.
+  const authHeaders = accessToken.startsWith("figd_")
+    ? { "X-Figma-Token": accessToken }
+    : { Authorization: `Bearer ${accessToken}` };
+
   const res = await fetch(`https://api.figma.com/v1${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      ...authHeaders,
       ...(init?.headers || {}),
     },
   });
