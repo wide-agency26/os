@@ -6,6 +6,7 @@ import { createClient } from "@/utils/supabase/client";
 import { ProjectPmShell } from "@/components/pm/ProjectPmShell";
 import { GateIcon } from "@/components/pm/PmBadges";
 import { TaskRow } from "@/components/pm/TaskRow";
+import { TaskBoardCard } from "@/components/pm/TaskBoardCard";
 import { TaskDetailPage } from "@/components/pm/TaskDetailPage";
 import {
   updatePmTaskStatus,
@@ -314,33 +315,37 @@ export function ProjectTasksClient({ projectId }: Props) {
             >
               <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500 px-3 py-2">
                 {col.label}
+                <span className="ml-1.5 font-normal text-gray-400">
+                  {tasks.filter((t) => t.status === col.key).length}
+                </span>
               </h3>
               <ul className="space-y-2 p-2 min-h-[8rem]">
                 {tasks
                   .filter((t) => t.status === col.key)
                   .map((t) => (
-                    <li
+                    <TaskBoardCard
                       key={t.id}
-                      className="bg-white border border-gray-200 rounded p-2 text-sm shadow-sm"
-                    >
-                      <div className="flex items-start gap-1.5">
-                        {t.is_gate ? <GateIcon cleared={false} /> : null}
-                        <span className="text-gray-900">{t.title}</span>
-                      </div>
-                      <div className="mt-2 flex gap-1">
-                        {COLUMNS.filter((c) => c.key !== col.key).map((c) => (
-                          <button
-                            key={c.key}
-                            type="button"
-                            disabled={pending}
-                            onClick={() => setStatus(t.id, c.key)}
-                            className="text-[10px] text-gray-500 hover:text-gray-900 underline"
-                          >
-                            → {c.label}
-                          </button>
-                        ))}
-                      </div>
-                    </li>
+                      task={t}
+                      profiles={profiles}
+                      disabled={pending}
+                      onOpen={setOpenTaskId}
+                      onTitleChange={(id, title) => {
+                        patchTaskLocal(id, { title });
+                        startTransition(async () => {
+                          await updatePmTaskTitle(id, title);
+                        });
+                      }}
+                      onAssigneeChange={(id, assigneeId) => {
+                        patchTaskLocal(id, { assignee_id: assigneeId });
+                        startTransition(async () => {
+                          await updatePmTaskAssignee(id, assigneeId);
+                        });
+                      }}
+                      onStatusChange={setStatus}
+                      onToggleDone={(id, done) =>
+                        setStatus(id, done ? "done" : "todo")
+                      }
+                    />
                   ))}
               </ul>
             </div>
