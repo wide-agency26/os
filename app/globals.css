@@ -1,7 +1,39 @@
 @import "tailwindcss";
 
-/* BlockNote shadcn UI (Tailwind utilities used by the editor chrome) */
+/* BlockNote — imported once at app level (not per editor instance) */
 @source "../node_modules/@blocknote/shadcn";
+@import "@blocknote/core/fonts/inter.css";
+@import "@blocknote/shadcn/style.css";
+
+/*
+ * Slash / suggestion menus portal to body. Root <html class="dark"> would make
+ * shadcn/Tailwind popovers inherit transparent dark surfaces — force solid light
+ * chrome for BlockNote menus regardless of the document theme class.
+ */
+.bn-menu-dropdown,
+.bn-suggestion-menu,
+[data-bn-ui="suggestion-menu"],
+.bn-shadcn [data-slot="dropdown-menu-content"],
+.bn-shadcn [data-slot="popover-content"],
+.bn-shadcn [role="listbox"],
+.bn-shadcn [role="menu"] {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12) !important;
+  z-index: 80 !important;
+}
+
+.bn-shadcn [role="option"],
+.bn-shadcn [role="menuitem"] {
+  color: #111827 !important;
+}
+
+.bn-shadcn [role="option"][aria-selected="true"],
+.bn-shadcn [role="option"]:hover,
+.bn-shadcn [role="menuitem"]:hover {
+  background-color: #f3f4f6 !important;
+}
 
 @theme inline {
   --color-background: #0a0a0a;

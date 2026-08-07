@@ -1,37 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Block } from "@blocknote/core";
 import { createClient } from "@/utils/supabase/client";
 import { ProjectPmShell } from "@/components/pm/ProjectPmShell";
-import {
-  GateIcon,
-  RecurringIcon,
-  EmailSourceIcon,
-  TaskStatusBadge,
-} from "@/components/pm/PmBadges";
+import { GateIcon } from "@/components/pm/PmBadges";
+import { TaskRow } from "@/components/pm/TaskRow";
+import { TaskDetailPage } from "@/components/pm/TaskDetailPage";
 import {
   updatePmTaskStatus,
   updatePmTaskAssignee,
   updatePmTaskContent,
+  updatePmTaskTitle,
+  deletePmTask,
+  duplicatePmTask,
+  movePmTaskPhase,
+  reorderPmTasks,
 } from "@/app/actions/pm";
-import {
-  blocksToPlainSummary,
-  initialBlocksForTask,
-} from "@/lib/pm/blocknote";
+import { blocksToPlainSummary } from "@/lib/pm/blocknote";
 import type { PmTaskStatus } from "@/lib/pm/types";
-
-const TaskContentEditor = dynamic(
-  () =>
-    import("@/components/pm/TaskContentEditor").then((m) => m.TaskContentEditor),
-  {
-    ssr: false,
-    loading: () => (
-      <p className="text-xs text-gray-400 px-1 py-2">Loading editor…</p>
-    ),
-  }
-);
 
 type Props = { projectId: string };
 
@@ -47,22 +34,15 @@ export function ProjectTasksClient({ projectId }: Props) {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [view, setView] = useState<"board" | "list">("list");
   const [showDonePhases, setShowDonePhases] = useState(false);
-  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, startTransition] = useTransition();
+  const dragIdRef = useRef<string | null>(null);
 
-  const saveTaskContent = (taskId: string, blocks: Block[]) => {
-    const plain = blocksToPlainSummary(blocks);
+  const patchTaskLocal = (taskId: string, patch: Record<string, unknown>) => {
     setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId
-          ? { ...t, content_blocks: blocks, description: plain || null }
-          : t
-      )
+      prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t))
     );
-    startTransition(async () => {
-      await updatePmTaskContent(taskId, blocks, plain);
-    });
   };
 
   const load = async () => {
@@ -112,10 +92,35 @@ export function ProjectTasksClient({ projectId }: Props) {
     });
   }, [tasks]);
 
+  const phaseOptions = useMemo(
+    () => phases.map((p) => p.label),
+    [phases]
+  );
+
+  const openTask = useMemo(
+    () => tasks.find((t) => t.id === openTaskId) ?? null,
+    [tasks, openTaskId]
+  );
+
   const setStatus = (id: string, status: PmTaskStatus) => {
+    patchTaskLocal(id, {
+      status,
+      completed_at: status === "done" ? new Date().toISOString() : null,
+    });
     startTransition(async () => {
       await updatePmTaskStatus(id, status);
       await load();
+    });
+  };
+
+  const saveTaskContent = (taskId: string, blocks: Block[]) => {
+    const plain = blocksToPlainSummary(blocks);
+    patchTaskLocal(taskId, {
+      content_blocks: blocks,
+      description: plain || null,
+    });
+    startTransition(async () => {
+      await updatePmTaskContent(taskId, blocks, plain);
     });
   };
 
@@ -162,6 +167,7 @@ export function ProjectTasksClient({ projectId }: Props) {
       {view === "list" ? (
         <div className="space-y-3">
           {phases.map((phase) => {
+            // Existing collapse-when-done phase wrapper — unchanged
             if (phase.allDone && !showDonePhases) {
               return (
                 <button
@@ -179,9 +185,15 @@ export function ProjectTasksClient({ projectId }: Props) {
               (t) => t.is_gate && t.status !== "done" && t.status !== "cancelled"
             );
             const blockedStack = phase.items.filter((t) => t.status === "blocked");
+            const visibleItems = phase.items.filter(
+              (t) => t.status !== "blocked" || !openGate
+            );
 
             return (
-              <section key={phase.label} className="border border-gray-200 rounded-lg overflow-hidden">
+              <section
+                key={phase.label}
+                className="border border-gray-200 rounded-lg overflow-visible"
+              >
                 <header className="bg-gray-50 px-3 py-2 text-sm font-medium text-gray-800">
                   {phase.label}
                 </header>
@@ -189,96 +201,100 @@ export function ProjectTasksClient({ projectId }: Props) {
                   {openGate && blockedStack.length > 0 ? (
                     <li className="px-3 py-2.5 flex items-center gap-2 text-sm bg-amber-50 text-amber-950">
                       <GateIcon />
-                      Blocked — waiting on “{openGate.title}” ({blockedStack.length} tasks gated)
+                      Blocked — waiting on “{openGate.title}” (
+                      {blockedStack.length} tasks gated)
                     </li>
                   ) : null}
-                  {phase.items
-                    .filter((t) => t.status !== "blocked" || !openGate)
-                    .map((t) => {
-                      const expanded = expandedTaskId === t.id;
-                      return (
-                        <li key={t.id} className="text-sm">
-                          {/* Row header — collapse/gate logic above is unchanged */}
-                          <div className="px-3 py-2.5 flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              aria-expanded={expanded}
-                              aria-label={expanded ? "Collapse task" : "Expand task"}
-                              onClick={() =>
-                                setExpandedTaskId(expanded ? null : t.id)
-                              }
-                              className="text-gray-400 hover:text-gray-700 w-4 shrink-0"
-                            >
-                              {expanded ? "▾" : "▸"}
-                            </button>
-                            {t.is_gate ? (
-                              <GateIcon cleared={t.status === "done"} />
-                            ) : null}
-                            {t.cycle_key ? <RecurringIcon /> : null}
-                            {t.source === "email" ? <EmailSourceIcon /> : null}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpandedTaskId(expanded ? null : t.id)
-                              }
-                              className="flex-1 min-w-[12rem] text-left text-gray-900 hover:underline"
-                            >
-                              {t.title}
-                            </button>
-                            {t.default_role ? (
-                              <span className="text-xs text-gray-400">
-                                {t.default_role}
-                              </span>
-                            ) : null}
-                            <TaskStatusBadge status={t.status} />
-                            <select
-                              disabled={pending}
-                              className="text-xs border border-gray-200 rounded px-1 py-0.5 max-w-[8rem]"
-                              value={t.assignee_id || ""}
-                              onChange={(e) => {
-                                const v = e.target.value || null;
-                                startTransition(async () => {
-                                  await updatePmTaskAssignee(t.id, v);
-                                  await load();
-                                });
-                              }}
-                            >
-                              <option value="">Unassigned</option>
-                              {profiles.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.full_name || p.id.slice(0, 8)}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              disabled={pending}
-                              className="text-xs border border-gray-200 rounded px-1 py-0.5"
-                              value={t.status}
-                              onChange={(e) =>
-                                setStatus(t.id, e.target.value as PmTaskStatus)
-                              }
-                            >
-                              {COLUMNS.map((c) => (
-                                <option key={c.key} value={c.key}>
-                                  {c.label}
-                                </option>
-                              ))}
-                              <option value="blocked">Blocked</option>
-                              <option value="cancelled">Cancelled</option>
-                            </select>
-                          </div>
-                          {expanded ? (
-                            <div className="px-3 pb-3 pl-9">
-                              <TaskContentEditor
-                                taskId={t.id}
-                                initialContent={initialBlocksForTask(t)}
-                                onSave={(blocks) => saveTaskContent(t.id, blocks)}
-                              />
-                            </div>
-                          ) : null}
-                        </li>
-                      );
-                    })}
+                  {visibleItems.map((t) => (
+                    <TaskRow
+                      key={t.id}
+                      task={t}
+                      profiles={profiles}
+                      phaseOptions={phaseOptions}
+                      disabled={pending}
+                      onOpen={setOpenTaskId}
+                      onToggleDone={(id, done) =>
+                        setStatus(id, done ? "done" : "todo")
+                      }
+                      onTitleChange={(id, title) => {
+                        patchTaskLocal(id, { title });
+                        startTransition(async () => {
+                          await updatePmTaskTitle(id, title);
+                        });
+                      }}
+                      onAssigneeChange={(id, assigneeId) => {
+                        patchTaskLocal(id, { assignee_id: assigneeId });
+                        startTransition(async () => {
+                          await updatePmTaskAssignee(id, assigneeId);
+                        });
+                      }}
+                      onDelete={(id) => {
+                        setTasks((prev) => prev.filter((x) => x.id !== id));
+                        if (openTaskId === id) setOpenTaskId(null);
+                        startTransition(async () => {
+                          await deletePmTask(id);
+                        });
+                      }}
+                      onDuplicate={(id) => {
+                        startTransition(async () => {
+                          await duplicatePmTask(id);
+                          await load();
+                        });
+                      }}
+                      onMovePhase={(id, label) => {
+                        patchTaskLocal(id, {
+                          phase_label: label === "General" ? null : label,
+                        });
+                        startTransition(async () => {
+                          await movePmTaskPhase(
+                            id,
+                            label === "General" ? null : label
+                          );
+                          await load();
+                        });
+                      }}
+                      onDragStart={(id) => {
+                        dragIdRef.current = id;
+                      }}
+                      onDragOver={() => {}}
+                      onDrop={(targetId) => {
+                        const fromId = dragIdRef.current;
+                        dragIdRef.current = null;
+                        if (!fromId || fromId === targetId) return;
+
+                        const ids = visibleItems.map((x) => x.id);
+                        const fromIdx = ids.indexOf(fromId);
+                        const toIdx = ids.indexOf(targetId);
+                        if (fromIdx < 0 || toIdx < 0) return;
+
+                        const next = [...ids];
+                        next.splice(fromIdx, 1);
+                        next.splice(toIdx, 0, fromId);
+
+                        const orderMap = new Map(next.map((id, i) => [id, i]));
+                        setTasks((prev) =>
+                          [...prev].sort((a, b) => {
+                            const aPhase = a.phase_label || "General";
+                            const bPhase = b.phase_label || "General";
+                            if (aPhase !== phase.label || bPhase !== phase.label) {
+                              return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+                            }
+                            return (
+                              (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0)
+                            );
+                          }).map((t) =>
+                            orderMap.has(t.id)
+                              ? { ...t, sort_order: orderMap.get(t.id) }
+                              : t
+                          )
+                        );
+
+                        startTransition(async () => {
+                          await reorderPmTasks(next);
+                        });
+                      }}
+                    />
+                  ))}
                 </ul>
               </section>
             );
@@ -292,17 +308,16 @@ export function ProjectTasksClient({ projectId }: Props) {
       ) : (
         <div className="grid gap-3 md:grid-cols-3">
           {COLUMNS.map((col) => (
-            <div key={col.key} className="border border-gray-200 rounded-lg bg-gray-50/50">
+            <div
+              key={col.key}
+              className="border border-gray-200 rounded-lg bg-gray-50/50"
+            >
               <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500 px-3 py-2">
                 {col.label}
               </h3>
               <ul className="space-y-2 p-2 min-h-[8rem]">
                 {tasks
                   .filter((t) => t.status === col.key)
-                  .filter((t) => {
-                    // Collapse blocked into single signal — don't show blocked on board columns
-                    return true;
-                  })
                   .map((t) => (
                     <li
                       key={t.id}
@@ -333,13 +348,35 @@ export function ProjectTasksClient({ projectId }: Props) {
         </div>
       )}
 
-      {/* Single blocked line for board */}
       {view === "board" && tasks.some((t) => t.status === "blocked") ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-amber-900 bg-amber-50 rounded px-3 py-2">
           <GateIcon />
           Blocked — gated work hidden from board (
           {tasks.filter((t) => t.status === "blocked").length} tasks)
         </p>
+      ) : null}
+
+      {openTask ? (
+        <TaskDetailPage
+          task={openTask}
+          profiles={profiles}
+          open
+          onClose={() => setOpenTaskId(null)}
+          onTitleChange={(id, title) => {
+            patchTaskLocal(id, { title });
+            startTransition(async () => {
+              await updatePmTaskTitle(id, title);
+            });
+          }}
+          onAssigneeChange={(id, assigneeId) => {
+            patchTaskLocal(id, { assignee_id: assigneeId });
+            startTransition(async () => {
+              await updatePmTaskAssignee(id, assigneeId);
+            });
+          }}
+          onStatusChange={setStatus}
+          onContentSave={saveTaskContent}
+        />
       ) : null}
     </ProjectPmShell>
   );

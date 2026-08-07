@@ -271,6 +271,156 @@ export async function updatePmTaskContent(
   return { ok: true };
 }
 
+export async function updatePmTaskTitle(
+  taskId: string,
+  title: string
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+
+  const trimmed = title.trim();
+  if (!trimmed) return { ok: false, error: "Title required." };
+
+  const supabase = await createClient();
+  const { data: task, error: fetchErr } = await (supabase as any)
+    .from("pm_tasks")
+    .select("project_id")
+    .eq("id", taskId)
+    .single();
+  if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Not found" };
+
+  const { error } = await (supabase as any)
+    .from("pm_tasks")
+    .update({
+      title: trimmed,
+      last_activity_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", taskId);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${task.project_id}/tasks`);
+  return { ok: true };
+}
+
+export async function deletePmTask(taskId: string): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+
+  const supabase = await createClient();
+  const { data: task, error: fetchErr } = await (supabase as any)
+    .from("pm_tasks")
+    .select("project_id")
+    .eq("id", taskId)
+    .single();
+  if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Not found" };
+
+  const { error } = await (supabase as any).from("pm_tasks").delete().eq("id", taskId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${task.project_id}/tasks`);
+  revalidatePath("/app/home");
+  return { ok: true };
+}
+
+export async function duplicatePmTask(taskId: string): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+
+  const supabase = await createClient();
+  const { data: task, error: fetchErr } = await (supabase as any)
+    .from("pm_tasks")
+    .select("*")
+    .eq("id", taskId)
+    .single();
+  if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Not found" };
+
+  const now = new Date().toISOString();
+  const { error } = await (supabase as any).from("pm_tasks").insert({
+    project_id: task.project_id,
+    task_template_id: task.task_template_id,
+    title: `${task.title} (copy)`,
+    description: task.description,
+    content_blocks: task.content_blocks ?? null,
+    assignee_id: task.assignee_id,
+    default_role: task.default_role,
+    status: "todo",
+    is_gate: false,
+    depends_on: null,
+    phase_label: task.phase_label,
+    source: "manual",
+    source_ref: null,
+    cycle_key: task.cycle_key,
+    estimated_duration_hours: task.estimated_duration_hours,
+    sort_order: (task.sort_order ?? 0) + 1,
+    last_activity_at: now,
+    started_at: null,
+    completed_at: null,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${task.project_id}/tasks`);
+  return { ok: true };
+}
+
+export async function movePmTaskPhase(
+  taskId: string,
+  phaseLabel: string | null
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+
+  const supabase = await createClient();
+  const { data: task, error: fetchErr } = await (supabase as any)
+    .from("pm_tasks")
+    .select("project_id")
+    .eq("id", taskId)
+    .single();
+  if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Not found" };
+
+  const { error } = await (supabase as any)
+    .from("pm_tasks")
+    .update({
+      phase_label: phaseLabel,
+      last_activity_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", taskId);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${task.project_id}/tasks`);
+  return { ok: true };
+}
+
+/** Persist sort_order for tasks within a phase after drag-reorder. */
+export async function reorderPmTasks(
+  orderedIds: string[]
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+  if (!orderedIds.length) return { ok: true };
+
+  const supabase = await createClient();
+  const { data: first } = await (supabase as any)
+    .from("pm_tasks")
+    .select("project_id")
+    .eq("id", orderedIds[0])
+    .single();
+
+  const now = new Date().toISOString();
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await (supabase as any)
+      .from("pm_tasks")
+      .update({ sort_order: i, updated_at: now })
+      .eq("id", orderedIds[i]);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  if (first?.project_id) {
+    revalidatePath(`/app/projects/${first.project_id}/tasks`);
+  }
+  return { ok: true };
+}
+
 export async function rollProjectCycle(projectId: string): Promise<PmActionResult> {
   const gate = await requireAgencyStaff();
   if (!gate.ok) return { ok: false, error: "Staff only." };
