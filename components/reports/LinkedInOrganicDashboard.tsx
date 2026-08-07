@@ -41,6 +41,7 @@ import {
   previousLiPeriod,
   postsByType,
   liDailyTrends,
+  liPostsByPublishMonth,
   formatCompact,
   formatDelta,
   hasLinkedInData,
@@ -62,6 +63,8 @@ const COLORS = [
 
 interface LinkedInOrganicDashboardProps {
   bundle: LinkedInBundle;
+  /** Prior upload bundle for static demographic compare. */
+  previousBundle?: LinkedInBundle;
   datasetMeta?: DatasetMeta;
   notice?: string;
 }
@@ -158,13 +161,28 @@ function headlineDelta(cur: LiHeadline, prev: LiHeadline): Record<keyof LiHeadli
   return out;
 }
 
-function DemoBar({ title, rows }: { title: string; rows: { label: string; share: number; views: number }[] }) {
-  const data = rows.slice(0, 8).map((r) => ({
-    name: r.label.length > 22 ? r.label.slice(0, 20) + "…" : r.label,
-    full: r.label,
-    share: Number(r.share.toFixed(1)),
-    views: r.views,
-  }));
+function DemoBar({
+  title,
+  rows,
+  previousRows,
+}: {
+  title: string;
+  rows: { label: string; share: number; views: number }[];
+  previousRows?: { label: string; share: number; views: number }[];
+}) {
+  const prevByLabel = new Map(
+    (previousRows || []).map((r) => [r.label.toLowerCase(), r.share])
+  );
+  const data = rows.slice(0, 8).map((r) => {
+    const prev = prevByLabel.get(r.label.toLowerCase());
+    return {
+      name: r.label.length > 22 ? r.label.slice(0, 20) + "…" : r.label,
+      full: r.label,
+      share: Number(r.share.toFixed(1)),
+      views: r.views,
+      prevShare: prev != null ? Number(prev.toFixed(1)) : null,
+    };
+  });
   if (!data.length) {
     return (
       <div className="border border-dashed border-gray-200 rounded-xl p-4 text-center text-[12px] text-gray-400">
@@ -183,10 +201,16 @@ function DemoBar({ title, rows }: { title: string; rows: { label: string; share:
             <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
             <Tooltip
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              formatter={(v: any, _n: any, p: any) => [
-                `${Number(v ?? 0)}% (${formatCompact(Number(p?.payload?.views ?? 0))} views)`,
-                "Share",
-              ]}
+              formatter={(v: any, name: any, p: any) => {
+                const prev = p?.payload?.prevShare;
+                const base = `${Number(v ?? 0)}% (${formatCompact(Number(p?.payload?.views ?? 0))} views)`;
+                if (name === "share" && prev != null) {
+                  const d = Number(v) - Number(prev);
+                  const sign = d > 0 ? "+" : "";
+                  return [`${base} · prior ${prev}% (${sign}${d.toFixed(1)}pp)`, "Share"];
+                }
+                return [base, "Share"];
+              }}
               labelFormatter={(_: unknown, payload: readonly { payload?: { full?: string } }[]) =>
                 payload?.[0]?.payload?.full || ""
               }
@@ -195,12 +219,16 @@ function DemoBar({ title, rows }: { title: string; rows: { label: string; share:
           </BarChart>
         </ResponsiveContainer>
       </div>
+      {previousRows?.length ? (
+        <p className="text-[10px] text-gray-400 mt-1">Compared to previous upload</p>
+      ) : null}
     </div>
   );
 }
 
 export function LinkedInOrganicDashboard({
   bundle: rawBundle,
+  previousBundle,
   datasetMeta,
   notice,
 }: LinkedInOrganicDashboardProps) {
@@ -230,6 +258,10 @@ export function LinkedInOrganicDashboard({
   const deltas = useMemo(() => headlineDelta(current, previous), [current, previous]);
   const byType = useMemo(() => postsByType(filtered.posts), [filtered.posts]);
   const trends = useMemo(() => liDailyTrends(filtered), [filtered]);
+  const postsByMonth = useMemo(
+    () => liPostsByPublishMonth(filtered.posts),
+    [filtered.posts]
+  );
   const postsSorted = useMemo(
     () => [...filtered.posts].sort((a, b) => b.impressions - a.impressions),
     [filtered.posts]
@@ -399,17 +431,72 @@ export function LinkedInOrganicDashboard({
         )}
       </SectionShell>
 
-      {/* Section 3 */}
+      {/* Static snapshots — not driven by the month chips above */}
       <SectionShell
-        eyebrow="Section 3"
-        title="Audience demographics & visitor profiles"
-        description="Seniority, industry, job function, and company size of people viewing the company page."
+        eyebrow="Section 3 · Snapshot"
+        title="Visitor demographics"
+        description="Company page visitor mix (Location, Seniority, Industry, Job function, Company size). These sheets are period snapshots — not day-by-day — so date chips do not filter them."
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <DemoBar title="Seniority" rows={filtered.demographics.seniority} />
-          <DemoBar title="Industry" rows={filtered.demographics.industry} />
-          <DemoBar title="Job function" rows={filtered.demographics.jobFunction} />
-          <DemoBar title="Company size" rows={filtered.demographics.companySize} />
+          <DemoBar
+            title="Location"
+            rows={rawBundle.demographics.location}
+            previousRows={previousBundle?.demographics.location}
+          />
+          <DemoBar
+            title="Seniority"
+            rows={rawBundle.demographics.seniority}
+            previousRows={previousBundle?.demographics.seniority}
+          />
+          <DemoBar
+            title="Industry"
+            rows={rawBundle.demographics.industry}
+            previousRows={previousBundle?.demographics.industry}
+          />
+          <DemoBar
+            title="Job function"
+            rows={rawBundle.demographics.jobFunction}
+            previousRows={previousBundle?.demographics.jobFunction}
+          />
+          <DemoBar
+            title="Company size"
+            rows={rawBundle.demographics.companySize}
+            previousRows={previousBundle?.demographics.companySize}
+          />
+        </div>
+      </SectionShell>
+
+      <SectionShell
+        eyebrow="Section 3b · Snapshot"
+        title="New follower demographics"
+        description="Who followed the page in this export (Location, Seniority, Industry, Job function, Company size). Static snapshots — compare against a prior upload when you re-import."
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <DemoBar
+            title="Location"
+            rows={rawBundle.followerDemographics.location}
+            previousRows={previousBundle?.followerDemographics.location}
+          />
+          <DemoBar
+            title="Seniority"
+            rows={rawBundle.followerDemographics.seniority}
+            previousRows={previousBundle?.followerDemographics.seniority}
+          />
+          <DemoBar
+            title="Industry"
+            rows={rawBundle.followerDemographics.industry}
+            previousRows={previousBundle?.followerDemographics.industry}
+          />
+          <DemoBar
+            title="Job function"
+            rows={rawBundle.followerDemographics.jobFunction}
+            previousRows={previousBundle?.followerDemographics.jobFunction}
+          />
+          <DemoBar
+            title="Company size"
+            rows={rawBundle.followerDemographics.companySize}
+            previousRows={previousBundle?.followerDemographics.companySize}
+          />
         </div>
       </SectionShell>
 
@@ -511,11 +598,52 @@ export function LinkedInOrganicDashboard({
         )}
       </SectionShell>
 
+      <SectionShell
+        eyebrow="Section 5b"
+        title="Posts by publish date"
+        description="All posts plotted by Created date. Month chips filter this chart — static visitor/follower sheets stay in Sections 3–3b."
+      >
+        {postsByMonth.length === 0 ? (
+          <p className="text-[13px] text-gray-500 text-center py-8">
+            Upload Li - All posts with a Created date column to unlock this chart.
+          </p>
+        ) : (
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={postsByMonth}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                <YAxis yAxisId="left" tick={{ fontSize: 10 }} allowDecimals={false} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar
+                  yAxisId="left"
+                  dataKey="posts"
+                  name="Posts published"
+                  fill="#0a66c2"
+                  radius={[4, 4, 0, 0]}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="impressions"
+                  name="Impressions"
+                  stroke="#b24020"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </SectionShell>
+
       {/* Section 6 */}
       <SectionShell
         eyebrow="Section 6"
         title="Top performing posts"
-        description="Post-level source of truth sorted by impressions. Click the link to open the live LinkedIn post."
+        description="Post-level source of truth sorted by impressions. Click the link to open the live LinkedIn post. Dates follow Created date."
       >
         {postsSorted.length === 0 ? (
           <p className="text-[13px] text-gray-500 text-center py-8">

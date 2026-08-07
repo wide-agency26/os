@@ -529,11 +529,58 @@ function DataHubInner() {
             row_count: sheet.detection.rows.length,
             file_size_bytes: 0,
             created_by: user.id,
+            is_current: true,
+            supersedes_id: null,
           })
           .select("id")
           .single();
 
         if (dsErr) throw new Error(dsErr.message);
+
+        // Mark prior upload(s) for same project + subcategory as not current;
+        // keep their rows so static snapshots can still be compared.
+        const sub =
+          sheet.subcategory === "unknown" ? null : sheet.subcategory;
+        if (sub) {
+          const { data: priors } = await (supabase as any)
+            .from("datasets")
+            .select("id")
+            .eq("project_id", selectedProjectId)
+            .eq("subcategory", sub)
+            .eq("is_current", true)
+            .neq("id", ds.id);
+          const priorIds = (priors || []).map((p: { id: string }) => p.id);
+          if (priorIds.length) {
+            await (supabase as any)
+              .from("datasets")
+              .update({ is_current: false })
+              .in("id", priorIds);
+            await (supabase as any)
+              .from("datasets")
+              .update({ supersedes_id: priorIds[0] })
+              .eq("id", ds.id);
+          }
+        } else {
+          // Fallback: same project + exact dataset name
+          const { data: priors } = await (supabase as any)
+            .from("datasets")
+            .select("id")
+            .eq("project_id", selectedProjectId)
+            .eq("name", sheet.datasetName.trim())
+            .eq("is_current", true)
+            .neq("id", ds.id);
+          const priorIds = (priors || []).map((p: { id: string }) => p.id);
+          if (priorIds.length) {
+            await (supabase as any)
+              .from("datasets")
+              .update({ is_current: false })
+              .in("id", priorIds);
+            await (supabase as any)
+              .from("datasets")
+              .update({ supersedes_id: priorIds[0] })
+              .eq("id", ds.id);
+          }
+        }
 
         const CHUNK_SIZE = 500;
         const totalRows = sheet.detection.rows.length;

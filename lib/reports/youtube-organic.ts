@@ -257,8 +257,10 @@ export function filterYtBundleByMonths(bundle: YouTubeBundle, months: string[]):
   return {
     ...bundle,
     daily: bundle.daily.filter((r) => set.has(r.monthKey)),
-    // Videos stay; scorecards filter via daily when available
-    videos: bundle.videos,
+    // Table data: keep videos published in the selected months (Video publish time)
+    videos: bundle.videos.filter(
+      (v) => !v.monthKey || !isPlausibleMonthKey(v.monthKey) || set.has(v.monthKey)
+    ),
   };
 }
 
@@ -272,7 +274,11 @@ export function filterYtBundleByRange(bundle: YouTubeBundle, range: DateRange): 
       const t = r.date.getTime();
       return t >= a && t <= b;
     }),
-    videos: bundle.videos,
+    videos: bundle.videos.filter((v) => {
+      if (!v.publishTime) return true;
+      const t = v.publishTime.getTime();
+      return t >= a && t <= b;
+    }),
   };
 }
 

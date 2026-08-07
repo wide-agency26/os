@@ -26,6 +26,15 @@ export interface LinkedInBundle {
     industry: LiDemoRow[];
     jobFunction: LiDemoRow[];
     companySize: LiDemoRow[];
+    location: LiDemoRow[];
+  };
+  /** New Followers · dimension sheets (static snapshots). */
+  followerDemographics: {
+    seniority: LiDemoRow[];
+    industry: LiDemoRow[];
+    jobFunction: LiDemoRow[];
+    companySize: LiDemoRow[];
+    location: LiDemoRow[];
   };
   sources: { subcategory: string; name: string; rowCount: number }[];
 }
@@ -175,6 +184,29 @@ function findDateCol(index: Map<string, string>, row: Record<string, unknown>): 
     if (parseFlexibleDate(v)) return k;
   }
   return null;
+}
+
+/** Prefer Created date for All posts (publish calendar), not incidental date columns. */
+function findPostCreatedDateCol(
+  index: Map<string, string>,
+  row: Record<string, unknown>
+): string | null {
+  for (const a of [
+    "createddate",
+    "created date",
+    "createdat",
+    "created at",
+    "publishdate",
+    "published",
+    "postedon",
+  ]) {
+    const hit = index.get(canon(a));
+    if (hit) return hit;
+  }
+  for (const [c, orig] of index) {
+    if (c.includes("created") && c.includes("date") && c.length <= 32) return orig;
+  }
+  return findDateCol(index, row);
 }
 
 /**
@@ -391,7 +423,7 @@ export function parseLiFollowers(rows: Record<string, unknown>[]): LiFollowerDay
 export function parseLiPosts(rows: Record<string, unknown>[]): LiPost[] {
   if (!rows.length) return [];
   const index = indexKeys(rows[0]);
-  const dateCol = findDateCol(index, rows[0]);
+  const dateCol = findPostCreatedDateCol(index, rows[0]);
   const title = resolve(index, ["posttitle", "post title", "title", "update", "content"]);
   const postType = resolve(index, ["posttype", "post type", "contenttype", "type"]);
   const impr = resolveCountCol(index, ["impressions", "impression"]);
@@ -444,11 +476,24 @@ export function parseLiDemographics(rows: Record<string, unknown>[]): LiDemoRow[
     "job function",
     "companysize",
     "company size",
+    "location",
+    "country",
+    "region",
+    "city",
     "name",
     "segment",
     "category",
   ]);
-  const views = resolve(index, ["totalviews", "total views", "views", "viewers", "count"]);
+  const views = resolve(index, [
+    "totalviews",
+    "total views",
+    "views",
+    "viewers",
+    "count",
+    "totalfollowers",
+    "followers",
+    "organicfollowers",
+  ]);
   if (!label || !views) return [];
 
   const parsed = rows
@@ -461,6 +506,31 @@ export function parseLiDemographics(rows: Record<string, unknown>[]): LiDemoRow[
   return parsed
     .map((r) => ({ ...r, share: (r.views / total) * 100 }))
     .sort((a, b) => b.views - a.views);
+}
+
+function emptyDemoGroup() {
+  return {
+    seniority: [] as LiDemoRow[],
+    industry: [] as LiDemoRow[],
+    jobFunction: [] as LiDemoRow[],
+    companySize: [] as LiDemoRow[],
+    location: [] as LiDemoRow[],
+  };
+}
+
+function inferDemoSlot(
+  rows: Record<string, unknown>[]
+): keyof ReturnType<typeof emptyDemoGroup> | null {
+  if (!rows[0]) return null;
+  const k = [...indexKeys(rows[0]).keys()].join(" ");
+  if (k.includes("location") || k.includes("country") || k.includes("region") || k.includes("city"))
+    return "location";
+  if (k.includes("seniority")) return "seniority";
+  if (k.includes("industry")) return "industry";
+  if (k.includes("jobfunction") || (k.includes("function") && !k.includes("company")))
+    return "jobFunction";
+  if (k.includes("companysize") || k.includes("companysize")) return "companySize";
+  return null;
 }
 
 export interface DatasetPayload {
@@ -476,13 +546,18 @@ export function buildLinkedInBundle(datasets: DatasetPayload[]): LinkedInBundle 
     visitors: [],
     followers: [],
     posts: [],
-    demographics: {
-      seniority: [],
-      industry: [],
-      jobFunction: [],
-      companySize: [],
-    },
+    demographics: emptyDemoGroup(),
+    followerDemographics: emptyDemoGroup(),
     sources: [],
+  };
+
+  const assignDemo = (
+    target: "visitor" | "follower",
+    slot: keyof ReturnType<typeof emptyDemoGroup>,
+    rows: LiDemoRow[]
+  ) => {
+    const group = target === "visitor" ? bundle.demographics : bundle.followerDemographics;
+    if (!group[slot].length) group[slot] = rows;
   };
 
   for (const ds of datasets) {
@@ -496,45 +571,67 @@ export function buildLinkedInBundle(datasets: DatasetPayload[]): LinkedInBundle 
     });
 
     if (sub === "linkedin_metrics" || (sub === "unknown" && looksLikeMetrics(ds.rows))) {
-      // Demo sheets mis-tagged as metrics (e.g. Location + Total views)
       if (looksLikeDemo(ds.rows) && !looksLikeMetrics(ds.rows)) {
         const demo = parseLiDemographics(ds.rows);
-        if (!bundle.demographics.seniority.length) bundle.demographics.seniority = demo;
+        const slot = inferDemoSlot(ds.rows) || "seniority";
+        const followerish = /follower/i.test(ds.name);
+        assignDemo(followerish ? "follower" : "visitor", slot, demo);
       } else if (looksLikePosts(ds.rows) && !looksLikeMetrics(ds.rows)) {
-        // Mis-tagged posts sheet (title + impressions) → treat as posts, not empty metrics
         bundle.posts.push(...parseLiPosts(ds.rows));
       } else {
         const metrics = parseLiMetrics(ds.rows);
         bundle.metrics.push(...metrics);
-        // If metrics parsed but impressions column missing, still try posts heuristic on same sheet
         const imprSum = metrics.reduce((s, r) => s + r.impressions, 0);
         if (imprSum === 0 && looksLikePosts(ds.rows)) {
           bundle.posts.push(...parseLiPosts(ds.rows));
         }
       }
     } else if (sub === "linkedin_visitors") {
-      bundle.visitors.push(...parseLiVisitors(ds.rows));
+      if (looksLikeDemo(ds.rows) && !looksLikeVisitors(ds.rows)) {
+        const demo = parseLiDemographics(ds.rows);
+        assignDemo("visitor", inferDemoSlot(ds.rows) || "seniority", demo);
+      } else {
+        bundle.visitors.push(...parseLiVisitors(ds.rows));
+      }
     } else if (sub === "linkedin_followers") {
-      bundle.followers.push(...parseLiFollowers(ds.rows));
+      if (looksLikeDemo(ds.rows) && !looksLikeFollowers(ds.rows)) {
+        const demo = parseLiDemographics(ds.rows);
+        assignDemo("follower", inferDemoSlot(ds.rows) || "seniority", demo);
+      } else {
+        bundle.followers.push(...parseLiFollowers(ds.rows));
+      }
     } else if (sub === "linkedin_posts") {
       bundle.posts.push(...parseLiPosts(ds.rows));
     } else if (sub === "linkedin_demo_seniority") {
-      bundle.demographics.seniority = parseLiDemographics(ds.rows);
+      assignDemo("visitor", "seniority", parseLiDemographics(ds.rows));
     } else if (sub === "linkedin_demo_industry") {
-      bundle.demographics.industry = parseLiDemographics(ds.rows);
+      assignDemo("visitor", "industry", parseLiDemographics(ds.rows));
     } else if (sub === "linkedin_demo_job_function") {
-      bundle.demographics.jobFunction = parseLiDemographics(ds.rows);
+      assignDemo("visitor", "jobFunction", parseLiDemographics(ds.rows));
     } else if (sub === "linkedin_demo_company_size") {
-      bundle.demographics.companySize = parseLiDemographics(ds.rows);
+      assignDemo("visitor", "companySize", parseLiDemographics(ds.rows));
+    } else if (sub === "linkedin_demo_location") {
+      assignDemo("visitor", "location", parseLiDemographics(ds.rows));
+    } else if (sub === "linkedin_demo_follower_seniority") {
+      assignDemo("follower", "seniority", parseLiDemographics(ds.rows));
+    } else if (sub === "linkedin_demo_follower_industry") {
+      assignDemo("follower", "industry", parseLiDemographics(ds.rows));
+    } else if (sub === "linkedin_demo_follower_job_function") {
+      assignDemo("follower", "jobFunction", parseLiDemographics(ds.rows));
+    } else if (sub === "linkedin_demo_follower_company_size") {
+      assignDemo("follower", "companySize", parseLiDemographics(ds.rows));
+    } else if (sub === "linkedin_demo_follower_location") {
+      assignDemo("follower", "location", parseLiDemographics(ds.rows));
     } else if (sub === "unknown") {
-      // Heuristic fallback
       if (looksLikePosts(ds.rows)) bundle.posts.push(...parseLiPosts(ds.rows));
       else if (looksLikeVisitors(ds.rows)) bundle.visitors.push(...parseLiVisitors(ds.rows));
       else if (looksLikeFollowers(ds.rows)) bundle.followers.push(...parseLiFollowers(ds.rows));
       else if (looksLikeMetrics(ds.rows)) bundle.metrics.push(...parseLiMetrics(ds.rows));
       else if (looksLikeDemo(ds.rows)) {
         const demo = parseLiDemographics(ds.rows);
-        if (!bundle.demographics.seniority.length) bundle.demographics.seniority = demo;
+        const slot = inferDemoSlot(ds.rows) || "seniority";
+        const followerish = /follower/i.test(ds.name);
+        assignDemo(followerish ? "follower" : "visitor", slot, demo);
       }
     }
   }
@@ -579,7 +676,10 @@ function looksLikeDemo(rows: Record<string, unknown>[]): boolean {
     k.includes("seniority") ||
     k.includes("industry") ||
     k.includes("jobfunction") ||
-    k.includes("companysize")
+    k.includes("companysize") ||
+    k.includes("location") ||
+    ((k.includes("country") || k.includes("region") || k.includes("city")) &&
+      (k.includes("view") || k.includes("follower")))
   );
 }
 
@@ -726,9 +826,34 @@ function emptyBundle(): LinkedInBundle {
     visitors: [],
     followers: [],
     posts: [],
-    demographics: { seniority: [], industry: [], jobFunction: [], companySize: [] },
+    demographics: emptyDemoGroup(),
+    followerDemographics: emptyDemoGroup(),
     sources: [],
   };
+}
+
+/** Posts published over time — uses Created date from All posts. */
+export function liPostsByPublishMonth(posts: LiPost[]) {
+  const map = new Map<string, { monthKey: string; posts: number; impressions: number }>();
+  for (const p of posts) {
+    if (!p.monthKey || !isPlausibleMonthKey(p.monthKey) || p.date.getFullYear() <= 1970) continue;
+    const cur = map.get(p.monthKey) || { monthKey: p.monthKey, posts: 0, impressions: 0 };
+    cur.posts += 1;
+    cur.impressions += p.impressions;
+    map.set(p.monthKey, cur);
+  }
+  return [...map.values()]
+    .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+    .map((r) => {
+      const [y, m] = r.monthKey.split("-").map(Number);
+      return {
+        ...r,
+        label: new Date(y, m - 1, 1).toLocaleDateString(undefined, {
+          month: "short",
+          year: "numeric",
+        }),
+      };
+    });
 }
 
 export function postsByType(posts: LiPost[]) {
@@ -808,6 +933,14 @@ export function hasLinkedInData(bundle: LinkedInBundle): boolean {
     bundle.followers.length > 0 ||
     bundle.posts.length > 0 ||
     bundle.demographics.seniority.length > 0 ||
-    bundle.demographics.industry.length > 0
+    bundle.demographics.industry.length > 0 ||
+    bundle.demographics.jobFunction.length > 0 ||
+    bundle.demographics.companySize.length > 0 ||
+    bundle.demographics.location.length > 0 ||
+    bundle.followerDemographics.seniority.length > 0 ||
+    bundle.followerDemographics.industry.length > 0 ||
+    bundle.followerDemographics.jobFunction.length > 0 ||
+    bundle.followerDemographics.companySize.length > 0 ||
+    bundle.followerDemographics.location.length > 0
   );
 }

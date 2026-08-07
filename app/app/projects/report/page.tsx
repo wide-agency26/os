@@ -72,6 +72,8 @@ interface DatasetInfo {
   columns: ColumnSchema[];
   row_count: number;
   created_at?: string | null;
+  is_current?: boolean | null;
+  supersedes_id?: string | null;
 }
 
 interface ProjectOption {
@@ -112,6 +114,7 @@ function CentralReportHub() {
   const [datasetRows, setDatasetRows] = useState<Record<string, unknown>[]>([]);
   const [datasetColumns, setDatasetColumns] = useState<ColumnSchema[]>([]);
   const [loadedDatasets, setLoadedDatasets] = useState<LoadedDataset[]>([]);
+  const [previousLoadedDatasets, setPreviousLoadedDatasets] = useState<LoadedDataset[]>([]);
 
   const [channelPresence, setChannelPresence] = useState<Record<string, boolean>>({
     Social: false,
@@ -194,10 +197,10 @@ function CentralReportHub() {
   async function refreshChannelPresence(projectId: string) {
     const { data } = await (supabase as any)
       .from("datasets")
-      .select("id, category, subcategory, columns")
+      .select("id, category, subcategory, columns, is_current")
       .eq("project_id", projectId);
 
-    const list = (data || []) as DatasetInfo[];
+    const list = ((data || []) as DatasetInfo[]).filter((d) => d.is_current !== false);
     const presence = { Social: false, Ads: false, Website: false, SEO: false };
 
     for (const ds of list) {
@@ -301,20 +304,81 @@ function CentralReportHub() {
     setSelectedDatasetId("");
     setDatasets([]);
     setLoadedDatasets([]);
+    setPreviousLoadedDatasets([]);
 
     await refreshChannelPresence(projectId);
+
+    const selectCols =
+      "id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id";
+
+    async function finalize(listRaw: DatasetInfo[]) {
+      const list = listRaw.filter((d) => d.is_current !== false);
+      const priorIds = [
+        ...new Set(
+          list
+            .map((d) => d.supersedes_id)
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        ),
+      ];
+
+      if (list.length > 0) {
+        setDatasets(list);
+        setSelectedDatasetId(list[0].id);
+        try {
+          const loaded = await hydrateLoadedDatasets(list);
+          setLoadedDatasets(loaded);
+          const first = loaded[0];
+          setDatasetColumns(first.columns as ColumnSchema[]);
+          setDatasetRows(first.rows);
+        } catch (e: any) {
+          console.error(e);
+          alert("Failed to load dataset rows: " + (e?.message || "unknown error"));
+        }
+      }
+
+      if (priorIds.length) {
+        const { data: priorMeta } = await (supabase as any)
+          .from("datasets")
+          .select(selectCols)
+          .in("id", priorIds);
+        try {
+          const priorLoaded = await hydrateLoadedDatasets(
+            (priorMeta || []) as DatasetInfo[]
+          );
+          setPreviousLoadedDatasets(priorLoaded);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
 
     if (category === "General") {
       const { data: allDs } = await (supabase as any)
         .from("datasets")
-        .select("id, name, category, subcategory, columns, row_count, created_at")
+        .select(selectCols)
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 
-      const list = (allDs || []) as DatasetInfo[];
       try {
+        const list = ((allDs || []) as DatasetInfo[]).filter((d) => d.is_current !== false);
         const loaded = await hydrateLoadedDatasets(list);
         setLoadedDatasets(loaded);
+        const priorIds = [
+          ...new Set(
+            list
+              .map((d) => d.supersedes_id)
+              .filter((id): id is string => typeof id === "string" && id.length > 0)
+          ),
+        ];
+        if (priorIds.length) {
+          const { data: priorMeta } = await (supabase as any)
+            .from("datasets")
+            .select(selectCols)
+            .in("id", priorIds);
+          setPreviousLoadedDatasets(
+            await hydrateLoadedDatasets((priorMeta || []) as DatasetInfo[])
+          );
+        }
       } catch (e: any) {
         console.error(e);
         alert("Failed to load channel datasets: " + (e?.message || "unknown error"));
@@ -328,7 +392,7 @@ function CentralReportHub() {
     const cats = datasetCategoriesForReport(category);
     const { data: ds } = await (supabase as any)
       .from("datasets")
-      .select("id, name, category, subcategory, columns, row_count, created_at")
+      .select(selectCols)
       .eq("project_id", projectId)
       .in("category", cats)
       .order("created_at", { ascending: false });
@@ -352,21 +416,7 @@ function CentralReportHub() {
       );
     }
 
-    if (list.length > 0) {
-      setDatasets(list);
-      setSelectedDatasetId(list[0].id);
-      try {
-        const loaded = await hydrateLoadedDatasets(list);
-        setLoadedDatasets(loaded);
-        const first = loaded[0];
-        setDatasetColumns(first.columns as ColumnSchema[]);
-        setDatasetRows(first.rows);
-      } catch (e: any) {
-        console.error(e);
-        alert("Failed to load dataset rows: " + (e?.message || "unknown error"));
-      }
-    }
-
+    await finalize(list);
     await loadPublishStatus(projectId, category);
     setLoading(false);
   }
@@ -541,7 +591,7 @@ function CentralReportHub() {
     }
 
     if (selectedCategory === "Social") {
-      return <SocialReportShell datasets={loadedDatasets} />;
+      return <SocialReportShell datasets={loadedDatasets} previousDatasets={previousLoadedDatasets} />;
     }
 
     if (selectedCategory === "Website") {

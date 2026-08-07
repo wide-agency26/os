@@ -40,6 +40,8 @@ type SocialTab = "overall" | "instagram" | "facebook" | "linkedin" | "youtube";
 
 interface SocialReportShellProps {
   datasets: LoadedDataset[];
+  /** Prior uploads superseded by the current ones — used for static snapshot compare. */
+  previousDatasets?: LoadedDataset[];
 }
 
 function NoticeBanner({ text }: { text: string }) {
@@ -127,7 +129,10 @@ function SocialOverallBlended({ datasets }: { datasets: LoadedDataset[] }) {
   );
 }
 
-export function SocialReportShell({ datasets }: SocialReportShellProps) {
+export function SocialReportShell({
+  datasets,
+  previousDatasets = [],
+}: SocialReportShellProps) {
   const [tab, setTab] = useState<SocialTab>("overall");
 
   const tabs: ReportSubTab[] = [
@@ -190,6 +195,14 @@ export function SocialReportShell({ datasets }: SocialReportShellProps) {
     [datasets]
   );
 
+  const previousLiBundle = useMemo(
+    () =>
+      previousDatasets.length
+        ? buildLinkedInBundle(pickLinkedInPayloads(previousDatasets))
+        : null,
+    [previousDatasets]
+  );
+
   const liMeta = useMemo(() => {
     const liDs = datasets.filter((d) =>
       isLinkedInOrganicSub(d.subcategory || detectSubcategory(d.name, d.columns))
@@ -236,7 +249,11 @@ export function SocialReportShell({ datasets }: SocialReportShellProps) {
       {tab === "overall" && <SocialOverallBlended datasets={datasets} />}
 
       {tab === "linkedin" && (
-        <LinkedInOrganicDashboard bundle={liBundle} datasetMeta={liMeta} />
+        <LinkedInOrganicDashboard
+          bundle={liBundle}
+          previousBundle={previousLiBundle || undefined}
+          datasetMeta={liMeta}
+        />
       )}
 
       {tab === "youtube" && (

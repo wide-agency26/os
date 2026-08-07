@@ -332,7 +332,7 @@ export function YouTubeOrganicDashboard({
       <SectionShell
         eyebrow="Section 2"
         title="Daily view trends"
-        description="Daily views across videos. Publish dates are marked as reference lines when available."
+        description="Daily views across videos. Grey markers show Video publish time from Table data when that day falls in range."
       >
         {daily.length === 0 ? (
           <p className="text-[13px] text-gray-500 text-center py-8">

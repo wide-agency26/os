@@ -184,10 +184,12 @@ function ClientReportsInner() {
     async (pid: string) => {
       const { data } = await (supabase as any)
         .from("datasets")
-        .select("id, category, subcategory, columns")
+        .select("id, category, subcategory, columns, is_current")
         .eq("project_id", pid);
 
-      const list = (data || []) as DatasetMeta[];
+      const list = ((data || []) as DatasetMeta[]).filter(
+        (d: any) => d.is_current !== false
+      );
       const presence = { Social: false, Ads: false, Website: false, SEO: false };
       for (const ds of list) {
         if (ds.category === "Website") presence.Website = true;
@@ -232,10 +234,12 @@ function ClientReportsInner() {
         if (cat === "General") {
           const { data: allDs } = await (supabase as any)
             .from("datasets")
-            .select("id, name, category, subcategory, columns, row_count, created_at")
+            .select("id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id")
             .eq("project_id", pid)
             .order("created_at", { ascending: false });
-          const list = (allDs || []) as DatasetMeta[];
+          const list = ((allDs || []) as DatasetMeta[]).filter(
+            (d: any) => d.is_current !== false
+          );
           setLoadedDatasets(await hydrateLoadedDatasets(supabase, list));
           setLoading(false);
           return;
@@ -244,12 +248,14 @@ function ClientReportsInner() {
         const cats = datasetCategoriesForReport(cat);
         const { data: ds } = await (supabase as any)
           .from("datasets")
-          .select("id, name, category, subcategory, columns, row_count, created_at")
+          .select("id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id")
           .eq("project_id", pid)
           .in("category", cats)
           .order("created_at", { ascending: false });
 
-        let list = (ds || []) as DatasetMeta[];
+        let list = ((ds || []) as DatasetMeta[]).filter(
+          (d: any) => d.is_current !== false
+        );
         if (cat === "Ads") {
           list = list.filter(
             (d) =>

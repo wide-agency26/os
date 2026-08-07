@@ -15,6 +15,12 @@ export type DatasetSubcategory =
   | "linkedin_demo_industry"
   | "linkedin_demo_job_function"
   | "linkedin_demo_company_size"
+  | "linkedin_demo_location"
+  | "linkedin_demo_follower_seniority"
+  | "linkedin_demo_follower_industry"
+  | "linkedin_demo_follower_job_function"
+  | "linkedin_demo_follower_company_size"
+  | "linkedin_demo_follower_location"
   | "instagram_organic"
   | "facebook_organic"
   | "youtube_organic"
@@ -30,20 +36,79 @@ export type DatasetSubcategory =
   | "gsc_search_appearance"
   | "unknown";
 
+/**
+ * Snapshots / dimension sheets — not day-by-day time series.
+ * Date-range chips must not invent months from these; charts live in their own sections.
+ */
+export const STATIC_REPORT_SUBCATEGORIES: ReadonlySet<string> = new Set([
+  "linkedin_demo_seniority",
+  "linkedin_demo_industry",
+  "linkedin_demo_job_function",
+  "linkedin_demo_company_size",
+  "linkedin_demo_location",
+  "linkedin_demo_follower_seniority",
+  "linkedin_demo_follower_industry",
+  "linkedin_demo_follower_job_function",
+  "linkedin_demo_follower_company_size",
+  "linkedin_demo_follower_location",
+  "gsc_queries",
+  "gsc_pages",
+  "gsc_countries",
+  "gsc_devices",
+  "gsc_search_appearance",
+]);
+
+export function isStaticReportSubcategory(sub: string | null | undefined): boolean {
+  return !!sub && STATIC_REPORT_SUBCATEGORIES.has(sub);
+}
+
+/** Demo sheets must match before generic "followers" / "visitors" rules. */
 const NAME_RULES: { test: RegExp; sub: DatasetSubcategory }[] = [
   { test: /yt[_\s-]?chart|chart\s*data|youtube.*chart/i, sub: "youtube_chart" },
   { test: /yt[_\s-]?table|table\s*data|youtube.*table/i, sub: "youtube_table" },
   { test: /youtube|yt[_\s-]/i, sub: "youtube_organic" },
   { test: /li[_\s-]?all[_\s-]?posts|all[_\s-]?posts|linkedin.*posts/i, sub: "linkedin_posts" },
-  { test: /li[_\s-]?new[_\s-]?followers|new[_\s-]?followers|followers/i, sub: "linkedin_followers" },
+  {
+    test: /(?:new[_\s-]?followers?|followers?).*(?:location)/i,
+    sub: "linkedin_demo_follower_location",
+  },
+  {
+    test: /(?:new[_\s-]?followers?|followers?).*(?:seniority)/i,
+    sub: "linkedin_demo_follower_seniority",
+  },
+  {
+    test: /(?:new[_\s-]?followers?|followers?).*(?:industry)/i,
+    sub: "linkedin_demo_follower_industry",
+  },
+  {
+    test: /(?:new[_\s-]?followers?|followers?).*(?:job[_\s-]?function|function)/i,
+    sub: "linkedin_demo_follower_job_function",
+  },
+  {
+    test: /(?:new[_\s-]?followers?|followers?).*(?:company[_\s-]?size)/i,
+    sub: "linkedin_demo_follower_company_size",
+  },
+  { test: /visitor.*location|location.*visitor/i, sub: "linkedin_demo_location" },
+  { test: /visitor.*seniority|seniority.*visitor/i, sub: "linkedin_demo_seniority" },
+  { test: /visitor.*industry|industry.*visitor/i, sub: "linkedin_demo_industry" },
+  {
+    test: /visitor.*(?:job[_\s-]?function|function)|(?:job[_\s-]?function).*visitor/i,
+    sub: "linkedin_demo_job_function",
+  },
+  {
+    test: /visitor.*company[_\s-]?size|company[_\s-]?size.*visitor/i,
+    sub: "linkedin_demo_company_size",
+  },
+  { test: /location/i, sub: "linkedin_demo_location" },
+  { test: /seniority/i, sub: "linkedin_demo_seniority" },
+  { test: /industry/i, sub: "linkedin_demo_industry" },
+  { test: /job[_\s-]?function/i, sub: "linkedin_demo_job_function" },
+  { test: /company[_\s-]?size/i, sub: "linkedin_demo_company_size" },
+  { test: /li[_\s-]?new[_\s-]?followers|new[_\s-]?followers/i, sub: "linkedin_followers" },
   {
     test: /visitor[_\s-]?metrics|page[_\s-]?views|li[_\s-]?visitor(?!.*senior|.*industr|.*job|.*size|.*location)/i,
     sub: "linkedin_visitors",
   },
-  { test: /seniority/i, sub: "linkedin_demo_seniority" },
-  { test: /industry/i, sub: "linkedin_demo_industry" },
-  { test: /job[_\s-]?function|function/i, sub: "linkedin_demo_job_function" },
-  { test: /company[_\s-]?size/i, sub: "linkedin_demo_company_size" },
   { test: /li[_\s-]?metrics|linkedin.*metrics|engagement/i, sub: "linkedin_metrics" },
   { test: /liads|linkedin.?ads|creative.?performance|campaign.?manager/i, sub: "linkedin_ads" },
   { test: /campaign\s*performance|google.?ads|gads/i, sub: "google_ads" },
@@ -61,7 +126,6 @@ const NAME_RULES: { test: RegExp; sub: DatasetSubcategory }[] = [
   { test: /search.?console|gsc/i, sub: "gsc" },
 ];
 
-/** Sheet prefixes the user will use in Excel tab names */
 const PREFIX_MAP: { test: RegExp; kind: string }[] = [
   { test: /^(liads|linkedinads)\b/i, kind: "linkedin_ads" },
   { test: /^(li|linkedin)\b/i, kind: "linkedin" },
@@ -84,10 +148,7 @@ export function parseSheetPrefix(name: string): {
   rest: string;
 } {
   const trimmed = name.trim();
-  // "Li - Metrics", "YT — Chart data", "Web: GA4"
-  const m = trimmed.match(
-    /^([A-Za-z0-9]+)\s*[-–—:|]\s*(.+)$/
-  );
+  const m = trimmed.match(/^([A-Za-z0-9]+)\s*[-–—:|]\s*(.+)$/);
   if (m) {
     const head = m[1];
     const rest = m[2].trim();
@@ -95,7 +156,6 @@ export function parseSheetPrefix(name: string): {
       if (p.test.test(head)) return { kind: p.kind, rest };
     }
   }
-  // Also match leading token without separator: "Li Metrics"
   for (const p of PREFIX_MAP) {
     if (p.test.test(trimmed)) {
       return { kind: p.kind, rest: trimmed.replace(p.test, "").replace(/^[\s\-–—:|]+/, "") };
@@ -116,7 +176,6 @@ export function detectSubcategoryFromColumns(
 ): DatasetSubcategory | null {
   const keys = new Set((columns || []).map((c) => normalizeHeader(c.key)));
 
-  // YouTube Studio
   if (
     (keys.has("videotitle") || keys.has("content")) &&
     keys.has("views") &&
@@ -125,13 +184,16 @@ export function detectSubcategoryFromColumns(
     if (keys.has("date") && !keys.has("watchtimehours") && !keys.has("impressionsclickthroughrate")) {
       return "youtube_chart";
     }
-    if (keys.has("watchtimehours") || keys.has("impressionsclickthroughrate") || keys.has("averageviewduration")) {
+    if (
+      keys.has("watchtimehours") ||
+      keys.has("impressionsclickthroughrate") ||
+      keys.has("averageviewduration")
+    ) {
       return "youtube_table";
     }
     return "youtube_organic";
   }
 
-  // Google Ads (Cost + Impr. / Campaign type — before Meta Amount spent)
   if (
     (keys.has("cost") || keys.has("costeur")) &&
     (keys.has("impr") || keys.has("impressions")) &&
@@ -142,7 +204,6 @@ export function detectSubcategoryFromColumns(
     }
   }
 
-  // LinkedIn Ads creative performance
   if (
     (keys.has("startdateinutc") || [...keys].some((k) => k.includes("startdate"))) &&
     (keys.has("totalspent") || keys.has("amountspent")) &&
@@ -173,6 +234,12 @@ export function detectSubcategoryFromColumns(
   ) {
     return "linkedin_visitors";
   }
+  if (
+    (keys.has("location") || keys.has("country") || keys.has("region")) &&
+    (keys.has("totalviews") || keys.has("views"))
+  ) {
+    return "linkedin_demo_location";
+  }
   if (keys.has("seniority") && (keys.has("totalviews") || keys.has("views"))) {
     return "linkedin_demo_seniority";
   }
@@ -185,10 +252,7 @@ export function detectSubcategoryFromColumns(
   ) {
     return "linkedin_demo_job_function";
   }
-  if (
-    (keys.has("companysize") || keys.has("companysize")) &&
-    (keys.has("totalviews") || keys.has("views"))
-  ) {
+  if (keys.has("companysize") && (keys.has("totalviews") || keys.has("views"))) {
     return "linkedin_demo_company_size";
   }
   if (
@@ -207,7 +271,6 @@ export function detectSubcategoryFromColumns(
   }
   if (keys.has("sessionsource") && keys.has("sessions")) return "ga4";
 
-  // Google Search Console
   if (keys.has("position") && (keys.has("clicks") || keys.has("impressions"))) {
     if (keys.has("date") || keys.has("day")) return "gsc_dates";
     if (keys.has("query") || keys.has("topqueries") || keys.has("keyword")) return "gsc_queries";
@@ -224,11 +287,9 @@ export function detectSubcategoryFromColumns(
 }
 
 function refineLinkedIn(rest: string, columns?: { key: string }[]): DatasetSubcategory {
-  return (
-    detectSubcategoryFromName(rest) ||
-    detectSubcategoryFromColumns(columns) ||
-    "linkedin_metrics"
-  );
+  const fromName = detectSubcategoryFromName(rest) || detectSubcategoryFromName(`Li - ${rest}`);
+  if (fromName) return fromName;
+  return detectSubcategoryFromColumns(columns) || "linkedin_metrics";
 }
 
 function refineYouTube(rest: string, columns?: { key: string }[]): DatasetSubcategory {
@@ -289,10 +350,16 @@ export function subcategoryLabel(sub: string | null | undefined): string {
     linkedin_visitors: "LinkedIn Visitors",
     linkedin_followers: "LinkedIn Followers",
     linkedin_posts: "LinkedIn Posts",
-    linkedin_demo_seniority: "LinkedIn · Seniority",
-    linkedin_demo_industry: "LinkedIn · Industry",
-    linkedin_demo_job_function: "LinkedIn · Job function",
-    linkedin_demo_company_size: "LinkedIn · Company size",
+    linkedin_demo_seniority: "Li · Visitor · Seniority",
+    linkedin_demo_industry: "Li · Visitor · Industry",
+    linkedin_demo_job_function: "Li · Visitor · Job function",
+    linkedin_demo_company_size: "Li · Visitor · Company size",
+    linkedin_demo_location: "Li · Visitor · Location",
+    linkedin_demo_follower_seniority: "Li · New Followers · Seniority",
+    linkedin_demo_follower_industry: "Li · New Followers · Industry",
+    linkedin_demo_follower_job_function: "Li · New Followers · Job function",
+    linkedin_demo_follower_company_size: "Li · New Followers · Company size",
+    linkedin_demo_follower_location: "Li · New Followers · Location",
     instagram_organic: "Instagram Organic",
     facebook_organic: "Facebook Organic",
     youtube_organic: "YouTube Organic",

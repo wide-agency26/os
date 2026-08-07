@@ -528,7 +528,7 @@ export function SeoGscDashboard({ bundle: rawBundle, datasetMeta, isAdmin }: Seo
       <SectionShell
         eyebrow="Section 3"
         title="Top search queries"
-        description="Highest-click keywords and impression vs position opportunities (high impressions, positions 4–15)."
+        description="GSC Queries is a period snapshot. Date chips filter only Dates time series — this section always uses the latest Queries upload."
       >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="h-[300px]">
@@ -607,7 +607,7 @@ export function SeoGscDashboard({ bundle: rawBundle, datasetMeta, isAdmin }: Seo
       <SectionShell
         eyebrow="Section 4"
         title="Top organic landing pages"
-        description="Which URLs capture the most organic entry traffic and how click share distributes."
+        description="GSC Pages is a period snapshot (not day-by-day). Date chips only filter the Dates time series — this section always shows the latest Pages upload."
       >
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="h-[260px]">
