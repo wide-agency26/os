@@ -26,6 +26,8 @@ export type PmTaskRow = {
   task_template_id: string | null;
   title: string;
   description: string | null;
+  /** BlockNote document JSON; description stays a plain-text summary. */
+  content_blocks?: unknown | null;
   assignee_id: string | null;
   default_role: string | null;
   status: PmTaskStatus;

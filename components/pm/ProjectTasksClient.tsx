@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
+import type { Block } from "@blocknote/core";
 import { createClient } from "@/utils/supabase/client";
 import { ProjectPmShell } from "@/components/pm/ProjectPmShell";
 import {
@@ -9,8 +11,27 @@ import {
   EmailSourceIcon,
   TaskStatusBadge,
 } from "@/components/pm/PmBadges";
-import { updatePmTaskStatus, updatePmTaskAssignee } from "@/app/actions/pm";
+import {
+  updatePmTaskStatus,
+  updatePmTaskAssignee,
+  updatePmTaskContent,
+} from "@/app/actions/pm";
+import {
+  blocksToPlainSummary,
+  initialBlocksForTask,
+} from "@/lib/pm/blocknote";
 import type { PmTaskStatus } from "@/lib/pm/types";
+
+const TaskContentEditor = dynamic(
+  () =>
+    import("@/components/pm/TaskContentEditor").then((m) => m.TaskContentEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="text-xs text-gray-400 px-1 py-2">Loading editor…</p>
+    ),
+  }
+);
 
 type Props = { projectId: string };
 
@@ -26,8 +47,23 @@ export function ProjectTasksClient({ projectId }: Props) {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [view, setView] = useState<"board" | "list">("list");
   const [showDonePhases, setShowDonePhases] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, startTransition] = useTransition();
+
+  const saveTaskContent = (taskId: string, blocks: Block[]) => {
+    const plain = blocksToPlainSummary(blocks);
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId
+          ? { ...t, content_blocks: blocks, description: plain || null }
+          : t
+      )
+    );
+    startTransition(async () => {
+      await updatePmTaskContent(taskId, blocks, plain);
+    });
+  };
 
   const load = async () => {
     setLoading(true);
@@ -158,56 +194,91 @@ export function ProjectTasksClient({ projectId }: Props) {
                   ) : null}
                   {phase.items
                     .filter((t) => t.status !== "blocked" || !openGate)
-                    .map((t) => (
-                      <li
-                        key={t.id}
-                        className="px-3 py-2.5 flex flex-wrap items-center gap-2 text-sm"
-                      >
-                        {t.is_gate ? <GateIcon cleared={t.status === "done"} /> : null}
-                        {t.cycle_key ? <RecurringIcon /> : null}
-                        {t.source === "email" ? <EmailSourceIcon /> : null}
-                        <span className="flex-1 min-w-[12rem] text-gray-900">{t.title}</span>
-                        {t.default_role ? (
-                          <span className="text-xs text-gray-400">{t.default_role}</span>
-                        ) : null}
-                        <TaskStatusBadge status={t.status} />
-                        <select
-                          disabled={pending}
-                          className="text-xs border border-gray-200 rounded px-1 py-0.5 max-w-[8rem]"
-                          value={t.assignee_id || ""}
-                          onChange={(e) => {
-                            const v = e.target.value || null;
-                            startTransition(async () => {
-                              await updatePmTaskAssignee(t.id, v);
-                              await load();
-                            });
-                          }}
-                        >
-                          <option value="">Unassigned</option>
-                          {profiles.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.full_name || p.id.slice(0, 8)}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          disabled={pending}
-                          className="text-xs border border-gray-200 rounded px-1 py-0.5"
-                          value={t.status}
-                          onChange={(e) =>
-                            setStatus(t.id, e.target.value as PmTaskStatus)
-                          }
-                        >
-                          {COLUMNS.map((c) => (
-                            <option key={c.key} value={c.key}>
-                              {c.label}
-                            </option>
-                          ))}
-                          <option value="blocked">Blocked</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
-                      </li>
-                    ))}
+                    .map((t) => {
+                      const expanded = expandedTaskId === t.id;
+                      return (
+                        <li key={t.id} className="text-sm">
+                          {/* Row header — collapse/gate logic above is unchanged */}
+                          <div className="px-3 py-2.5 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              aria-expanded={expanded}
+                              aria-label={expanded ? "Collapse task" : "Expand task"}
+                              onClick={() =>
+                                setExpandedTaskId(expanded ? null : t.id)
+                              }
+                              className="text-gray-400 hover:text-gray-700 w-4 shrink-0"
+                            >
+                              {expanded ? "▾" : "▸"}
+                            </button>
+                            {t.is_gate ? (
+                              <GateIcon cleared={t.status === "done"} />
+                            ) : null}
+                            {t.cycle_key ? <RecurringIcon /> : null}
+                            {t.source === "email" ? <EmailSourceIcon /> : null}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedTaskId(expanded ? null : t.id)
+                              }
+                              className="flex-1 min-w-[12rem] text-left text-gray-900 hover:underline"
+                            >
+                              {t.title}
+                            </button>
+                            {t.default_role ? (
+                              <span className="text-xs text-gray-400">
+                                {t.default_role}
+                              </span>
+                            ) : null}
+                            <TaskStatusBadge status={t.status} />
+                            <select
+                              disabled={pending}
+                              className="text-xs border border-gray-200 rounded px-1 py-0.5 max-w-[8rem]"
+                              value={t.assignee_id || ""}
+                              onChange={(e) => {
+                                const v = e.target.value || null;
+                                startTransition(async () => {
+                                  await updatePmTaskAssignee(t.id, v);
+                                  await load();
+                                });
+                              }}
+                            >
+                              <option value="">Unassigned</option>
+                              {profiles.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.full_name || p.id.slice(0, 8)}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              disabled={pending}
+                              className="text-xs border border-gray-200 rounded px-1 py-0.5"
+                              value={t.status}
+                              onChange={(e) =>
+                                setStatus(t.id, e.target.value as PmTaskStatus)
+                              }
+                            >
+                              {COLUMNS.map((c) => (
+                                <option key={c.key} value={c.key}>
+                                  {c.label}
+                                </option>
+                              ))}
+                              <option value="blocked">Blocked</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </div>
+                          {expanded ? (
+                            <div className="px-3 pb-3 pl-9">
+                              <TaskContentEditor
+                                taskId={t.id}
+                                initialContent={initialBlocksForTask(t)}
+                                onSave={(blocks) => saveTaskContent(t.id, blocks)}
+                              />
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
                 </ul>
               </section>
             );

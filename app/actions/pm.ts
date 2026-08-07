@@ -232,6 +232,45 @@ export async function updatePmTaskAssignee(
   return { ok: true };
 }
 
+/**
+ * Persist BlockNote document. Keeps `description` as a plain-text summary for
+ * email/review/search surfaces that don't read content_blocks.
+ */
+export async function updatePmTaskContent(
+  taskId: string,
+  contentBlocks: unknown,
+  plainSummary?: string | null
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+
+  const supabase = await createClient();
+  const { data: task, error: fetchErr } = await (supabase as any)
+    .from("pm_tasks")
+    .select("project_id")
+    .eq("id", taskId)
+    .single();
+  if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Not found" };
+
+  const patch: Record<string, unknown> = {
+    content_blocks: contentBlocks ?? null,
+    last_activity_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (plainSummary !== undefined) {
+    patch.description = plainSummary?.trim() || null;
+  }
+
+  const { error } = await (supabase as any)
+    .from("pm_tasks")
+    .update(patch)
+    .eq("id", taskId);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${task.project_id}/tasks`);
+  return { ok: true };
+}
+
 export async function rollProjectCycle(projectId: string): Promise<PmActionResult> {
   const gate = await requireAgencyStaff();
   if (!gate.ok) return { ok: false, error: "Staff only." };

@@ -11,6 +11,9 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.197",
+    "@blocknote/core": "^0.53.0",
+    "@blocknote/react": "^0.53.0",
+    "@blocknote/shadcn": "^0.53.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",
     "@superset-ui/embedded-sdk": "^0.4.0",
