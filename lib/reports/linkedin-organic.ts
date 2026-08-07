@@ -712,12 +712,45 @@ export function filterBundleByRange(bundle: LinkedInBundle, range: DateRange): L
   };
 }
 
+/**
+ * Month chips for LinkedIn — only months with real daily activity
+ * (metrics / visitors / followers). Post Created dates are content markers,
+ * not daily coverage, so they must not invent empty month pills.
+ */
 export function availableLiMonths(bundle: LinkedInBundle): { key: string; label: string }[] {
-  const set = new Set<string>();
-  for (const r of [...bundle.metrics, ...bundle.visitors, ...bundle.followers, ...bundle.posts]) {
-    if (r.monthKey && isPlausibleMonthKey(r.monthKey)) set.add(r.monthKey);
+  const activity = new Map<string, number>();
+
+  const bump = (monthKey: string, amount: number) => {
+    if (!monthKey || !isPlausibleMonthKey(monthKey) || amount <= 0) return;
+    activity.set(monthKey, (activity.get(monthKey) || 0) + amount);
+  };
+
+  for (const r of bundle.metrics) {
+    bump(
+      r.monthKey,
+      r.impressions + r.reactions + r.comments + r.reposts + r.clicks
+    );
   }
-  return [...set]
+  for (const r of bundle.visitors) {
+    bump(r.monthKey, r.pageViews + r.uniqueVisitors);
+  }
+  for (const r of bundle.followers) {
+    bump(r.monthKey, r.organicFollowers);
+  }
+
+  // Fallback: posts-only projects (no daily exports) — months with post activity
+  if (activity.size === 0) {
+    for (const p of bundle.posts) {
+      if (p.date.getFullYear() <= 1970) continue;
+      const amt =
+        p.impressions + p.likes + p.comments + p.reposts + p.clicks;
+      bump(p.monthKey, amt > 0 ? amt : 0);
+      // Count a published post even if impressions unresolved
+      if (amt <= 0 && p.title) bump(p.monthKey, 1);
+    }
+  }
+
+  return [...activity.keys()]
     .sort()
     .map((key) => {
       const [y, m] = key.split("-").map(Number);

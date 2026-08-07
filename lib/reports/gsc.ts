@@ -395,9 +395,13 @@ export function computeGscHeadline(bundle: GscBundle): GscHeadline {
 }
 
 export function availableGscMonths(bundle: GscBundle): { key: string; label: string }[] {
-  const keys = new Set(
-    bundle.dates.map((d) => d.monthKey).filter((k) => k && isPlausibleMonthKey(k))
-  );
+  const activity = new Map<string, number>();
+  for (const d of bundle.dates) {
+    if (!d.monthKey || !isPlausibleMonthKey(d.monthKey)) continue;
+    const amt = (d.clicks || 0) + (d.impressions || 0);
+    if (amt <= 0) continue;
+    activity.set(d.monthKey, (activity.get(d.monthKey) || 0) + amt);
+  }
   const MONTHS = [
     "Jan",
     "Feb",
@@ -412,7 +416,7 @@ export function availableGscMonths(bundle: GscBundle): { key: string; label: str
     "Nov",
     "Dec",
   ];
-  return [...keys]
+  return [...activity.keys()]
     .sort()
     .map((key) => {
       const [y, m] = key.split("-").map(Number);

@@ -282,15 +282,28 @@ export function filterYtBundleByRange(bundle: YouTubeBundle, range: DateRange): 
   };
 }
 
+/**
+ * Month chips for YouTube — prefer Chart daily views with activity.
+ * Video publish time is for markers / content filters, not empty month pills.
+ */
 export function availableYtMonths(bundle: YouTubeBundle): { key: string; label: string }[] {
-  const set = new Set<string>();
+  const activity = new Map<string, number>();
+
   for (const r of bundle.daily) {
-    if (r.monthKey && isPlausibleMonthKey(r.monthKey)) set.add(r.monthKey);
+    if (!r.monthKey || !isPlausibleMonthKey(r.monthKey) || r.views <= 0) continue;
+    activity.set(r.monthKey, (activity.get(r.monthKey) || 0) + r.views);
   }
-  for (const v of bundle.videos) {
-    if (v.monthKey && isPlausibleMonthKey(v.monthKey)) set.add(v.monthKey);
+
+  if (activity.size === 0) {
+    for (const v of bundle.videos) {
+      if (!v.monthKey || !isPlausibleMonthKey(v.monthKey)) continue;
+      const amt = v.views > 0 ? v.views : 0;
+      if (amt <= 0) continue;
+      activity.set(v.monthKey, (activity.get(v.monthKey) || 0) + amt);
+    }
   }
-  return [...set]
+
+  return [...activity.keys()]
     .sort()
     .map((key) => {
       const [y, m] = key.split("-").map(Number);
