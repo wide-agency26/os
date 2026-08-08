@@ -1,0 +1,53 @@
+---
+description: Current project state after CRM company/contact hierarchy iteration — resume context
+alwaysApply: true
+---
+
+# WIDE Portal — resume context (Aug 2026)
+
+Prod: https://os-bice-nine.vercel.app · Always deploy at end of work (`vercel --prod --yes -m githubCommitMessage="…"` ≤72 chars). Fix build errors until green.
+
+## Data model (live)
+
+- `crm_customers.record_kind`: `company` | `contact`
+- `crm_customers.parent_company_id` → parent company row
+- **Projects, Clients hub, client access, company pickers** attach to **company** rows only
+- **Contacts** = people in CRM directory (many per company)
+- Migration: `supabase/migrations/20260808191806_crm_company_client_hierarchy.sql`
+- Do **not** delete company rows — projects depend on them
+
+## This iteration shipped
+
+- Hierarchy + dashboards: home, CRM, HR (`8861cfe`)
+- Directory contacts-first + Companies|Contacts|All toggle; company-only pickers (`d2cbeac`)
+- Suspense fix for `/app/crm/new` (`1487281`)
+- Accounting ledger (actual / identified / unidentified / runway)
+- HR: overhead costs year grid, compensation calendar, project↔comp bidirectional, talent pipeline DnD
+- Standing: CI Builder / Report-Analytics / Company-Client-Project core stay intact
+
+## Key paths
+
+- CRM list: `app/app/crm/directory/page.tsx` (default `kindView=contacts`)
+- CRM dash: `app/app/crm/page.tsx` · Home: `app/app/home/page.tsx`
+- Project company select: `app/app/projects/project/new|/[id]/page.tsx`
+- Clients hub: `components/pm/ClientsHub.tsx` (companies only)
+- Client access / picker: `app/app/client-access/page.tsx`, `components/client/CompanyPickerModal.tsx`, `app/actions/company-members.ts`
+- Accounting: `lib/accounting/*`, `components/accounting/*`, `app/app/accounting/**`
+
+## Next when user returns (priority)
+
+1. **Portal scope**: company members see that company’s projects / reports / CI overview
+2. **Ledger form**: `LedgerEntryForm` still can write contact id into `company_id` / company into `client_id` on change handlers — options loaders are correct; persistence needs parent resolution
+3. Home/CRM “Client” counts may double-count company + contact with `status=Client`
+4. Bulk import: set `record_kind` + parent company linking
+5. Regenerate `types/supabase.ts` for `record_kind` / `parent_company_id`
+6. Optional: ClientsHub filter to Client-status companies; backfill orphan contacts
+
+## Test checklist (this close-out)
+
+- [ ] `/app/crm/directory` — Contacts default; toggle Companies / All; no duplicate company+person noise in Contacts
+- [ ] New/edit project — company dropdown unique companies only
+- [ ] Clients hub — companies only
+- [ ] Client access / company picker — companies only
+- [ ] New CRM — Contact vs Company; parent company on contacts; `?kind=company` from project form
+- [ ] Accounting pages still load (known ledger company/client write quirk — don’t block smoke)
