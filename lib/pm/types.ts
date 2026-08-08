@@ -29,6 +29,8 @@ export type PmTaskRow = {
   /** BlockNote document JSON; description stays a plain-text summary. */
   content_blocks?: unknown | null;
   assignee_id: string | null;
+  /** HR roster people.id — primary assignment key */
+  assignee_person_id?: string | null;
   default_role: string | null;
   status: PmTaskStatus;
   is_gate: boolean;

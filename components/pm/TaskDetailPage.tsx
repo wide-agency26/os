@@ -39,6 +39,7 @@ export type TaskDetailTask = {
   title: string;
   status: PmTaskStatus;
   assignee_id: string | null;
+  assignee_person_id?: string | null;
   description?: string | null;
   content_blocks?: unknown;
   is_gate?: boolean;
@@ -166,32 +167,20 @@ export function TaskDetailPage({
               ))}
             </select>
             <select
-              className="text-xs border border-gray-200 rounded px-2 py-1 max-w-[12rem]"
-              value={task.assignee_id || ""}
+              className="text-xs border border-gray-200 rounded px-2 py-1 max-w-[14rem]"
+              value={task.assignee_person_id || ""}
               onChange={(e) =>
                 onAssigneeChange(task.id, e.target.value || null)
               }
             >
               <option value="">Unassigned</option>
-              {profiles.some((p) => p.group === "roster") ? (
-                <optgroup label="HR roster (do the work)">
-                  {profiles
-                    .filter((p) => p.group === "roster")
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.full_name || p.id.slice(0, 8)}
-                      </option>
-                    ))}
-                </optgroup>
-              ) : null}
-              <optgroup label="Team logins">
-                {profiles
-                  .filter((p) => p.group !== "roster")
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.full_name || p.id.slice(0, 8)}
-                    </option>
-                  ))}
+              <optgroup label="HR roster">
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.full_name || p.id.slice(0, 8)}
+                    {p.engagement_label ? ` · ${p.engagement_label}` : ""}
+                  </option>
+                ))}
               </optgroup>
             </select>
             {task.default_role ? (
@@ -200,10 +189,10 @@ export function TaskDetailPage({
           </div>
         </header>
 
-        {!task.assignee_id && suggestions.length > 0 ? (
+        {!task.assignee_person_id && suggestions.length > 0 ? (
           <AssigneeSuggestBanner
             suggestions={suggestions}
-            onAssign={(profileId) => onAssigneeChange(task.id, profileId)}
+            onAssign={(personId) => onAssigneeChange(task.id, personId)}
           />
         ) : null}
 

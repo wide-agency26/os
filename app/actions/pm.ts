@@ -204,7 +204,8 @@ export async function deleteTaskTemplate(id: string): Promise<PmActionResult> {
 
 export async function updatePmTaskAssignee(
   taskId: string,
-  assigneeId: string | null
+  /** HR roster people.id — null to unassign */
+  personId: string | null
 ): Promise<PmActionResult> {
   const gate = await requireAgencyStaff();
   if (!gate.ok) return { ok: false, error: "Staff only." };
@@ -217,10 +218,34 @@ export async function updatePmTaskAssignee(
     .single();
   if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Not found" };
 
+  let authUserId: string | null = null;
+  if (personId) {
+    const { data: person, error: personErr } = await (supabase as any)
+      .from("people")
+      .select("id, auth_user_id, roster_status, engagement_types ( assignable_to_tasks )")
+      .eq("id", personId)
+      .single();
+    if (personErr || !person) {
+      return { ok: false, error: personErr?.message ?? "Person not found in HR roster" };
+    }
+    if (person.roster_status !== "active") {
+      return { ok: false, error: "Only active roster people can be assigned." };
+    }
+    if (person.engagement_types?.assignable_to_tasks === false) {
+      return {
+        ok: false,
+        error: "This engagement type is not assignable to project tasks.",
+      };
+    }
+    authUserId = person.auth_user_id || null;
+  }
+
   const { error } = await (supabase as any)
     .from("pm_tasks")
     .update({
-      assignee_id: assigneeId,
+      assignee_person_id: personId,
+      // Keep profile mirror for My Week / RLS when the person has a portal login
+      assignee_id: authUserId,
       last_activity_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -342,6 +367,7 @@ export async function duplicatePmTask(taskId: string): Promise<PmActionResult> {
     description: task.description,
     content_blocks: task.content_blocks ?? null,
     assignee_id: task.assignee_id,
+    assignee_person_id: task.assignee_person_id ?? null,
     default_role: task.default_role,
     status: "todo",
     is_gate: false,

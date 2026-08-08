@@ -42,7 +42,8 @@ export function CompanyOverviewClient() {
       const { data: tasks } = await (supabase as any)
         .from("pm_tasks")
         .select(
-          `project_id, status, phase_label, is_gate, title, last_activity_at, assignee_id,
+          `project_id, status, phase_label, is_gate, title, last_activity_at, assignee_id, assignee_person_id,
+           assignee_person:assignee_person_id ( full_name ),
            assignee:assignee_id ( full_name )`
         );
 
@@ -72,7 +73,10 @@ export function CompanyOverviewClient() {
         const names = [
           ...new Set(
             open
-              .map((t) => t.assignee?.full_name)
+              .map(
+                (t) =>
+                  t.assignee_person?.full_name || t.assignee?.full_name || null
+              )
               .filter(Boolean) as string[]
           ),
         ];

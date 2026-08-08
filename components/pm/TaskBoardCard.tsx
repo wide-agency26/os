@@ -52,7 +52,9 @@ export function TaskBoardCard({
   const titleRef = useRef<HTMLInputElement>(null);
   const assigneeRef = useRef<HTMLDivElement>(null);
 
-  const assignee = profiles.find((p) => p.id === task.assignee_id);
+  const assignee = profiles.find(
+    (p) => p.id === (task.assignee_person_id || task.assignee_id)
+  );
   const isDone = task.status === "done";
 
   useEffect(() => {
@@ -187,7 +189,10 @@ export function TaskBoardCard({
                 {initials(assignee?.full_name)}
               </button>
               {assigneeOpen ? (
-                <div className="absolute right-0 top-full mt-1 z-40 w-44 max-h-48 overflow-auto rounded-md border border-gray-200 bg-white shadow-lg py-1">
+                <div className="absolute right-0 top-full mt-1 z-40 w-52 max-h-48 overflow-auto rounded-md border border-gray-200 bg-white shadow-lg py-1">
+                  <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                    HR roster
+                  </p>
                   <button
                     type="button"
                     className="w-full text-left px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
@@ -199,37 +204,30 @@ export function TaskBoardCard({
                   >
                     Unassigned
                   </button>
-                  {(["roster", "team"] as const).map((group) => {
-                    const groupProfiles = profiles.filter((p: any) =>
-                      group === "roster" ? p.group === "roster" : p.group !== "roster"
-                    );
-                    if (!groupProfiles.length) return null;
-                    return (
-                      <div key={group}>
-                        <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-                          {group === "roster" ? "HR roster" : "Team"}
-                        </p>
-                        {groupProfiles.map((p: any) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${
-                              p.id === task.assignee_id
-                                ? "bg-gray-50 font-medium"
-                                : "text-gray-800"
-                            }`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onAssigneeChange(task.id, p.id);
-                              setAssigneeOpen(false);
-                            }}
-                          >
-                            {p.full_name || p.id.slice(0, 8)}
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })}
+                  {profiles.length === 0 ? (
+                    <p className="px-3 py-2 text-[11px] text-gray-500">
+                      No assignable people in HR.
+                    </p>
+                  ) : (
+                    profiles.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${
+                          p.id === (task.assignee_person_id || task.assignee_id)
+                            ? "bg-gray-50 font-medium"
+                            : "text-gray-800"
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAssigneeChange(task.id, p.id);
+                          setAssigneeOpen(false);
+                        }}
+                      >
+                        {p.full_name || p.id.slice(0, 8)}
+                      </button>
+                    ))
+                  )}
                 </div>
               ) : null}
             </div>

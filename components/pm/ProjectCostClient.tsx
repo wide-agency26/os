@@ -32,7 +32,9 @@ export function ProjectCostClient({ projectId }: Props) {
 
       const { data: taskRows } = await (supabase as any)
         .from("pm_tasks")
-        .select("id, title, default_role, assignee_id, estimated_duration_hours, status")
+        .select(
+          "id, title, default_role, assignee_id, assignee_person_id, estimated_duration_hours, status, assignee_person:assignee_person_id ( id, full_name, hourly_rate_cost )"
+        )
         .eq("project_id", projectId);
       setTasks(taskRows || []);
 
@@ -50,21 +52,26 @@ export function ProjectCostClient({ projectId }: Props) {
         .maybeSingle();
       if (sett) setSettings(sett);
 
-      // Count concurrent active projects per assignee (rough fragmentation signal)
-      const assigneeIds = [
-        ...new Set((taskRows || []).map((t: any) => t.assignee_id).filter(Boolean)),
+      // Count concurrent active projects per HR person
+      const personIds = [
+        ...new Set(
+          (taskRows || []).map((t: any) => t.assignee_person_id).filter(Boolean)
+        ),
       ] as string[];
       const counts: Record<string, number> = {};
-      if (assigneeIds.length) {
+      if (personIds.length) {
         const { data: allOpen } = await (supabase as any)
           .from("pm_tasks")
-          .select("assignee_id, project_id")
-          .in("assignee_id", assigneeIds)
+          .select("assignee_person_id, project_id")
+          .in("assignee_person_id", personIds)
           .in("status", ["todo", "in_progress", "blocked"]);
         const byPerson = new Map<string, Set<string>>();
         for (const row of allOpen || []) {
-          if (!byPerson.has(row.assignee_id)) byPerson.set(row.assignee_id, new Set());
-          byPerson.get(row.assignee_id)!.add(row.project_id);
+          if (!row.assignee_person_id) continue;
+          if (!byPerson.has(row.assignee_person_id)) {
+            byPerson.set(row.assignee_person_id, new Set());
+          }
+          byPerson.get(row.assignee_person_id)!.add(row.project_id);
         }
         byPerson.forEach((set, personId) => {
           counts[personId] = set.size;
@@ -84,8 +91,9 @@ export function ProjectCostClient({ projectId }: Props) {
     for (const t of open) {
       const hours = Number(t.estimated_duration_hours || 0);
       plannedHours += hours;
-      const rate = rates[t.default_role || "Specialist"] ?? rates.Specialist ?? 80;
-      plannedCost += hours * rate;
+      const personRate = Number(t.assignee_person?.hourly_rate_cost || 0);
+      const roleRate = rates[t.default_role || "Specialist"] ?? rates.Specialist ?? 80;
+      plannedCost += hours * (personRate > 0 ? personRate : roleRate);
     }
 
     // Max fragmentation across people on this project

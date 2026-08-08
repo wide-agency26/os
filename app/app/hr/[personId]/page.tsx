@@ -9,6 +9,8 @@ import Link from "next/link";
 import { PersonCompensationPanel } from "@/components/hr/PersonCompensationPanel";
 import { PersonDocumentsPanel } from "@/components/hr/PersonDocumentsPanel";
 import { OnboardingChecklist } from "@/components/hr/OnboardingChecklist";
+import { getPersonDeleteImpact } from "@/app/actions/hr";
+import { summarizeDeleteImpact } from "@/lib/hr/delete-impact";
 import {
   ROSTER_STATUSES,
   legacyPersonType,
@@ -221,11 +223,40 @@ export default function PersonDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!confirm("Delete this person from the roster? This cannot be undone.")) {
+    setLoading(true);
+    const impactRes = await getPersonDeleteImpact(id);
+    setLoading(false);
+    if (!impactRes.ok) {
+      alert(impactRes.error || "Could not check delete impact.");
       return;
     }
+
+    const summary = summarizeDeleteImpact(impactRes.impact);
+    const openCount = impactRes.impact.openTasks.length;
+    const confirmed = confirm(
+      [
+        `Delete ${form.full_name || "this person"} from the HR roster?`,
+        "",
+        "Impact:",
+        summary,
+        "",
+        openCount > 0
+          ? "Open project tasks will become Unassigned (assignee cleared). This cannot be undone."
+          : "This cannot be undone.",
+        "",
+        "Continue?",
+      ].join("\n")
+    );
+    if (!confirmed) return;
+
     setLoading(true);
     const supabase = createClient();
+    // Clear assignees first so we never leave a dangling display name
+    await (supabase as any)
+      .from("pm_tasks")
+      .update({ assignee_person_id: null, assignee_id: null })
+      .eq("assignee_person_id", id);
+
     const { error } = await (supabase as any).from("people").delete().eq("id", id);
     setLoading(false);
     if (error) {

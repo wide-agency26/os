@@ -66,11 +66,6 @@ export function ProjectTasksClient({ projectId }: Props) {
       .order("sort_order", { ascending: true });
     setTasks(taskRows || []);
 
-    const { data: people } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .order("full_name");
-
     const { data: roster } = await (supabase as any)
       .from("people")
       .select(
@@ -80,30 +75,21 @@ export function ProjectTasksClient({ projectId }: Props) {
         person_skills ( skill_id, skills ( label ) )
       `
       )
-      .eq("roster_status", "active");
+      .eq("roster_status", "active")
+      .order("full_name");
 
     const rosterAssignable = (roster || []).filter(
-      (p: any) => p.engagement_types?.assignable_to_tasks !== false && p.auth_user_id
+      (p: any) => p.engagement_types?.assignable_to_tasks !== false
     );
 
-    const profileMap = new Map<string, any>();
-    for (const p of people || []) {
-      profileMap.set(p.id, {
+    setProfiles(
+      rosterAssignable.map((p: any) => ({
         id: p.id,
         full_name: p.full_name,
-        group: "team" as const,
-      });
-    }
-    for (const p of rosterAssignable) {
-      profileMap.set(p.auth_user_id, {
-        id: p.auth_user_id,
-        full_name: p.full_name,
-        group: "roster" as const,
-      });
-    }
-    setProfiles([...profileMap.values()].sort((a, b) =>
-      String(a.full_name || "").localeCompare(String(b.full_name || ""))
-    ));
+        engagement_label: p.engagement_types?.label || null,
+        auth_user_id: p.auth_user_id || null,
+      }))
+    );
 
     // Precompute RACI suggestions for template-backed tasks
     const templateIds = [
@@ -114,7 +100,7 @@ export function ProjectTasksClient({ projectId }: Props) {
       ),
     ];
     const suggestMap: Record<string, any[]> = {};
-    if (templateIds.length && (roster || []).length) {
+    if (templateIds.length && rosterAssignable.length) {
       const { scorePeopleForRoles } = await import("@/lib/hr/suggest");
       const { data: roles } = await (supabase as any)
         .from("playbook_step_roles")
@@ -129,7 +115,7 @@ export function ProjectTasksClient({ projectId }: Props) {
       for (const tid of templateIds) {
         const specs = byTemplate.get(tid) || [];
         if (!specs.length) continue;
-        suggestMap[tid] = scorePeopleForRoles(roster || [], specs).slice(0, 8);
+        suggestMap[tid] = scorePeopleForRoles(rosterAssignable, specs).slice(0, 8);
       }
     }
     setSuggestionsByTemplate(suggestMap);
@@ -289,10 +275,10 @@ export function ProjectTasksClient({ projectId }: Props) {
                           await updatePmTaskTitle(id, title);
                         });
                       }}
-                      onAssigneeChange={(id, assigneeId) => {
-                        patchTaskLocal(id, { assignee_id: assigneeId });
+                      onAssigneeChange={(id, personId) => {
+                        patchTaskLocal(id, { assignee_person_id: personId });
                         startTransition(async () => {
-                          await updatePmTaskAssignee(id, assigneeId);
+                          await updatePmTaskAssignee(id, personId);
                         });
                       }}
                       onDelete={(id) => {
@@ -401,10 +387,10 @@ export function ProjectTasksClient({ projectId }: Props) {
                           await updatePmTaskTitle(id, title);
                         });
                       }}
-                      onAssigneeChange={(id, assigneeId) => {
-                        patchTaskLocal(id, { assignee_id: assigneeId });
+                      onAssigneeChange={(id, personId) => {
+                        patchTaskLocal(id, { assignee_person_id: personId });
                         startTransition(async () => {
-                          await updatePmTaskAssignee(id, assigneeId);
+                          await updatePmTaskAssignee(id, personId);
                         });
                       }}
                       onStatusChange={setStatus}
@@ -439,10 +425,10 @@ export function ProjectTasksClient({ projectId }: Props) {
               await updatePmTaskTitle(id, title);
             });
           }}
-          onAssigneeChange={(id, assigneeId) => {
-            patchTaskLocal(id, { assignee_id: assigneeId });
+          onAssigneeChange={(id, personId) => {
+            patchTaskLocal(id, { assignee_person_id: personId });
             startTransition(async () => {
-              await updatePmTaskAssignee(id, assigneeId);
+              await updatePmTaskAssignee(id, personId);
             });
           }}
           onStatusChange={setStatus}

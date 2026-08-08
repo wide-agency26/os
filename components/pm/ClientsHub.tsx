@@ -133,7 +133,7 @@ export function ClientsHub() {
           ? (supabase as any)
               .from("pm_tasks")
               .select(
-                "id, project_id, title, status, is_gate, last_activity_at, completed_at, assignee_id, cycle_key, source, created_at"
+                "id, project_id, title, status, is_gate, last_activity_at, completed_at, assignee_id, assignee_person_id, cycle_key, source, created_at"
               )
               .in("project_id", projectIds)
           : Promise.resolve({ data: [] }),
@@ -232,7 +232,9 @@ export function ClientsHub() {
       }
 
       for (const t of open) {
-        if (t.assignee_id) assigneeSet.add(t.assignee_id);
+        if (t.assignee_person_id || t.assignee_id) {
+          assigneeSet.add(t.assignee_person_id || t.assignee_id);
+        }
       }
     }
 

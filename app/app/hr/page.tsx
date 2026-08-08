@@ -154,13 +154,52 @@ export default function HrRosterDirectoryPage() {
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selectedIds.size} person record(s)?`)) return;
+    const ids = Array.from(selectedIds);
     setIsDeleting(true);
+    const { getPersonDeleteImpact } = await import("@/app/actions/hr");
+    const { summarizeDeleteImpact } = await import("@/lib/hr/delete-impact");
+
+    const impactLines: string[] = [];
+    let openTaskTotal = 0;
+    for (const pid of ids) {
+      const res = await getPersonDeleteImpact(pid);
+      if (!res.ok) continue;
+      openTaskTotal += res.impact.openTasks.length;
+      const person = people.find((p) => p.id === pid);
+      impactLines.push(
+        `${person?.full_name || pid}:\n${summarizeDeleteImpact(res.impact)}`
+      );
+    }
+
+    const confirmed = confirm(
+      [
+        `Delete ${ids.length} person record(s) from HR?`,
+        "",
+        impactLines.join("\n\n") || "No linked impact found.",
+        "",
+        openTaskTotal > 0
+          ? `${openTaskTotal} open task(s) total will become Unassigned.`
+          : "",
+        "Continue?",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
+    if (!confirmed) {
+      setIsDeleting(false);
+      return;
+    }
+
     const supabase = createClient();
+    await (supabase as any)
+      .from("pm_tasks")
+      .update({ assignee_person_id: null, assignee_id: null })
+      .in("assignee_person_id", ids);
+
     const { error } = await (supabase as any)
       .from("people")
       .delete()
-      .in("id", Array.from(selectedIds));
+      .in("id", ids);
     setIsDeleting(false);
     if (error) {
       alert("Error deleting: " + error.message);
