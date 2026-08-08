@@ -39,9 +39,10 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
       
       const { data: clientsData } = await (supabase as any)
         .from("crm_customers")
-        .select("id, name, company")
-        .order("name", { ascending: true });
-      setClients(clientsData || []);
+        .select("id, name, company, status, lead_status, record_kind")
+        .or("record_kind.eq.company,status.eq.Client,lead_status.eq.Won")
+        .order("company", { ascending: true });
+      let clientOptions = clientsData || [];
 
       const { data: pTypesData } = await (supabase as any)
         .from("project_types")
@@ -54,6 +55,21 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
         .select("*")
         .eq("id", id)
         .single();
+
+      // Keep the currently-assigned client selectable even if it no longer
+      // matches the company/client filter above.
+      if (
+        project?.client_id &&
+        !clientOptions.some((c: any) => c.id === project.client_id)
+      ) {
+        const { data: currentClient } = await (supabase as any)
+          .from("crm_customers")
+          .select("id, name, company, status, lead_status, record_kind")
+          .eq("id", project.client_id)
+          .maybeSingle();
+        if (currentClient) clientOptions = [currentClient, ...clientOptions];
+      }
+      setClients(clientOptions);
         
       if (project) {
         setFormData({
@@ -193,7 +209,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[12px] font-medium text-gray-700">Customer <span className="text-red-500">*</span></label>
+                  <label className="block text-[12px] font-medium text-gray-700">Company / client account <span className="text-red-500">*</span></label>
                   <Link href="/app/crm/new" className="text-[11px] text-blue-600 hover:underline">
                     + New Customer
                   </Link>
@@ -204,10 +220,11 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="">Select a customer...</option>
+                  <option value="">Select a company / client account...</option>
                   {clients.map(c => (
                     <option key={c.id} value={c.id}>
-                      {c.name} {c.company ? `(${c.company})` : ''}
+                      {c.company || c.name}
+                      {c.record_kind === "company" ? " (Company)" : ""}
                     </option>
                   ))}
                 </select>

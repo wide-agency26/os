@@ -170,13 +170,29 @@ export function groupByCategory(entries: LedgerEntry[]): LedgerGroup[] {
 
 export type CompanyOption = { id: string; name: string; company: string | null };
 
+/** Company-level rows (record_kind = 'company') for the ledger's Company field. */
 export async function fetchCompanyOptions(supabase: Sb): Promise<CompanyOption[]> {
   const { data, error } = await supabase
     .from("crm_customers")
     .select("id, name, company")
+    .eq("record_kind", "company")
     .order("company", { ascending: true });
   if (error) {
     console.error("fetchCompanyOptions", error.message);
+    return [];
+  }
+  return (data || []) as CompanyOption[];
+}
+
+/** Contact-level rows (record_kind = 'contact') for the ledger's Client field. */
+export async function fetchContactOptions(supabase: Sb): Promise<CompanyOption[]> {
+  const { data, error } = await supabase
+    .from("crm_customers")
+    .select("id, name, company")
+    .eq("record_kind", "contact")
+    .order("company", { ascending: true });
+  if (error) {
+    console.error("fetchContactOptions", error.message);
     return [];
   }
   return (data || []) as CompanyOption[];

@@ -35,8 +35,8 @@ export default function NewProjectPage() {
       
       const { data: clientsData } = await (supabase as any)
         .from("crm_customers")
-        .select("id, name, company, status, lead_status")
-        .or("status.eq.Client,lead_status.eq.Won")
+        .select("id, name, company, status, lead_status, record_kind")
+        .or("record_kind.eq.company,status.eq.Client,lead_status.eq.Won")
         .order("company", { ascending: true });
       setClients(clientsData || []);
 
@@ -166,7 +166,7 @@ export default function NewProjectPage() {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[12px] font-medium text-gray-700">Customer <span className="text-red-500">*</span></label>
+                  <label className="block text-[12px] font-medium text-gray-700">Company / client account <span className="text-red-500">*</span></label>
                   <Link href="/app/crm/new" className="text-[11px] text-blue-600 hover:underline">
                     + New Customer
                   </Link>
@@ -177,10 +177,11 @@ export default function NewProjectPage() {
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="">Select a customer...</option>
+                  <option value="">Select a company / client account...</option>
                   {clients.map(client => (
                     <option key={client.id} value={client.id}>
-                      {client.name} {client.company ? `(${client.company})` : ""}
+                      {client.company || client.name}
+                      {client.record_kind === "company" ? " (Company)" : ""}
                     </option>
                   ))}
                 </select>

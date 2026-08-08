@@ -1,283 +1,323 @@
 "use client";
 
 import { Workspace } from "@/components/frappe-ui/Workspace";
-import { Plus, Filter, Trash, Edit2, Search, FileUp } from "lucide-react";
+import {
+  Building2,
+  Users,
+  Sparkles,
+  Handshake,
+  DollarSign,
+  Briefcase,
+  Plus,
+  ArrowRight,
+  ArrowUpRight,
+} from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 
-export default function CRMListView() {
+type CustomerRow = {
+  id: string;
+  name: string;
+  company: string | null;
+  status: string | null;
+  lead_status: string | null;
+  contract_value: number | null;
+  record_kind: "company" | "contact";
+  parent_company_id: string | null;
+};
+
+type ProjectRow = {
+  id: string;
+  client_id: string | null;
+  status: string | null;
+};
+
+function formatMoney(n: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+export default function CrmDashboardPage() {
   const router = useRouter();
-  const [customers, setCustomers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Selection state
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  // Filters state
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
-  const [leadStatusFilter, setLeadStatusFilter] = useState<string[]>([]);
-
-  const fetchCustomers = async () => {
-    setLoading(true);
-    const supabase = createClient();
-    
-    let query = (supabase as any)
-      .from("crm_customers")
-      .select(`
-        id, 
-        name, 
-        company, 
-        status, 
-        lead_status,
-        role,
-        email,
-        contract_value
-      `)
-      .order("created_at", { ascending: false });
-
-    if (statusFilter.length > 0) {
-      query = query.in("status", statusFilter);
-    }
-    if (leadStatusFilter.length > 0) {
-      query = query.in("lead_status", leadStatusFilter);
-    }
-    
-    const { data } = await query;
-    setCustomers(data || []);
-    setLoading(false);
-  };
-
   useEffect(() => {
-    fetchCustomers();
-  }, [statusFilter, leadStatusFilter]);
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === customers.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(customers.map(c => c.id)));
+    async function load() {
+      setLoading(true);
+      const supabase = createClient();
+      const [{ data: customerRows }, { data: projectRows }] = await Promise.all([
+        (supabase as any)
+          .from("crm_customers")
+          .select(
+            "id, name, company, status, lead_status, contract_value, record_kind, parent_company_id"
+          )
+          .order("name", { ascending: true }),
+        (supabase as any).from("projects").select("id, client_id, status"),
+      ]);
+      setCustomers(customerRows || []);
+      setProjects(projectRows || []);
+      setLoading(false);
     }
-  };
+    void load();
+  }, []);
 
-  const toggleSelect = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
+  const stats = useMemo(() => {
+    const companies = customers.filter((c) => c.record_kind === "company");
+    const contacts = customers.filter((c) => c.record_kind === "contact");
+    const prospects = customers.filter((c) => c.status === "Prospect");
+    const clients = customers.filter((c) => c.status === "Client");
+    const pipelineValue = customers.reduce((sum, c) => {
+      const notWonClient = c.status === "Client" && c.lead_status === "Won";
+      if (notWonClient) return sum;
+      return sum + Number(c.contract_value || 0);
+    }, 0);
+    const companyIds = new Set(companies.map((c) => c.id));
+    const activeProjects = projects.filter(
+      (p) => p.status === "running" && p.client_id && companyIds.has(p.client_id)
+    );
+    const activeProjectsAll = projects.filter((p) => p.status === "running");
+
+    return {
+      companiesCount: companies.length,
+      contactsCount: contacts.length,
+      prospectsCount: prospects.length,
+      clientsCount: clients.length,
+      pipelineValue,
+      activeProjectsCount: activeProjectsAll.length,
+      companies,
+    };
+  }, [customers, projects]);
+
+  const companyCards = useMemo(() => {
+    return stats.companies
+      .map((company) => {
+        const contactsCount = customers.filter(
+          (c) => c.record_kind === "contact" && c.parent_company_id === company.id
+        ).length;
+        const projectsCount = projects.filter((p) => p.client_id === company.id).length;
+        return { ...company, contactsCount, projectsCount };
+      })
+      .sort((a, b) => b.projectsCount - a.projectsCount || a.name.localeCompare(b.name));
+  }, [stats.companies, customers, projects]);
+
+  const pipelineStrip = useMemo(() => {
+    const buckets: Record<string, number> = {};
+    for (const c of customers) {
+      const key = c.status === "Client" ? "Client" : c.lead_status || "Reached out";
+      buckets[key] = (buckets[key] || 0) + 1;
     }
-    setSelectedIds(newSelected);
-  };
+    const order = [
+      "Reached out",
+      "Proposal Sent",
+      "On-hold",
+      "Won",
+      "Client",
+      "Lost",
+    ];
+    return order
+      .filter((key) => buckets[key])
+      .map((key) => ({ key, count: buckets[key] }))
+      .concat(
+        Object.keys(buckets)
+          .filter((k) => !order.includes(k))
+          .map((key) => ({ key, count: buckets[key] }))
+      );
+  }, [customers]);
 
-  const handleBulkDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${selectedIds.size} record(s)?`)) return;
-
-    setIsDeleting(true);
-    const supabase = createClient();
-    const idsToDelete = Array.from(selectedIds);
-
-    const { error } = await (supabase as any)
-      .from("crm_customers")
-      .delete()
-      .in("id", idsToDelete);
-    
-    if (error) {
-      alert("Error deleting: " + error.message);
-    } else {
-      setSelectedIds(new Set());
-      await fetchCustomers();
-    }
-    setIsDeleting(false);
-  };
-
-  const toggleFilter = (type: "status" | "lead_status", value: string) => {
-    if (type === "status") {
-      setStatusFilter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
-    } else {
-      setLeadStatusFilter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
-    }
-  };
-
-  const handleRowClick = (id: string) => {
-    router.push(`/app/crm/${id}`);
-  };
+  const scorecards = [
+    {
+      label: "Companies",
+      value: stats.companiesCount,
+      icon: Building2,
+      color: "text-indigo-600 bg-indigo-50",
+    },
+    {
+      label: "Contacts",
+      value: stats.contactsCount,
+      icon: Users,
+      color: "text-slate-600 bg-slate-50",
+    },
+    {
+      label: "Prospects",
+      value: stats.prospectsCount,
+      icon: Sparkles,
+      color: "text-orange-600 bg-orange-50",
+    },
+    {
+      label: "Clients",
+      value: stats.clientsCount,
+      icon: Handshake,
+      color: "text-green-600 bg-green-50",
+    },
+    {
+      label: "Pipeline value",
+      value: formatMoney(stats.pipelineValue),
+      icon: DollarSign,
+      color: "text-blue-600 bg-blue-50",
+    },
+    {
+      label: "Active projects",
+      value: stats.activeProjectsCount,
+      icon: Briefcase,
+      color: "text-purple-600 bg-purple-50",
+    },
+  ];
 
   return (
-    <Workspace>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">CRM Directory</h2>
+    <Workspace wide>
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">CRM</h2>
+          <p className="text-[13px] text-gray-500 mt-1">
+            Companies, contacts, and pipeline at a glance.
+          </p>
+        </div>
         <div className="flex items-center gap-3">
-          {selectedIds.size > 0 && (
-            <button 
-              onClick={handleBulkDelete}
-              disabled={isDeleting}
-              className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded text-[13px] font-medium hover:bg-red-100 transition-colors flex items-center gap-2"
-            >
-              <Trash size={16} />
-              {isDeleting ? "Deleting..." : `Delete ${selectedIds.size}`}
-            </button>
-          )}
-          <Link href="/app/crm/bulk-import" className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center gap-2">
-            <FileUp size={16} />
-            Bulk Import
+          <Link
+            href="/app/projects"
+            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
+          >
+            <Briefcase size={16} />
+            Projects
           </Link>
-          <button className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center gap-2">
-            <Filter size={16} />
-            Filter
-          </button>
-          <div className="h-4 w-px bg-gray-300 mx-1"></div>
-          <Link href="/app/crm/new" className="px-3 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 transition-colors flex items-center gap-2">
+          <Link
+            href="/app/crm/directory"
+            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
+          >
+            Directory
+          </Link>
+          <Link
+            href="/app/crm/new"
+            className="px-3 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
             <Plus size={16} />
-            Add Lead / Client
+            New
           </Link>
         </div>
       </div>
 
-      <div className="flex gap-6 h-[calc(100vh-140px)]">
-        {/* Working Filters Sidebar */}
-        <div className="w-56 overflow-y-auto hidden md:block shrink-0">
-          <div className="bg-gray-50/80 rounded-lg p-4 border border-gray-200">
-            <div className="flex items-center gap-2 mb-6 text-gray-700 font-medium">
-              <Filter size={14} /> Filters
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+        {scorecards.map((s) => (
+          <div
+            key={s.label}
+            className="border border-gray-200 rounded-lg p-4 bg-white"
+          >
+            <div
+              className={`w-8 h-8 rounded-md flex items-center justify-center mb-3 ${s.color}`}
+            >
+              <s.icon size={16} />
             </div>
-            
-            <div className="mb-6">
-              <h4 className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-3">Status</h4>
-              <div className="space-y-2">
-                {['Prospect', 'Lead', 'Client'].map(status => (
-                  <label key={status} className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      checked={statusFilter.includes(status)}
-                      onChange={() => toggleFilter("status", status)}
-                    />
-                    <span className="text-gray-700 text-[13px]">{status}</span>
-                  </label>
-                ))}
-              </div>
+            <div className="text-xl font-bold text-gray-900 tabular-nums">
+              {loading ? "—" : s.value}
             </div>
-
-            <div>
-              <h4 className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-3">Lead Status</h4>
-              <div className="space-y-2">
-                {['Won', 'Lost', 'On-hold', 'Reached out', 'Proposal Sent'].map(status => (
-                  <label key={status} className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      checked={leadStatusFilter.includes(status)}
-                      onChange={() => toggleFilter("lead_status", status)}
-                    />
-                    <span className="text-gray-700 text-[13px]">{status}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            <div className="text-[12px] text-gray-500 mt-0.5">{s.label}</div>
           </div>
-        </div>
-
-        <div className="flex-1 bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col relative">
-          {loading && customers.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-20 text-gray-500">Loading...</div>
-          ) : null}
-          
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-gray-50/50">
-            <div className="relative w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input 
-                type="text" 
-                placeholder="Search customers..." 
-                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-              />
-            </div>
-            <div className="text-[13px] text-gray-500">
-              {customers.length} records
-            </div>
-          </div>
-
-          <div className="overflow-auto flex-1">
-            <table className="w-full text-left text-[13px]">
-              <thead className="bg-gray-50 sticky top-0 z-10 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 w-10">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
-                      checked={customers.length > 0 && selectedIds.size === customers.length} 
-                      onChange={toggleSelectAll} 
-                    />
-                  </th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Name</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Company</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Status</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Lead Status</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Role</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Contract Value</th>
-                  <th className="px-4 py-3 w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {customers.length === 0 && !loading ? (
-                  <tr><td colSpan={8} className="text-center py-10 text-gray-500">No records match your filters.</td></tr>
-                ) : (
-                  customers.map((c) => (
-                    <tr 
-                      key={c.id} 
-                      onClick={() => handleRowClick(c.id)}
-                      className="border-b border-gray-100 hover:bg-gray-50 group cursor-pointer"
-                    >
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <input 
-                          type="checkbox" 
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" 
-                          style={{ opacity: selectedIds.has(c.id) ? 1 : undefined }}
-                          checked={selectedIds.has(c.id)} 
-                          onChange={(e) => toggleSelect(c.id, e as any)} 
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        {c.name}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{c.company || '-'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          c.status === 'Client' ? 'bg-green-100 text-green-700' :
-                          c.status === 'Lead' ? 'bg-blue-100 text-blue-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {c.status || 'Prospect'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          c.lead_status === 'Won' ? 'bg-green-100 text-green-700' :
-                          c.lead_status === 'Lost' ? 'bg-red-100 text-red-700' :
-                          c.lead_status === 'Proposal Sent' ? 'bg-purple-100 text-purple-700' :
-                          'bg-orange-100 text-orange-700'
-                        }`}>
-                          {c.lead_status || 'Unknown'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{c.role || '-'}</td>
-                      <td className="px-4 py-3 text-gray-600">{c.contract_value ? `$${Number(c.contract_value).toLocaleString()}` : '-'}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded inline-flex opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Edit2 size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        ))}
       </div>
+
+      {pipelineStrip.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-[13px] font-bold text-gray-900 mb-3">Pipeline</h3>
+          <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
+            {pipelineStrip.map((p) => (
+              <div
+                key={p.key}
+                className="flex-1 min-w-[120px] border border-gray-200 rounded-lg px-3 py-2.5 bg-white"
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  {p.key}
+                </div>
+                <div className="text-lg font-bold text-gray-900 tabular-nums">
+                  {p.count}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-[13px] font-bold text-gray-900">Companies</h3>
+        <Link
+          href="/app/crm/directory"
+          className="text-[12px] text-blue-600 hover:underline flex items-center gap-1"
+        >
+          View directory
+          <ArrowRight size={12} />
+        </Link>
+      </div>
+
+      {loading ? (
+        <div className="p-10 text-center text-[13px] text-gray-500 border border-gray-200 rounded-lg">
+          Loading companies…
+        </div>
+      ) : companyCards.length === 0 ? (
+        <div className="p-10 text-center space-y-3 border border-dashed border-gray-300 rounded-lg">
+          <Building2 className="mx-auto text-gray-300" size={32} />
+          <p className="text-[14px] font-medium text-gray-800">No companies yet</p>
+          <p className="text-[13px] text-gray-500 max-w-sm mx-auto">
+            Create a company record to start tracking contacts and projects under it.
+          </p>
+          <Link
+            href="/app/crm/new"
+            className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded text-[13px] font-medium"
+          >
+            <Plus size={14} />
+            New company
+          </Link>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {companyCards.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => router.push(`/app/crm/${c.id}`)}
+              className="text-left border border-gray-200 rounded-lg p-4 bg-white hover:border-gray-300 hover:shadow-sm transition-all group"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900 truncate">
+                    {c.company || c.name}
+                  </p>
+                  <span
+                    className={`inline-flex mt-1.5 px-2 py-0.5 rounded text-[11px] font-medium ${
+                      c.status === "Client"
+                        ? "bg-green-100 text-green-700"
+                        : c.status === "Lead"
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    {c.status || "Prospect"}
+                  </span>
+                </div>
+                <ArrowUpRight
+                  size={16}
+                  className="text-gray-300 group-hover:text-blue-500 transition-colors shrink-0"
+                />
+              </div>
+              <div className="flex items-center gap-4 mt-3 text-[12px] text-gray-500">
+                <span className="flex items-center gap-1">
+                  <Users size={12} />
+                  {c.contactsCount} contact{c.contactsCount === 1 ? "" : "s"}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Briefcase size={12} />
+                  {c.projectsCount} project{c.projectsCount === 1 ? "" : "s"}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </Workspace>
   );
 }

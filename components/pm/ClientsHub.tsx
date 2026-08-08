@@ -116,8 +116,9 @@ export function ClientsHub() {
     const { data: customers } = await (supabase as any)
       .from("crm_customers")
       .select(
-        "id, name, company, status, start_date, contract_value, services_package, subscriber_status"
+        "id, name, company, status, start_date, contract_value, services_package, subscriber_status, record_kind"
       )
+      .eq("record_kind", "company")
       .order("company", { ascending: true });
     setRawCustomers(customers || []);
 

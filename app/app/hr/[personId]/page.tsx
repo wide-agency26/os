@@ -221,7 +221,7 @@ export default function PersonDetailPage() {
     }
 
     setLoading(false);
-    router.push("/app/hr");
+    router.push("/app/hr/roster");
   };
 
   const handleDelete = async () => {
@@ -265,7 +265,7 @@ export default function PersonDetailPage() {
       alert("Error deleting: " + error.message);
       return;
     }
-    router.push("/app/hr");
+    router.push("/app/hr/roster");
   };
 
   if (fetching) {
@@ -286,7 +286,7 @@ export default function PersonDetailPage() {
         <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200 gap-3 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
             <Link
-              href="/app/hr"
+              href="/app/hr/roster"
               className="p-2 rounded hover:bg-gray-100 text-gray-600 shrink-0"
               aria-label="Back to roster"
             >

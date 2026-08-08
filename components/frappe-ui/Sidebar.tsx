@@ -67,7 +67,8 @@ const MODULES: ModuleItem[] = [
     icon: Users,
     founderOnly: true,
     items: [
-      { name: "Customers", href: "/app/crm" },
+      { name: "Dashboard", href: "/app/crm" },
+      { name: "Directory", href: "/app/crm/directory" },
       { name: "New Customer", href: "/app/crm/new" },
       { name: "Access Requests", href: "/app/client-access" },
       { name: "Company Users", href: "/app/crm/users" },
@@ -79,7 +80,8 @@ const MODULES: ModuleItem[] = [
     icon: Users,
     founderOnly: true,
     items: [
-      { name: "Roster", href: "/app/hr" },
+      { name: "Dashboard", href: "/app/hr" },
+      { name: "Roster", href: "/app/hr/roster" },
       { name: "Add person", href: "/app/hr/new" },
       { name: "Pipeline", href: "/app/hr/pipeline" },
       { name: "Compensation", href: "/app/hr/compensation" },
@@ -118,7 +120,6 @@ const MODULES: ModuleItem[] = [
     icon: Settings,
     founderOnly: true,
     items: [
-      { name: "Roles & Rates", href: "/app/settings/roles-rates" },
       { name: "Integrations", href: "/app/settings/integrations" },
       {
         name: "Cost settings",

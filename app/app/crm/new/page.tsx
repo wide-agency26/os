@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace, Section } from "@/components/frappe-ui/Workspace";
 import { ArrowLeft, Save } from "lucide-react";
 import Link from "next/link";
+
+type CompanyOption = { id: string; name: string; company: string | null };
 
 const SERVICES_OPTIONS = [
   "Advance Analytics", "Brand Guidelines", "Brand Strategy", "CRM & Advocacy",
@@ -18,6 +20,9 @@ const SERVICES_OPTIONS = [
 
 export default function NewCustomerPage() {
   const router = useRouter();
+  const [recordKind, setRecordKind] = useState<"company" | "contact">("contact");
+  const [parentCompanyId, setParentCompanyId] = useState("");
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -41,8 +46,28 @@ export default function NewCustomerPage() {
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    async function loadCompanies() {
+      const supabase = createClient();
+      const { data } = await (supabase as any)
+        .from("crm_customers")
+        .select("id, name, company")
+        .eq("record_kind", "company")
+        .order("company", { ascending: true });
+      setCompanies(data || []);
+    }
+    void loadCompanies();
+  }, []);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleRecordKindChange = (value: "company" | "contact") => {
+    setRecordKind(value);
+    if (value === "company") {
+      setParentCompanyId("");
+    }
   };
 
   const toggleService = (service: string) => {
@@ -60,21 +85,43 @@ export default function NewCustomerPage() {
     setLoading(true);
     const supabase = createClient();
 
+    const isCompany = recordKind === "company";
+    const companyName = isCompany ? formData.name : formData.company;
+
     const payload = {
       ...formData,
+      company: companyName || null,
       start_date: formData.start_date || null,
       contract_value: formData.contract_value ? Number(formData.contract_value) : null,
-      services_package: selectedServices
+      services_package: selectedServices,
+      record_kind: recordKind,
+      parent_company_id: isCompany ? null : parentCompanyId || null,
     };
 
-    const { error } = await (supabase as any)
+    const { data: created, error } = await (supabase as any)
       .from("crm_customers")
-      .insert([payload]);
+      .insert([payload])
+      .select("id")
+      .single();
     
     if (error) {
       alert("Error creating record: " + error.message);
       setLoading(false);
       return;
+    }
+
+    // Best-effort: if a contact has a company name but no explicit parent,
+    // try to match it to an existing company record by name.
+    if (!isCompany && !parentCompanyId && companyName?.trim()) {
+      const match = companies.find(
+        (c) => (c.company || c.name).trim().toLowerCase() === companyName.trim().toLowerCase()
+      );
+      if (match && created?.id) {
+        await (supabase as any)
+          .from("crm_customers")
+          .update({ parent_company_id: match.id })
+          .eq("id", created.id);
+      }
     }
 
     if (formData.status === 'Client' && formData.email) {
@@ -85,7 +132,7 @@ export default function NewCustomerPage() {
           body: JSON.stringify({
             email: formData.email,
             name: formData.name,
-            company: formData.company
+            company: companyName
           })
         });
         if (!syncRes.ok) {
@@ -97,7 +144,7 @@ export default function NewCustomerPage() {
     }
 
     setLoading(false);
-    router.push(`/app/crm`);
+    router.push(`/app/crm/directory`);
   };
 
   return (
@@ -105,7 +152,7 @@ export default function NewCustomerPage() {
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
           <div className="flex items-center gap-4">
-            <Link href="/app/crm" className="text-gray-400 hover:text-gray-900 transition-colors">
+            <Link href="/app/crm/directory" className="text-gray-400 hover:text-gray-900 transition-colors">
               <ArrowLeft size={20} />
             </Link>
             <div>
@@ -125,20 +172,62 @@ export default function NewCustomerPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
+            <Section title="Record Type">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Type <span className="text-red-500">*</span></label>
+                  <select
+                    value={recordKind}
+                    onChange={(e) => handleRecordKindChange(e.target.value as "company" | "contact")}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="contact">Contact</option>
+                    <option value="company">Company</option>
+                  </select>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {recordKind === "company"
+                      ? "Companies are orgs — the Name field below becomes the company name."
+                      : "Contacts are people under a company."}
+                  </p>
+                </div>
+                {recordKind === "contact" && (
+                  <div>
+                    <label className="block text-[12px] font-medium text-gray-700 mb-1">Parent Company</label>
+                    <select
+                      value={parentCompanyId}
+                      onChange={(e) => setParentCompanyId(e.target.value)}
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">No parent company</option>
+                      {companies.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.company || c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </Section>
+
             <Section title="Basic Details">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Name <span className="text-red-500">*</span></label>
+                  <label className="block text-[12px] font-medium text-gray-700 mb-1">
+                    {recordKind === "company" ? "Company Name" : "Name"} <span className="text-red-500">*</span>
+                  </label>
                   <input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
                 </div>
                 <div>
                   <label className="block text-[12px] font-medium text-gray-700 mb-1">Email</label>
                   <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
                 </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Company</label>
-                  <input type="text" name="company" value={formData.company} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                </div>
+                {recordKind === "contact" && (
+                  <div>
+                    <label className="block text-[12px] font-medium text-gray-700 mb-1">Company</label>
+                    <input type="text" name="company" value={formData.company} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                )}
                 <div>
                   <label className="block text-[12px] font-medium text-gray-700 mb-1">Position</label>
                   <input type="text" name="position" value={formData.position} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />

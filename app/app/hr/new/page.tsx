@@ -136,7 +136,7 @@ export default function NewPersonPage() {
         <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <Link
-              href="/app/hr"
+              href="/app/hr/roster"
               className="p-2 rounded hover:bg-gray-100 text-gray-600"
               aria-label="Back to roster"
             >

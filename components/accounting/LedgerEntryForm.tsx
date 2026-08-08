@@ -5,6 +5,7 @@ import { createClient } from "@/utils/supabase/client";
 import {
   companyLabel,
   fetchCompanyOptions,
+  fetchContactOptions,
   fetchProjectsByClient,
   type CompanyOption,
   type ProjectOption,
@@ -74,6 +75,7 @@ export function LedgerEntryForm({
   const [projectLocked, setProjectLocked] = useState(Boolean(initialEntry?.project_id));
 
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [contacts, setContacts] = useState<CompanyOption[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -82,7 +84,39 @@ export function LedgerEntryForm({
 
   useEffect(() => {
     const supabase = createClient();
-    fetchCompanyOptions(supabase).then(setCompanies);
+    fetchCompanyOptions(supabase).then((rows) => {
+      // Keep a pre-existing selection visible even if it predates the
+      // company/contact split (e.g. an old company-less client_id).
+      if (initialEntry?.company_id && !rows.some((r) => r.id === initialEntry.company_id)) {
+        (supabase as any)
+          .from("crm_customers")
+          .select("id, name, company")
+          .eq("id", initialEntry.company_id)
+          .maybeSingle()
+          .then(({ data }: any) => {
+            if (data) setCompanies([data, ...rows]);
+            else setCompanies(rows);
+          });
+      } else {
+        setCompanies(rows);
+      }
+    });
+    fetchContactOptions(supabase).then((rows) => {
+      if (initialEntry?.client_id && !rows.some((r) => r.id === initialEntry.client_id)) {
+        (supabase as any)
+          .from("crm_customers")
+          .select("id, name, company")
+          .eq("id", initialEntry.client_id)
+          .maybeSingle()
+          .then(({ data }: any) => {
+            if (data) setContacts([data, ...rows]);
+            else setContacts(rows);
+          });
+      } else {
+        setContacts(rows);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const scopeId = clientId || companyId;
@@ -110,6 +144,12 @@ export function LedgerEntryForm({
     () =>
       [...companies].sort((a, b) => companyLabel(a).localeCompare(companyLabel(b))),
     [companies]
+  );
+
+  const contactOptions = useMemo(
+    () =>
+      [...contacts].sort((a, b) => companyLabel(a).localeCompare(companyLabel(b))),
+    [contacts]
   );
 
   function handleCompanyChange(id: string) {
@@ -363,7 +403,7 @@ export function LedgerEntryForm({
                 className="mt-1 w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
               >
                 <option value="">Same as company</option>
-                {companyOptions.map((c) => (
+                {contactOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     {companyLabel(c)}
                   </option>
