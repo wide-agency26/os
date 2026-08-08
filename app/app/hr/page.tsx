@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import { getPersonDeleteImpact } from "@/app/actions/hr";
+import { summarizeDeleteImpact } from "@/lib/hr/delete-impact";
 import {
   ROSTER_STATUSES,
   rosterStatusPill,
@@ -156,8 +158,6 @@ export default function HrRosterDirectoryPage() {
   const handleBulkDelete = async () => {
     const ids = Array.from(selectedIds);
     setIsDeleting(true);
-    const { getPersonDeleteImpact } = await import("@/app/actions/hr");
-    const { summarizeDeleteImpact } = await import("@/lib/hr/delete-impact");
 
     const impactLines: string[] = [];
     let openTaskTotal = 0;

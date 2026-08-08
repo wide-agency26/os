@@ -1,5 +1,7 @@
+"use server";
+
 /**
- * Fetch impact of deleting an HR person (for confirm UI).
+ * Impact analysis before deleting an HR roster person.
  */
 export async function getPersonDeleteImpact(personId: string) {
   const { createClient } = await import("@/utils/supabase/server");
@@ -11,9 +13,7 @@ export async function getPersonDeleteImpact(personId: string) {
 
   const { data: tasks } = await (supabase as any)
     .from("pm_tasks")
-    .select(
-      `id, title, status, project_id, project:project_id ( title )`
-    )
+    .select(`id, title, status, project_id, project:project_id ( title )`)
     .eq("assignee_person_id", personId);
 
   const openTasks = (tasks || [])
@@ -30,25 +30,29 @@ export async function getPersonDeleteImpact(personId: string) {
     (t: any) => t.status === "done" || t.status === "cancelled"
   ).length;
 
-  const [{ count: compensationRecords }, { count: esopAllocations }, { count: documents }, { count: pipelineLinks }] =
-    await Promise.all([
-      (supabase as any)
-        .from("compensation_records")
-        .select("id", { count: "exact", head: true })
-        .eq("person_id", personId),
-      (supabase as any)
-        .from("esop_allocations")
-        .select("id", { count: "exact", head: true })
-        .eq("person_id", personId),
-      (supabase as any)
-        .from("hr_documents")
-        .select("id", { count: "exact", head: true })
-        .eq("person_id", personId),
-      (supabase as any)
-        .from("roster_pipeline")
-        .select("id", { count: "exact", head: true })
-        .eq("converted_person_id", personId),
-    ]);
+  const [
+    { count: compensationRecords },
+    { count: esopAllocations },
+    { count: documents },
+    { count: pipelineLinks },
+  ] = await Promise.all([
+    (supabase as any)
+      .from("compensation_records")
+      .select("id", { count: "exact", head: true })
+      .eq("person_id", personId),
+    (supabase as any)
+      .from("esop_allocations")
+      .select("id", { count: "exact", head: true })
+      .eq("person_id", personId),
+    (supabase as any)
+      .from("hr_documents")
+      .select("id", { count: "exact", head: true })
+      .eq("person_id", personId),
+    (supabase as any)
+      .from("roster_pipeline")
+      .select("id", { count: "exact", head: true })
+      .eq("converted_person_id", personId),
+  ]);
 
   return {
     ok: true as const,
