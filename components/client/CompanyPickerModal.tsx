@@ -23,6 +23,7 @@ export function CompanyPickerModal({ userId, onRequestSubmitted }: CompanyPicker
       const { data, error } = await (supabase as any)
         .from("crm_customers")
         .select("id, company, name")
+        .eq("record_kind", "company")
         .order("company");
 
       if (error) {

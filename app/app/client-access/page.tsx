@@ -76,22 +76,21 @@ export default function ClientAccessPage() {
       }
       setIsAdmin(true);
 
-      // Fetch companies directory
       const { data: crmData } = await (supabase as any)
         .from("crm_customers")
         .select("id, company, name")
+        .eq("record_kind", "company")
         .order("company");
 
-      const compMap = new Map<string, string>();
       const compList: { id: string; name: string }[] = [];
       if (crmData) {
         crmData.forEach((c: any) => {
           const name = c.company || c.name || "Untitled Org";
-          compMap.set(c.id, name);
           compList.push({ id: c.id, name });
         });
       }
       setCompanies(compList);
+      const compMap = new Map(compList.map((c) => [c.id, c.name]));
 
       // Fetch all user profiles
       const { data: profData } = await (supabase as any)

@@ -68,6 +68,7 @@ export async function loadCompanyUsersData(companyId?: string): Promise<{
   const { data: crmData } = await admin
     .from("crm_customers")
     .select("id, company, name")
+    .eq("record_kind", "company")
     .order("company");
 
   const companies: CompanyOption[] = (crmData ?? []).map((c) => ({

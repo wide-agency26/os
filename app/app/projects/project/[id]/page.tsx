@@ -40,7 +40,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
       const { data: clientsData } = await (supabase as any)
         .from("crm_customers")
         .select("id, name, company, status, lead_status, record_kind")
-        .or("record_kind.eq.company,status.eq.Client,lead_status.eq.Won")
+        .eq("record_kind", "company")
         .order("company", { ascending: true });
       let clientOptions = clientsData || [];
 
@@ -209,9 +209,9 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[12px] font-medium text-gray-700">Company / client account <span className="text-red-500">*</span></label>
-                  <Link href="/app/crm/new" className="text-[11px] text-blue-600 hover:underline">
-                    + New Customer
+                  <label className="block text-[12px] font-medium text-gray-700">Company <span className="text-red-500">*</span></label>
+                  <Link href="/app/crm/new?kind=company" className="text-[11px] text-blue-600 hover:underline">
+                    + New Company
                   </Link>
                 </div>
                 <select 
@@ -220,11 +220,10 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="">Select a company / client account...</option>
+                  <option value="">Select a company…</option>
                   {clients.map(c => (
                     <option key={c.id} value={c.id}>
                       {c.company || c.name}
-                      {c.record_kind === "company" ? " (Company)" : ""}
                     </option>
                   ))}
                 </select>

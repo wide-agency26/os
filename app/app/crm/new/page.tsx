@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace, Section } from "@/components/frappe-ui/Workspace";
 import { ArrowLeft, Save } from "lucide-react";
@@ -20,6 +20,7 @@ const SERVICES_OPTIONS = [
 
 export default function NewCustomerPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [recordKind, setRecordKind] = useState<"company" | "contact">("contact");
   const [parentCompanyId, setParentCompanyId] = useState("");
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
@@ -45,6 +46,13 @@ export default function NewCustomerPage() {
   
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const kind = searchParams.get("kind");
+    if (kind === "company" || kind === "contact") {
+      setRecordKind(kind);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     async function loadCompanies() {

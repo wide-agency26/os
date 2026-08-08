@@ -21,6 +21,10 @@ export default function CRMListView() {
   const [leadStatusFilter, setLeadStatusFilter] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(true);
   const [search, setSearch] = useState("");
+  /** Directory focus: contacts (people) by default — companies live under Projects hub. */
+  const [kindView, setKindView] = useState<"contacts" | "companies" | "all">(
+    "contacts"
+  );
 
   const fetchCustomers = async () => {
     setLoading(true);
@@ -41,7 +45,8 @@ export default function CRMListView() {
         parent_company_id,
         parent:parent_company_id ( id, name, company )
       `)
-      .order("created_at", { ascending: false });
+      .order("company", { ascending: true })
+      .order("name", { ascending: true });
 
     if (statusFilter.length > 0) {
       query = query.in("status", statusFilter);
@@ -60,16 +65,22 @@ export default function CRMListView() {
   }, [statusFilter, leadStatusFilter]);
 
   const filteredCustomers = useMemo(() => {
+    let rows = customers;
+    if (kindView === "contacts") {
+      rows = rows.filter((c) => c.record_kind !== "company");
+    } else if (kindView === "companies") {
+      rows = rows.filter((c) => c.record_kind === "company");
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter((c) => {
+    if (!q) return rows;
+    return rows.filter((c) => {
       const hay = [c.name, c.company, c.email, c.parent?.company, c.parent?.name]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [customers, search]);
+  }, [customers, search, kindView]);
 
   const toggleSelectAll = () => {
     if (selectedIds.size === filteredCustomers.length) {
@@ -213,19 +224,49 @@ export default function CRMListView() {
             <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-20 text-gray-500">Loading...</div>
           ) : null}
           
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-gray-50/50">
-            <div className="relative w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input 
-                type="text" 
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name, company, email..." 
-                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-              />
+          <div className="p-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3 bg-gray-50/50">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input 
+                  type="text" 
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, company, email..." 
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                />
+              </div>
+              <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden bg-white">
+                {(
+                  [
+                    { id: "contacts", label: "Contacts" },
+                    { id: "companies", label: "Companies" },
+                    { id: "all", label: "All" },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setKindView(opt.id)}
+                    className={[
+                      "px-3 py-1.5 text-[12px] font-medium",
+                      kindView === opt.id
+                        ? "bg-gray-900 text-white"
+                        : "text-gray-600 hover:bg-gray-50",
+                    ].join(" ")}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="text-[13px] text-gray-500">
-              {filteredCustomers.length} records
+              {filteredCustomers.length}{" "}
+              {kindView === "contacts"
+                ? "contacts"
+                : kindView === "companies"
+                  ? "companies"
+                  : "records"}
             </div>
           </div>
 
