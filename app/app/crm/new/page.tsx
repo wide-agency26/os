@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace, Section } from "@/components/frappe-ui/Workspace";
@@ -19,6 +19,14 @@ const SERVICES_OPTIONS = [
 ];
 
 export default function NewCustomerPage() {
+  return (
+    <Suspense fallback={<Workspace><div className="p-8 text-gray-500 text-sm">Loading…</div></Workspace>}>
+      <NewCustomerForm />
+    </Suspense>
+  );
+}
+
+function NewCustomerForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [recordKind, setRecordKind] = useState<"company" | "contact">("contact");
