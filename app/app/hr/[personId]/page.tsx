@@ -6,25 +6,56 @@ import { createClient } from "@/utils/supabase/client";
 import { Workspace, Section } from "@/components/frappe-ui/Workspace";
 import { ArrowLeft, Save, Trash } from "lucide-react";
 import Link from "next/link";
+import { PersonCompensationPanel } from "@/components/hr/PersonCompensationPanel";
+import { PersonDocumentsPanel } from "@/components/hr/PersonDocumentsPanel";
+import { OnboardingChecklist } from "@/components/hr/OnboardingChecklist";
 import {
   ROSTER_STATUSES,
   legacyPersonType,
   rosterStatusPill,
   type EngagementType,
+  type HrDocType,
   type RosterStatus,
   type Skill,
 } from "@/lib/hr/types";
+
+type Tab = "profile" | "compensation" | "documents" | "esop";
+
+type EsopRow = {
+  id: string;
+  pool_percentage: number;
+  vesting_notes: string | null;
+  granted_at: string;
+};
+
+type DocRow = {
+  id: string;
+  doc_type: HrDocType;
+  file_path: string;
+  file_name: string | null;
+};
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "profile", label: "Profile" },
+  { id: "compensation", label: "Compensation" },
+  { id: "documents", label: "Documents" },
+  { id: "esop", label: "ESOP" },
+];
 
 export default function PersonDetailPage() {
   const router = useRouter();
   const params = useParams();
   const id = params.personId as string;
 
+  const [tab, setTab] = useState<Tab>("profile");
   const [engagementTypes, setEngagementTypes] = useState<EngagementType[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [fetching, setFetching] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [docs, setDocs] = useState<DocRow[]>([]);
+  const [esopRows, setEsopRows] = useState<EsopRow[]>([]);
+  const [esopLoading, setEsopLoading] = useState(false);
   const [form, setForm] = useState({
     full_name: "",
     primary_email: "",
@@ -85,9 +116,31 @@ export default function PersonDetailPage() {
     setFetching(false);
   }, [id]);
 
+  const loadEsop = useCallback(async () => {
+    if (!id) return;
+    setEsopLoading(true);
+    const supabase = createClient();
+    const { data, error } = await (supabase as any)
+      .from("esop_allocations")
+      .select("id, pool_percentage, vesting_notes, granted_at")
+      .eq("person_id", id)
+      .order("granted_at", { ascending: false });
+    if (error) {
+      console.error(error);
+      setEsopRows([]);
+    } else {
+      setEsopRows((data || []) as EsopRow[]);
+    }
+    setEsopLoading(false);
+  }, [id]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab === "esop") void loadEsop();
+  }, [tab, loadEsop]);
 
   const onChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -190,13 +243,14 @@ export default function PersonDetailPage() {
     );
   }
 
-  const engLabel =
-    engagementTypes.find((t) => t.id === form.engagement_type_id)?.label || "—";
+  const eng =
+    engagementTypes.find((t) => t.id === form.engagement_type_id) || null;
+  const engLabel = eng?.label || "—";
 
   return (
     <Workspace>
       <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200 gap-3 flex-wrap">
+        <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200 gap-3 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
             <Link
               href="/app/hr"
@@ -221,206 +275,301 @@ export default function PersonDetailPage() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleDelete()}
-              disabled={loading}
-              className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded text-[13px] font-medium hover:bg-red-100 flex items-center gap-2"
-            >
-              <Trash size={16} />
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={loading}
-              className="px-3 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 flex items-center gap-2 disabled:opacity-60"
-            >
-              <Save size={16} />
-              {loading ? "Saving…" : "Save"}
-            </button>
-          </div>
+          {tab === "profile" ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={loading}
+                className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded text-[13px] font-medium hover:bg-red-100 flex items-center gap-2"
+              >
+                <Trash size={16} />
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={loading}
+                className="px-3 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 flex items-center gap-2 disabled:opacity-60"
+              >
+                <Save size={16} />
+                {loading ? "Saving…" : "Save"}
+              </button>
+            </div>
+          ) : null}
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-2">
-            <Section title="Contact">
-              <div className="grid sm:grid-cols-2 gap-4">
-                <label className="block sm:col-span-2">
-                  <span className="text-[12px] font-semibold text-gray-700">
-                    Full name
-                  </span>
-                  <input
-                    name="full_name"
-                    value={form.full_name}
-                    onChange={onChange}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-semibold text-gray-700">Email</span>
-                  <input
-                    name="primary_email"
-                    type="email"
-                    value={form.primary_email}
-                    onChange={onChange}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-semibold text-gray-700">Phone</span>
-                  <input
-                    name="phone"
-                    value={form.phone}
-                    onChange={onChange}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                  />
-                </label>
-              </div>
-            </Section>
+        <div className="flex gap-1 mb-6 border-b border-gray-200 overflow-x-auto">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-2 text-[13px] font-medium border-b-2 -mb-px transition-colors ${
+                tab === t.id
+                  ? "border-blue-600 text-blue-700"
+                  : "border-transparent text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-            <Section title="Skills">
-              <div className="flex flex-wrap gap-2">
-                {skills.map((s) => {
-                  const on = selectedSkillIds.includes(s.id);
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => toggleSkill(s.id)}
-                      className={`px-2.5 py-1 rounded-full text-[12px] border transition-colors ${
-                        on
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      {s.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </Section>
-
-            <Section title="Notes">
-              <div className="space-y-4">
-                <label className="block">
-                  <span className="text-[12px] font-semibold text-gray-700">
-                    Bio / quality notes
-                  </span>
-                  <textarea
-                    name="bio_notes"
-                    value={form.bio_notes}
-                    onChange={onChange}
-                    rows={4}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-semibold text-gray-700">
-                    Rate notes
-                  </span>
-                  <textarea
-                    name="rate_notes"
-                    value={form.rate_notes}
-                    onChange={onChange}
-                    rows={2}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                  />
-                </label>
-              </div>
-            </Section>
-
-            <Section title="Activity">
-              <p className="text-[13px] text-gray-500 leading-relaxed">
-                Project history from the PM module will appear here in a later phase
-                (read-only). Compensation ledger ships in Phase 2.
-              </p>
-            </Section>
-          </div>
-
-          <aside>
-            <Section title="Engagement">
-              <div className="space-y-4">
-                <label className="block">
-                  <span className="text-[12px] font-semibold text-gray-700">
-                    Type
-                  </span>
-                  <select
-                    name="engagement_type_id"
-                    value={form.engagement_type_id}
-                    onChange={onChange}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                  >
-                    <option value="">Select…</option>
-                    {engagementTypes.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-semibold text-gray-700">
-                    Status
-                  </span>
-                  <select
-                    name="roster_status"
-                    value={form.roster_status}
-                    onChange={onChange}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                  >
-                    {ROSTER_STATUSES.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-semibold text-gray-700">
-                    Hourly cost (capacity)
-                  </span>
-                  <input
-                    name="hourly_rate_cost"
-                    type="number"
-                    step="0.01"
-                    value={form.hourly_rate_cost}
-                    onChange={onChange}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
-                  />
-                  <p className="text-[11px] text-gray-500 mt-1">
-                    Existing PM capacity field — full comp ledger comes in Phase 2.
-                  </p>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    name="co_founder_track"
-                    checked={form.co_founder_track}
-                    onChange={onChange}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-[13px] text-gray-800">Co-founder track</span>
-                </label>
-                {form.co_founder_track ? (
-                  <label className="block">
+        {tab === "profile" ? (
+          <div className="grid lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-2">
+              <Section title="Contact">
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <label className="block sm:col-span-2">
                     <span className="text-[12px] font-semibold text-gray-700">
-                      Co-founder notes
+                      Full name
                     </span>
-                    <textarea
-                      name="co_founder_track_notes"
-                      value={form.co_founder_track_notes}
+                    <input
+                      name="full_name"
+                      value={form.full_name}
                       onChange={onChange}
-                      rows={3}
                       className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
                     />
                   </label>
-                ) : null}
+                  <label className="block">
+                    <span className="text-[12px] font-semibold text-gray-700">
+                      Email
+                    </span>
+                    <input
+                      name="primary_email"
+                      type="email"
+                      value={form.primary_email}
+                      onChange={onChange}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[12px] font-semibold text-gray-700">
+                      Phone
+                    </span>
+                    <input
+                      name="phone"
+                      value={form.phone}
+                      onChange={onChange}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    />
+                  </label>
+                </div>
+              </Section>
+
+              <Section title="Skills">
+                <div className="flex flex-wrap gap-2">
+                  {skills.map((s) => {
+                    const on = selectedSkillIds.includes(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => toggleSkill(s.id)}
+                        className={`px-2.5 py-1 rounded-full text-[12px] border transition-colors ${
+                          on
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Section>
+
+              <Section title="Notes">
+                <div className="space-y-4">
+                  <label className="block">
+                    <span className="text-[12px] font-semibold text-gray-700">
+                      Bio / quality notes
+                    </span>
+                    <textarea
+                      name="bio_notes"
+                      value={form.bio_notes}
+                      onChange={onChange}
+                      rows={4}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[12px] font-semibold text-gray-700">
+                      Rate notes
+                    </span>
+                    <textarea
+                      name="rate_notes"
+                      value={form.rate_notes}
+                      onChange={onChange}
+                      rows={2}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    />
+                  </label>
+                </div>
+              </Section>
+
+              <Section title="Activity">
+                <p className="text-[13px] text-gray-500 leading-relaxed">
+                  Project history from the PM module will appear here in a later
+                  phase (read-only).
+                </p>
+              </Section>
+            </div>
+
+            <aside>
+              <Section title="Engagement">
+                <div className="space-y-4">
+                  <label className="block">
+                    <span className="text-[12px] font-semibold text-gray-700">
+                      Type
+                    </span>
+                    <select
+                      name="engagement_type_id"
+                      value={form.engagement_type_id}
+                      onChange={onChange}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    >
+                      <option value="">Select…</option>
+                      {engagementTypes.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[12px] font-semibold text-gray-700">
+                      Status
+                    </span>
+                    <select
+                      name="roster_status"
+                      value={form.roster_status}
+                      onChange={onChange}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    >
+                      {ROSTER_STATUSES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[12px] font-semibold text-gray-700">
+                      Hourly cost (capacity)
+                    </span>
+                    <input
+                      name="hourly_rate_cost"
+                      type="number"
+                      step="0.01"
+                      value={form.hourly_rate_cost}
+                      onChange={onChange}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="co_founder_track"
+                      checked={form.co_founder_track}
+                      onChange={onChange}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-[13px] text-gray-800">
+                      Co-founder track
+                    </span>
+                  </label>
+                  {form.co_founder_track ? (
+                    <label className="block">
+                      <span className="text-[12px] font-semibold text-gray-700">
+                        Co-founder notes
+                      </span>
+                      <textarea
+                        name="co_founder_track_notes"
+                        value={form.co_founder_track_notes}
+                        onChange={onChange}
+                        rows={3}
+                        className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              </Section>
+            </aside>
+          </div>
+        ) : null}
+
+        {tab === "compensation" ? (
+          <PersonCompensationPanel personId={id} />
+        ) : null}
+
+        {tab === "documents" ? (
+          <div className="space-y-6">
+            <OnboardingChecklist engagementType={eng} documents={docs} />
+            <PersonDocumentsPanel
+              personId={id}
+              onDocsChange={(d) =>
+                setDocs(
+                  d.map((x) => ({
+                    id: x.id,
+                    doc_type: x.doc_type,
+                    file_path: x.file_path,
+                    file_name: x.file_name,
+                  }))
+                )
+              }
+            />
+          </div>
+        ) : null}
+
+        {tab === "esop" ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[13px] font-bold text-gray-900">
+                ESOP for this person
+              </h3>
+              <Link
+                href="/app/hr/esop"
+                className="text-[12px] text-blue-700 hover:underline"
+              >
+                Manage all allocations
+              </Link>
+            </div>
+            {esopLoading ? (
+              <p className="text-[13px] text-gray-500">Loading ESOP…</p>
+            ) : esopRows.length === 0 ? (
+              <p className="text-[13px] text-gray-500">
+                No ESOP allocations for this person.
+              </p>
+            ) : (
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <table className="w-full text-[13px]">
+                  <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="text-left px-3 py-2">Pool %</th>
+                      <th className="text-left px-3 py-2">Granted</th>
+                      <th className="text-left px-3 py-2">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {esopRows.map((r) => (
+                      <tr key={r.id} className="border-t border-gray-50">
+                        <td className="px-3 py-2 font-medium tabular-nums">
+                          {Number(r.pool_percentage).toFixed(2)}%
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{r.granted_at}</td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {r.vesting_notes || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </Section>
-          </aside>
-        </div>
+            )}
+          </div>
+        ) : null}
       </div>
     </Workspace>
   );

@@ -33,6 +33,9 @@ export function ProjectTasksClient({ projectId }: Props) {
   const [project, setProject] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
+  const [suggestionsByTemplate, setSuggestionsByTemplate] = useState<
+    Record<string, import("@/lib/hr/suggest").RosterSuggestPerson[]>
+  >({});
   const [view, setView] = useState<"board" | "list">("list");
   const [showDonePhases, setShowDonePhases] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
@@ -67,7 +70,70 @@ export function ProjectTasksClient({ projectId }: Props) {
       .from("profiles")
       .select("id, full_name")
       .order("full_name");
-    setProfiles(people || []);
+
+    const { data: roster } = await (supabase as any)
+      .from("people")
+      .select(
+        `
+        id, full_name, auth_user_id, engagement_type_id, roster_status,
+        engagement_types ( label, assignable_to_tasks ),
+        person_skills ( skill_id, skills ( label ) )
+      `
+      )
+      .eq("roster_status", "active");
+
+    const rosterAssignable = (roster || []).filter(
+      (p: any) => p.engagement_types?.assignable_to_tasks !== false && p.auth_user_id
+    );
+
+    const profileMap = new Map<string, any>();
+    for (const p of people || []) {
+      profileMap.set(p.id, {
+        id: p.id,
+        full_name: p.full_name,
+        group: "team" as const,
+      });
+    }
+    for (const p of rosterAssignable) {
+      profileMap.set(p.auth_user_id, {
+        id: p.auth_user_id,
+        full_name: p.full_name,
+        group: "roster" as const,
+      });
+    }
+    setProfiles([...profileMap.values()].sort((a, b) =>
+      String(a.full_name || "").localeCompare(String(b.full_name || ""))
+    ));
+
+    // Precompute RACI suggestions for template-backed tasks
+    const templateIds = [
+      ...new Set(
+        (taskRows || [])
+          .map((t: any) => t.task_template_id)
+          .filter(Boolean) as string[]
+      ),
+    ];
+    const suggestMap: Record<string, any[]> = {};
+    if (templateIds.length && (roster || []).length) {
+      const { scorePeopleForRoles } = await import("@/lib/hr/suggest");
+      const { data: roles } = await (supabase as any)
+        .from("playbook_step_roles")
+        .select("task_template_id, raci, required_skill_id, required_engagement_type_id")
+        .in("task_template_id", templateIds);
+      const byTemplate = new Map<string, any[]>();
+      for (const r of roles || []) {
+        const list = byTemplate.get(r.task_template_id) || [];
+        list.push(r);
+        byTemplate.set(r.task_template_id, list);
+      }
+      for (const tid of templateIds) {
+        const specs = byTemplate.get(tid) || [];
+        if (!specs.length) continue;
+        suggestMap[tid] = scorePeopleForRoles(roster || [], specs).slice(0, 8);
+      }
+    }
+    setSuggestionsByTemplate(suggestMap);
+
     setLoading(false);
   };
 
@@ -381,6 +447,11 @@ export function ProjectTasksClient({ projectId }: Props) {
           }}
           onStatusChange={setStatus}
           onContentSave={saveTaskContent}
+          suggestions={
+            openTask.task_template_id
+              ? suggestionsByTemplate[openTask.task_template_id] || []
+              : []
+          }
         />
       ) : null}
     </ProjectPmShell>

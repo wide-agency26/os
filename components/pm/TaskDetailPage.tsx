@@ -12,6 +12,8 @@ import {
 import { initialBlocksForTask } from "@/lib/pm/blocknote";
 import type { PmTaskStatus } from "@/lib/pm/types";
 import type { TaskRowProfile } from "@/components/pm/TaskRow";
+import { AssigneeSuggestBanner } from "@/components/hr/AssigneeSuggestBanner";
+import type { RosterSuggestPerson } from "@/lib/hr/suggest";
 
 const TaskContentEditor = dynamic(
   () =>
@@ -44,6 +46,7 @@ export type TaskDetailTask = {
   source?: string | null;
   default_role?: string | null;
   phase_label?: string | null;
+  task_template_id?: string | null;
 };
 
 export type TaskDetailPageProps = {
@@ -55,6 +58,8 @@ export type TaskDetailPageProps = {
   onAssigneeChange: (taskId: string, assigneeId: string | null) => void;
   onStatusChange: (taskId: string, status: PmTaskStatus) => void;
   onContentSave: (taskId: string, blocks: Block[]) => void;
+  /** RACI-matched roster suggestions (confirm manually). */
+  suggestions?: RosterSuggestPerson[];
 };
 
 /**
@@ -69,6 +74,7 @@ export function TaskDetailPage({
   onAssigneeChange,
   onStatusChange,
   onContentSave,
+  suggestions = [],
 }: TaskDetailPageProps) {
   const [titleDraft, setTitleDraft] = useState(task.title);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -167,17 +173,39 @@ export function TaskDetailPage({
               }
             >
               <option value="">Unassigned</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.full_name || p.id.slice(0, 8)}
-                </option>
-              ))}
+              {profiles.some((p) => p.group === "roster") ? (
+                <optgroup label="HR roster (do the work)">
+                  {profiles
+                    .filter((p) => p.group === "roster")
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name || p.id.slice(0, 8)}
+                      </option>
+                    ))}
+                </optgroup>
+              ) : null}
+              <optgroup label="Team logins">
+                {profiles
+                  .filter((p) => p.group !== "roster")
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name || p.id.slice(0, 8)}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
             {task.default_role ? (
               <span className="text-xs text-gray-400">{task.default_role}</span>
             ) : null}
           </div>
         </header>
+
+        {!task.assignee_id && suggestions.length > 0 ? (
+          <AssigneeSuggestBanner
+            suggestions={suggestions}
+            onAssign={(profileId) => onAssigneeChange(task.id, profileId)}
+          />
+        ) : null}
 
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
           {/* Sole BlockNote mount point for Tasks */}

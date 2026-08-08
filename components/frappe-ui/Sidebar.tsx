@@ -79,6 +79,10 @@ const MODULES: ModuleItem[] = [
     items: [
       { name: "Roster", href: "/app/hr" },
       { name: "Add person", href: "/app/hr/new" },
+      { name: "Pipeline", href: "/app/hr/pipeline" },
+      { name: "Compensation", href: "/app/hr/compensation" },
+      { name: "ESOP", href: "/app/hr/esop" },
+      { name: "Settings", href: "/app/hr/settings" },
     ],
   },
   {

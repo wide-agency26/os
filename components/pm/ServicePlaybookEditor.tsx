@@ -10,6 +10,7 @@ import {
   deleteTaskTemplate,
   saveTaskTemplateRow,
 } from "@/app/actions/pm";
+import { PlaybookStepRaci } from "@/components/hr/PlaybookStepRaci";
 
 export function ServicePlaybookEditor({ playbookId }: { playbookId: string }) {
   const [meta, setMeta] = useState<any>(null);
@@ -172,6 +173,21 @@ export function ServicePlaybookEditor({ playbookId }: { playbookId: string }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-8 space-y-4">
+        <h2 className="text-sm font-semibold text-gray-900">RACI & roster matching</h2>
+        <p className="text-[12px] text-gray-500 max-w-2xl">
+          Optional skill / engagement filters per step. When projects instantiate this
+          playbook, matching active roster people are suggested for assignment — never
+          auto-locked.
+        </p>
+        {rows.map((r) => (
+          <div key={`raci-${r.id}`} className="border border-gray-200 rounded-lg p-3">
+            <p className="text-[13px] font-medium text-gray-800 mb-2">{r.title || "Untitled"}</p>
+            <PlaybookStepRaci taskTemplateId={r.id} />
+          </div>
+        ))}
       </div>
 
       <button

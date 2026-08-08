@@ -199,24 +199,37 @@ export function TaskBoardCard({
                   >
                     Unassigned
                   </button>
-                  {profiles.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${
-                        p.id === task.assignee_id
-                          ? "bg-gray-50 font-medium"
-                          : "text-gray-800"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAssigneeChange(task.id, p.id);
-                        setAssigneeOpen(false);
-                      }}
-                    >
-                      {p.full_name || p.id.slice(0, 8)}
-                    </button>
-                  ))}
+                  {(["roster", "team"] as const).map((group) => {
+                    const groupProfiles = profiles.filter((p: any) =>
+                      group === "roster" ? p.group === "roster" : p.group !== "roster"
+                    );
+                    if (!groupProfiles.length) return null;
+                    return (
+                      <div key={group}>
+                        <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                          {group === "roster" ? "HR roster" : "Team"}
+                        </p>
+                        {groupProfiles.map((p: any) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${
+                              p.id === task.assignee_id
+                                ? "bg-gray-50 font-medium"
+                                : "text-gray-800"
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAssigneeChange(task.id, p.id);
+                              setAssigneeOpen(false);
+                            }}
+                          >
+                            {p.full_name || p.id.slice(0, 8)}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>
