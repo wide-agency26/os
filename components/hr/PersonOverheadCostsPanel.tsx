@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { ChevronLeft, ChevronRight, Plus, Pencil, Trash, X } from "lucide-react";
+import { ProjectLinkSelect } from "@/components/hr/ProjectLinkSelect";
 import {
   firstDayOfMonth,
   lastDayOfMonth,
@@ -31,6 +32,8 @@ type OverheadRow = {
   effective_to: string | null;
   notes: string | null;
   accounting_ref_id: string | null;
+  project_id?: string | null;
+  projects?: { id: string; title: string | null } | null;
 };
 
 type FormState = {
@@ -44,6 +47,7 @@ type FormState = {
   effective_to: string;
   notes: string;
   accounting_ref_id: string;
+  project_id: string;
 };
 
 function todayIso() {
@@ -61,6 +65,7 @@ function emptyForm(defaults?: { effective_from?: string }): FormState {
     effective_to: "",
     notes: "",
     accounting_ref_id: "",
+    project_id: "",
   };
 }
 
@@ -90,7 +95,7 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
     const supabase = createClient();
     const { data, error } = await (supabase as any)
       .from("person_overhead_costs")
-      .select("*")
+      .select("*, projects:project_id ( id, title )")
       .eq("person_id", personId)
       .order("effective_from", { ascending: false });
     if (error) {
@@ -180,6 +185,7 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
       effective_to: row.effective_to || "",
       notes: row.notes || "",
       accounting_ref_id: row.accounting_ref_id || "",
+      project_id: row.project_id || "",
     });
     setEditing(true);
     // Ensure the month that contains this cost's from-date (in year) is open
@@ -213,6 +219,7 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
       effective_to: form.effective_to || null,
       notes: form.notes.trim() || null,
       accounting_ref_id: form.accounting_ref_id.trim() || null,
+      project_id: form.project_id || null,
       updated_at: new Date().toISOString(),
     };
 
@@ -545,6 +552,12 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
                       placeholder="Invoice / cost-center key"
                     />
                   </label>
+                  <ProjectLinkSelect
+                    className="sm:col-span-2"
+                    value={form.project_id}
+                    onChange={(project_id) => setForm((f) => ({ ...f, project_id }))}
+                    hint="Optionally charge this overhead to a specific project’s cost view."
+                  />
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -612,6 +625,11 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
                           {r.effective_from}
                           {" → "}
                           {r.effective_to || "ongoing"}
+                          {r.projects?.title
+                            ? ` · ${r.projects.title}`
+                            : r.project_id
+                              ? " · linked project"
+                              : ""}
                         </p>
                       </div>
                       <div className="flex items-center shrink-0">

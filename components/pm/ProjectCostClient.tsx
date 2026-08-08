@@ -5,13 +5,32 @@ import { createClient } from "@/utils/supabase/client";
 import { ProjectPmShell } from "@/components/pm/ProjectPmShell";
 import { PM_ICONS } from "@/lib/pm/icons";
 import { currentCycleKey } from "@/lib/pm/types";
+import {
+  COMP_MODELS,
+  formatMoney,
+  type CompFrequency,
+  type CompModel,
+} from "@/lib/hr/types";
 
 type Props = { projectId: string };
+
+type ProjectCompRow = {
+  id: string;
+  person_id: string;
+  comp_model: CompModel;
+  amount: number | null;
+  currency: string;
+  frequency: CompFrequency;
+  effective_from: string;
+  effective_to: string | null;
+  people?: { full_name: string | null } | null;
+};
 
 export function ProjectCostClient({ projectId }: Props) {
   const [project, setProject] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [rates, setRates] = useState<Record<string, number>>({});
+  const [projectComps, setProjectComps] = useState<ProjectCompRow[]>([]);
   const [settings, setSettings] = useState({
     fragmentation_base_projects: 2,
     fragmentation_penalty_pct: 10,
@@ -44,6 +63,17 @@ export function ProjectCostClient({ projectId }: Props) {
       const rateMap: Record<string, number> = {};
       for (const r of rateRows || []) rateMap[r.role_label] = Number(r.hourly_rate);
       setRates(rateMap);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: comps } = await (supabase as any)
+        .from("compensation_records")
+        .select(
+          "id, person_id, comp_model, amount, currency, frequency, effective_from, effective_to, people:person_id ( full_name )"
+        )
+        .eq("project_id", projectId)
+        .or(`effective_to.is.null,effective_to.gte.${today}`)
+        .order("effective_from", { ascending: false });
+      setProjectComps((comps || []) as ProjectCompRow[]);
 
       const { data: sett } = await (supabase as any)
         .from("pm_settings")
@@ -83,6 +113,20 @@ export function ProjectCostClient({ projectId }: Props) {
     void load();
   }, [projectId]);
 
+  const hourlyByPerson = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const c of projectComps) {
+      if (map[c.person_id] != null) continue;
+      if (
+        (c.comp_model === "hourly_invoice" || c.frequency === "per_hour") &&
+        c.amount != null
+      ) {
+        map[c.person_id] = Number(c.amount);
+      }
+    }
+    return map;
+  }, [projectComps]);
+
   const analysis = useMemo(() => {
     let plannedHours = 0;
     let plannedCost = 0;
@@ -91,44 +135,55 @@ export function ProjectCostClient({ projectId }: Props) {
     for (const t of open) {
       const hours = Number(t.estimated_duration_hours || 0);
       plannedHours += hours;
+      const personId = t.assignee_person_id as string | null;
+      const projectHourly =
+        personId && hourlyByPerson[personId] != null
+          ? hourlyByPerson[personId]
+          : 0;
       const personRate = Number(t.assignee_person?.hourly_rate_cost || 0);
       const roleRate = rates[t.default_role || "Specialist"] ?? rates.Specialist ?? 80;
-      plannedCost += hours * (personRate > 0 ? personRate : roleRate);
+      const rate =
+        projectHourly > 0 ? projectHourly : personRate > 0 ? personRate : roleRate;
+      plannedCost += hours * rate;
     }
 
-    // Max fragmentation across people on this project
-    let maxConcurrent = 1;
-    let fragmentedPerson: string | null = null;
-    for (const [personId, count] of Object.entries(personProjectCounts)) {
-      if (count > maxConcurrent) {
-        maxConcurrent = count;
-        fragmentedPerson = personId;
-      }
+    // Fixed / retainer / per-project fees linked to this project
+    let linkedFees = 0;
+    for (const c of projectComps) {
+      if (c.frequency === "per_hour" || c.comp_model === "hourly_invoice") continue;
+      linkedFees += Number(c.amount || 0);
     }
-    // Also consider role-only estimate when no assignees: use 1
-    const over =
-      Math.max(0, maxConcurrent - settings.fragmentation_base_projects);
+
+    let maxConcurrent = 1;
+    for (const [, count] of Object.entries(personProjectCounts)) {
+      if (count > maxConcurrent) maxConcurrent = count;
+    }
+    const over = Math.max(0, maxConcurrent - settings.fragmentation_base_projects);
     const multiplier =
       1 + (over * Number(settings.fragmentation_penalty_pct)) / 100;
-    const projectedCost = Math.round(plannedCost * multiplier * 100) / 100;
+    const hoursCost = Math.round(plannedCost * 100) / 100;
+    const projectedCost =
+      Math.round((hoursCost * multiplier + linkedFees) * 100) / 100;
     const penaltyPct = Math.round((multiplier - 1) * 100);
 
     return {
       plannedHours,
-      plannedCost: Math.round(plannedCost * 100) / 100,
+      plannedCost: hoursCost,
+      linkedFees: Math.round(linkedFees * 100) / 100,
       multiplier,
       projectedCost,
       penaltyPct,
       maxConcurrent,
-      fragmentedPerson,
     };
-  }, [tasks, rates, personProjectCounts, settings]);
+  }, [tasks, rates, personProjectCounts, settings, projectComps, hourlyByPerson]);
 
   if (loading) {
     return <div className="text-sm text-gray-500 p-6">Loading cost center…</div>;
   }
 
   const Icon = PM_ICONS.costCenter;
+  const modelLabel = (m: CompModel) =>
+    COMP_MODELS.find((x) => x.value === m)?.label || m;
 
   return (
     <ProjectPmShell
@@ -138,8 +193,8 @@ export function ProjectCostClient({ projectId }: Props) {
     >
       <p className="text-sm text-gray-500 mb-4 flex items-center gap-2">
         <Icon className="w-4 h-4" />
-        Period {period} · planned figures use playbook estimated hours × stub rates
-        (actual hours not wired yet)
+        Period {period} · hours × project-linked hourly rates (fallback: person /
+        role rate) + linked project fees
       </p>
 
       <div className="grid gap-4 sm:grid-cols-3 mb-6">
@@ -148,20 +203,25 @@ export function ProjectCostClient({ projectId }: Props) {
           <p className="text-2xl font-semibold mt-1">{analysis.plannedHours.toFixed(1)}h</p>
         </div>
         <div className="border border-gray-200 rounded-lg p-4">
-          <p className="text-xs text-gray-500 uppercase">Planned cost</p>
+          <p className="text-xs text-gray-500 uppercase">Hours cost</p>
           <p className="text-2xl font-semibold mt-1">€{analysis.plannedCost.toFixed(0)}</p>
         </div>
         <div className="border border-gray-200 rounded-lg p-4">
-          <p className="text-xs text-gray-500 uppercase">Projected cost</p>
+          <p className="text-xs text-gray-500 uppercase">Projected total</p>
           <p className="text-2xl font-semibold mt-1">€{analysis.projectedCost.toFixed(0)}</p>
+          {analysis.linkedFees > 0 ? (
+            <p className="text-[11px] text-gray-500 mt-1">
+              incl. {formatMoney(analysis.linkedFees)} linked fees
+            </p>
+          ) : null}
         </div>
       </div>
 
       {analysis.penaltyPct > 0 ? (
         <div className="border border-amber-200 bg-amber-50 text-amber-950 rounded-lg px-4 py-3 text-sm mb-4">
-          Projected cost includes a {analysis.penaltyPct}% fragmentation adjustment
-          because someone on this project is on {analysis.maxConcurrent} active projects
-          this month (base {settings.fragmentation_base_projects}; +
+          Projected hours cost includes a {analysis.penaltyPct}% fragmentation
+          adjustment because someone on this project is on {analysis.maxConcurrent}{" "}
+          active projects this month (base {settings.fragmentation_base_projects}; +
           {settings.fragmentation_penalty_pct}% per extra). Multiplier ×
           {analysis.multiplier.toFixed(2)}.
         </div>
@@ -171,6 +231,39 @@ export function ProjectCostClient({ projectId }: Props) {
           {settings.fragmentation_base_projects} projects). Tunable in pm_settings.
         </div>
       )}
+
+      <div className="border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-3 py-2 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500 font-semibold">
+          Compensation linked to this project
+        </div>
+        {projectComps.length === 0 ? (
+          <p className="px-3 py-4 text-[13px] text-gray-500">
+            None yet. Link from HR Compensation, or assign a freelancer to a task
+            and enter their project rate.
+          </p>
+        ) : (
+          <ul className="divide-y divide-gray-50">
+            {projectComps.map((c) => (
+              <li
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[13px]"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 truncate">
+                    {c.people?.full_name || "Person"}
+                  </p>
+                  <p className="text-[12px] text-gray-500">
+                    {modelLabel(c.comp_model)} · {c.frequency}
+                  </p>
+                </div>
+                <p className="tabular-nums font-semibold text-gray-900">
+                  {formatMoney(c.amount, c.currency)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </ProjectPmShell>
   );
 }

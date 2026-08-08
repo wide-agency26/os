@@ -14,6 +14,7 @@ export type TaskRowProfile = {
   id: string;
   full_name: string | null;
   engagement_label?: string | null;
+  engagement_key?: string | null;
   auth_user_id?: string | null;
 };
 

@@ -8,6 +8,7 @@ import { GateIcon } from "@/components/pm/PmBadges";
 import { TaskRow } from "@/components/pm/TaskRow";
 import { TaskBoardCard } from "@/components/pm/TaskBoardCard";
 import { TaskDetailPage } from "@/components/pm/TaskDetailPage";
+import { AssignWithProjectCompensationModal } from "@/components/hr/AssignWithProjectCompensationModal";
 import {
   updatePmTaskStatus,
   updatePmTaskAssignee,
@@ -19,6 +20,7 @@ import {
   reorderPmTasks,
 } from "@/app/actions/pm";
 import { blocksToPlainSummary } from "@/lib/pm/blocknote";
+import { needsProjectCompensationOnAssign } from "@/lib/hr/types";
 import type { PmTaskStatus } from "@/lib/pm/types";
 
 type Props = { projectId: string };
@@ -28,6 +30,13 @@ const COLUMNS: { key: PmTaskStatus; label: string }[] = [
   { key: "in_progress", label: "In progress" },
   { key: "done", label: "Done" },
 ];
+
+type PendingAssign = {
+  taskId: string;
+  personId: string;
+  personName: string | null;
+  engagementKey: string | null;
+};
 
 export function ProjectTasksClient({ projectId }: Props) {
   const [project, setProject] = useState<any>(null);
@@ -41,12 +50,57 @@ export function ProjectTasksClient({ projectId }: Props) {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, startTransition] = useTransition();
+  const [pendingAssign, setPendingAssign] = useState<PendingAssign | null>(null);
   const dragIdRef = useRef<string | null>(null);
 
   const patchTaskLocal = (taskId: string, patch: Record<string, unknown>) => {
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t))
     );
+  };
+
+  const commitAssignee = (taskId: string, personId: string | null) => {
+    patchTaskLocal(taskId, { assignee_person_id: personId });
+    startTransition(async () => {
+      await updatePmTaskAssignee(taskId, personId);
+    });
+  };
+
+  const requestAssigneeChange = async (
+    taskId: string,
+    personId: string | null
+  ) => {
+    if (!personId) {
+      commitAssignee(taskId, null);
+      return;
+    }
+    const profile = profiles.find((p) => p.id === personId);
+    if (!needsProjectCompensationOnAssign(profile?.engagement_key)) {
+      commitAssignee(taskId, personId);
+      return;
+    }
+
+    const supabase = createClient();
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: linked } = await (supabase as any)
+      .from("compensation_records")
+      .select("id")
+      .eq("person_id", personId)
+      .eq("project_id", projectId)
+      .or(`effective_to.is.null,effective_to.gte.${today}`)
+      .limit(1);
+
+    if (linked?.length) {
+      commitAssignee(taskId, personId);
+      return;
+    }
+
+    setPendingAssign({
+      taskId,
+      personId,
+      personName: profile?.full_name || null,
+      engagementKey: profile?.engagement_key || null,
+    });
   };
 
   const load = async () => {
@@ -71,7 +125,7 @@ export function ProjectTasksClient({ projectId }: Props) {
       .select(
         `
         id, full_name, auth_user_id, engagement_type_id, roster_status,
-        engagement_types ( label, assignable_to_tasks ),
+        engagement_types ( key, label, assignable_to_tasks ),
         person_skills ( skill_id, skills ( label ) )
       `
       )
@@ -87,6 +141,7 @@ export function ProjectTasksClient({ projectId }: Props) {
         id: p.id,
         full_name: p.full_name,
         engagement_label: p.engagement_types?.label || null,
+        engagement_key: p.engagement_types?.key || null,
         auth_user_id: p.auth_user_id || null,
       }))
     );
@@ -276,10 +331,7 @@ export function ProjectTasksClient({ projectId }: Props) {
                         });
                       }}
                       onAssigneeChange={(id, personId) => {
-                        patchTaskLocal(id, { assignee_person_id: personId });
-                        startTransition(async () => {
-                          await updatePmTaskAssignee(id, personId);
-                        });
+                        void requestAssigneeChange(id, personId);
                       }}
                       onDelete={(id) => {
                         setTasks((prev) => prev.filter((x) => x.id !== id));
@@ -388,10 +440,7 @@ export function ProjectTasksClient({ projectId }: Props) {
                         });
                       }}
                       onAssigneeChange={(id, personId) => {
-                        patchTaskLocal(id, { assignee_person_id: personId });
-                        startTransition(async () => {
-                          await updatePmTaskAssignee(id, personId);
-                        });
+                        void requestAssigneeChange(id, personId);
                       }}
                       onStatusChange={setStatus}
                       onToggleDone={(id, done) =>
@@ -426,10 +475,7 @@ export function ProjectTasksClient({ projectId }: Props) {
             });
           }}
           onAssigneeChange={(id, personId) => {
-            patchTaskLocal(id, { assignee_person_id: personId });
-            startTransition(async () => {
-              await updatePmTaskAssignee(id, personId);
-            });
+            void requestAssigneeChange(id, personId);
           }}
           onStatusChange={setStatus}
           onContentSave={saveTaskContent}
@@ -438,6 +484,26 @@ export function ProjectTasksClient({ projectId }: Props) {
               ? suggestionsByTemplate[openTask.task_template_id] || []
               : []
           }
+        />
+      ) : null}
+
+      {pendingAssign ? (
+        <AssignWithProjectCompensationModal
+          projectId={projectId}
+          projectTitle={project?.title}
+          personId={pendingAssign.personId}
+          personName={pendingAssign.personName}
+          defaultModel={
+            pendingAssign.engagementKey === "recurring_freelancer"
+              ? "retainer"
+              : "hourly_invoice"
+          }
+          onCancel={() => setPendingAssign(null)}
+          onSaved={() => {
+            const { taskId, personId } = pendingAssign;
+            setPendingAssign(null);
+            commitAssignee(taskId, personId);
+          }}
         />
       ) : null}
     </ProjectPmShell>

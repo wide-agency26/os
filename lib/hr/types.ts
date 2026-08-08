@@ -80,8 +80,11 @@ export interface CompensationRecord {
   effective_to: string | null;
   accounting_ref_id: string | null;
   notes: string | null;
+  /** Optional project this fee is attributed to (hourly / per-project). */
+  project_id?: string | null;
   salary_breakdowns?: SalaryBreakdown[];
   people?: { full_name: string; engagement_types?: EngagementType | null } | null;
+  projects?: { id: string; title: string | null } | null;
 }
 
 export interface SalaryBreakdown {
@@ -290,4 +293,30 @@ export function formatMoney(amount: number | null | undefined, currency = "EUR")
     currency,
     maximumFractionDigits: 2,
   }).format(Number(amount));
+}
+
+/** Engagement types treated as in-org (no project-comp prompt on task assign). */
+export const IN_ORG_ENGAGEMENT_KEYS = new Set(["core"]);
+
+/**
+ * Freelancers / external roster people should declare project compensation
+ * when assigned to project tasks.
+ */
+export function needsProjectCompensationOnAssign(
+  engagementKey: string | null | undefined
+): boolean {
+  if (!engagementKey) return true;
+  return !IN_ORG_ENGAGEMENT_KEYS.has(engagementKey);
+}
+
+/** Models / frequencies where project attribution is especially relevant. */
+export function prefersProjectLink(
+  model: CompModel,
+  frequency: CompFrequency
+): boolean {
+  return (
+    model === "hourly_invoice" ||
+    frequency === "per_project" ||
+    frequency === "per_hour"
+  );
 }

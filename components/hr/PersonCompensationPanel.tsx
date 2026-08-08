@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { ChevronLeft, ChevronRight, Plus, Pencil, Trash } from "lucide-react";
 import { SalaryBreakdownForm } from "@/components/hr/SalaryBreakdownForm";
+import { ProjectLinkSelect } from "@/components/hr/ProjectLinkSelect";
 import {
   firstDayOfMonth,
   lastDayOfMonth,
@@ -19,6 +20,7 @@ import {
   COMP_MODELS,
   deriveSalaryTotals,
   emptySalaryBreakdown,
+  prefersProjectLink,
   type CompFrequency,
   type CompModel,
   type CompensationRecord,
@@ -44,6 +46,7 @@ type FormState = {
   notes: string;
   salary: SalaryBreakdown;
   spanKind: SpanKind;
+  project_id: string;
 };
 
 function emptyForm(
@@ -66,6 +69,7 @@ function emptyForm(
     notes: "",
     salary: emptySalaryBreakdown(),
     spanKind,
+    project_id: "",
   };
 }
 
@@ -92,6 +96,7 @@ function formFromRecord(row: CompensationRecord, year: number): FormState {
     notes: row.notes || "",
     salary: sb ? { ...emptySalaryBreakdown(), ...sb } : emptySalaryBreakdown(),
     spanKind,
+    project_id: row.project_id || "",
   };
 }
 
@@ -111,7 +116,7 @@ export function PersonCompensationPanel({ personId }: Props) {
     const supabase = createClient();
     const { data, error } = await (supabase as any)
       .from("compensation_records")
-      .select("*, salary_breakdowns (*)")
+      .select("*, salary_breakdowns (*), projects:project_id ( id, title )")
       .eq("person_id", personId)
       .order("effective_from", { ascending: false });
     if (error) {
@@ -223,6 +228,7 @@ export function PersonCompensationPanel({ personId }: Props) {
           ? null
           : lastDayOfMonth(form.year, endM),
       notes: form.notes.trim() || null,
+      project_id: form.project_id || null,
       updated_at: new Date().toISOString(),
     };
 
@@ -297,10 +303,39 @@ export function PersonCompensationPanel({ personId }: Props) {
       }
     }
 
+    if (
+      (form.comp_model === "hourly_invoice" || frequency === "per_hour") &&
+      form.amount
+    ) {
+      await (supabase as any)
+        .from("people")
+        .update({
+          hourly_rate_cost: Number(form.amount),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", personId);
+    }
+
     setSaving(false);
     setEditing(false);
     setRangeAnchor(null);
     await load();
+  };
+
+  const handleSaveWithGuard = async () => {
+    const freq: CompFrequency =
+      form.spanKind === "one_off"
+        ? "one_off"
+        : form.frequency === "one_off"
+          ? "monthly"
+          : form.frequency;
+    if (prefersProjectLink(form.comp_model, freq) && !form.project_id) {
+      const ok = confirm(
+        "Hourly / per-project compensation usually links to a project for cost tracking. Save without a project?"
+      );
+      if (!ok) return;
+    }
+    await handleSave();
   };
 
   const handleDelete = async (id: string) => {
@@ -715,6 +750,24 @@ export function PersonCompensationPanel({ personId }: Props) {
               </label>
             ) : null}
 
+            <ProjectLinkSelect
+              className="sm:col-span-2"
+              value={form.project_id}
+              onChange={(project_id) => setForm((f) => ({ ...f, project_id }))}
+              required={prefersProjectLink(
+                form.comp_model,
+                form.spanKind === "one_off" ? "one_off" : form.frequency
+              )}
+              hint={
+                prefersProjectLink(
+                  form.comp_model,
+                  form.spanKind === "one_off" ? "one_off" : form.frequency
+                )
+                  ? "Recommended for hourly invoice and per-project pay — links this fee to project cost."
+                  : "Optionally attribute this compensation to a project."
+              }
+            />
+
             <label className="block sm:col-span-2">
               <span className="text-[12px] font-semibold text-gray-700">Notes</span>
               <textarea
@@ -762,7 +815,7 @@ export function PersonCompensationPanel({ personId }: Props) {
             <button
               type="button"
               disabled={saving}
-              onClick={() => void handleSave()}
+              onClick={() => void handleSaveWithGuard()}
               className="px-3 py-1.5 bg-blue-600 text-white rounded text-[12px] font-medium hover:bg-blue-700 disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save period"}
@@ -798,6 +851,11 @@ export function PersonCompensationPanel({ personId }: Props) {
                       {span}
                       {r.frequency === "one_off" ? " · one-off" : ` · ${r.frequency}`}
                       {!r.effective_to ? " · open-ended" : ""}
+                      {r.projects?.title
+                        ? ` · ${r.projects.title}`
+                        : r.project_id
+                          ? " · linked project"
+                          : ""}
                     </p>
                   </div>
                   <button
