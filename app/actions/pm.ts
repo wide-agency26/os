@@ -254,6 +254,16 @@ export async function updatePmTaskAssignee(
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/app/projects/${task.project_id}`);
   revalidatePath("/app/home");
+
+  // Keep accounting ledger in sync with assignment changes (Phase 1 hook).
+  try {
+    const { syncProjectAssignmentCosts } = await import("@/lib/accounting/sync");
+    await syncProjectAssignmentCosts(task.project_id);
+    revalidatePath("/app/accounting");
+  } catch (e) {
+    console.error("ledger sync after assignee change failed", e);
+  }
+
   return { ok: true };
 }
 

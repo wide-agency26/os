@@ -17,11 +17,13 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
     client_id: "",
     project_type_id: "",
     status: "running",
+    stage: "signed",
     priority: "Medium",
     department: "",
     expected_start_date: "",
     expected_end_date: "",
     estimated_cost: "",
+    deal_value: "",
     scope: "",
   });
   const [loading, setLoading] = useState(true);
@@ -59,11 +61,14 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
           client_id: project.client_id || "",
           project_type_id: project.project_type_id || "",
           status: project.status || "running",
+          stage: project.stage || "signed",
           priority: project.priority || "Medium",
           department: project.department || "",
           expected_start_date: project.expected_start_date || "",
           expected_end_date: project.expected_end_date || "",
           estimated_cost: project.estimated_cost?.toString() || "",
+          deal_value:
+            project.deal_value != null ? String(project.deal_value) : "",
           scope: project.scope || "",
         });
       }
@@ -91,11 +96,13 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
         client_id: formData.client_id,
         project_type_id: formData.project_type_id || null,
         status: formData.status,
+        stage: formData.stage || "prospect",
         priority: formData.priority,
         department: formData.department,
         expected_start_date: formData.expected_start_date || null,
         expected_end_date: formData.expected_end_date || null,
         estimated_cost: formData.estimated_cost ? Number(formData.estimated_cost) : 0,
+        deal_value: formData.deal_value ? Number(formData.deal_value) : null,
         scope: formData.scope
       })
       .eq("id", projectId);
@@ -104,6 +111,12 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
     if (error) {
       alert("Error updating project: " + error.message);
     } else {
+      try {
+        const { runSyncProjectLedger } = await import("@/app/actions/accounting");
+        await runSyncProjectLedger(projectId);
+      } catch (e) {
+        console.error("ledger sync failed", e);
+      }
       router.push(`/app/projects/${projectId}`);
     }
   };
@@ -229,6 +242,24 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                 </select>
               </div>
               <div>
+                <label className="block text-[12px] font-medium text-gray-700 mb-1">
+                  Accounting stage
+                </label>
+                <select
+                  name="stage"
+                  value={formData.stage}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="prospect">Prospect (Identified P&amp;L)</option>
+                  <option value="signed">Signed (Actual P&amp;L)</option>
+                  <option value="completed">Completed (Actual P&amp;L)</option>
+                </select>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Prospect → signed migrates identified ledger rows to actual automatically.
+                </p>
+              </div>
+              <div>
                 <label className="block text-[12px] font-medium text-gray-700 mb-1">Priority</label>
                 <select 
                   name="priority" 
@@ -288,6 +319,22 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                   className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" 
                   placeholder="0.00"
                 />
+              </div>
+              <div>
+                <label className="block text-[12px] font-medium text-gray-700 mb-1">
+                  Deal value (revenue)
+                </label>
+                <input
+                  type="number"
+                  name="deal_value"
+                  value={formData.deal_value}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  placeholder="0.00"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Feeds auto revenue on Actual / Identified P&amp;L.
+                </p>
               </div>
             </div>
           </Section>

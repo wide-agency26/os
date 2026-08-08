@@ -55,8 +55,10 @@ const MODULES: ModuleItem[] = [
     founderOnly: true,
     items: [
       { name: "Dashboard", href: "/app/accounting" },
-      { name: "Sales Invoices", href: "/app/accounting/sales-invoice" },
-      { name: "Expenses", href: "/app/accounting/expense" },
+      { name: "Actual", href: "/app/accounting/actual" },
+      { name: "Identified", href: "/app/accounting/identified" },
+      { name: "Unidentified", href: "/app/accounting/unidentified" },
+      { name: "Runway", href: "/app/accounting/runway" },
     ],
   },
   {

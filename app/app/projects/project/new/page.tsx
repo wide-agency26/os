@@ -16,11 +16,13 @@ export default function NewProjectPage() {
     title: "",
     client_id: "",
     status: "running",
+    stage: "prospect",
     priority: "Medium",
     department: "",
     expected_start_date: "",
     expected_end_date: "",
     estimated_cost: "",
+    deal_value: "",
     scope: "",
     template_id: "",
     project_type_id: "",
@@ -71,11 +73,13 @@ export default function NewProjectPage() {
         client_id: formData.client_id,
         project_type_id: formData.project_type_id || null,
         status: formData.status,
+        stage: formData.stage || "prospect",
         priority: formData.priority,
         department: formData.department,
         expected_start_date: formData.expected_start_date || null,
         expected_end_date: formData.expected_end_date || null,
         estimated_cost: formData.estimated_cost ? Number(formData.estimated_cost) : 0,
+        deal_value: formData.deal_value ? Number(formData.deal_value) : null,
         scope: formData.scope
       }])
       .select("id")
@@ -85,6 +89,13 @@ export default function NewProjectPage() {
       setLoading(false);
       alert("Error creating project: " + error.message);
       return;
+    }
+
+    try {
+      const { runSyncProjectLedger } = await import("@/app/actions/accounting");
+      await runSyncProjectLedger(project.id);
+    } catch (e) {
+      console.error("ledger sync failed", e);
     }
 
     // Auto-generate Tasks if a Template is selected
@@ -219,6 +230,21 @@ export default function NewProjectPage() {
                 </select>
               </div>
               <div>
+                <label className="block text-[12px] font-medium text-gray-700 mb-1">
+                  Accounting stage
+                </label>
+                <select
+                  name="stage"
+                  value={formData.stage}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="prospect">Prospect</option>
+                  <option value="signed">Signed</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div>
                 <label className="block text-[12px] font-medium text-gray-700 mb-1">Priority</label>
                 <select 
                   name="priority" 
@@ -276,6 +302,17 @@ export default function NewProjectPage() {
                   value={formData.estimated_cost} 
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" 
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-[12px] font-medium text-gray-700 mb-1">Deal value</label>
+                <input
+                  type="number"
+                  name="deal_value"
+                  value={formData.deal_value}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   placeholder="0.00"
                 />
               </div>
