@@ -76,7 +76,10 @@ const MODULES: ModuleItem[] = [
     href: "/app/hr",
     icon: Users,
     founderOnly: true,
-    comingSoon: true,
+    items: [
+      { name: "Roster", href: "/app/hr" },
+      { name: "Add person", href: "/app/hr/new" },
+    ],
   },
   {
     name: "Clients",

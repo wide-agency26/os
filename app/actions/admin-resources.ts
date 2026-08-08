@@ -37,6 +37,7 @@ export async function addPerson(
   if (error) return { error: error.message };
 
   revalidatePath(adminPaths.resources());
+  revalidatePath("/app/hr");
   return { success: "Person added." };
 }
 
@@ -50,6 +51,7 @@ export async function deletePerson(id: string): Promise<AdminResourceState> {
   if (error) return { error: error.message };
 
   revalidatePath(adminPaths.resources());
+  revalidatePath("/app/hr");
   return { success: "Person deleted." };
 }
 
