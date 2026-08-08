@@ -22,6 +22,10 @@ export type DatasetSubcategory =
   | "linkedin_demo_follower_company_size"
   | "linkedin_demo_follower_location"
   | "instagram_organic"
+  | "instagram_profiles_reached"
+  | "instagram_content_interactions"
+  | "instagram_posts"
+  | "instagram_live"
   | "facebook_organic"
   | "youtube_organic"
   | "youtube_table"
@@ -67,6 +71,11 @@ const NAME_RULES: { test: RegExp; sub: DatasetSubcategory }[] = [
   { test: /yt[_\s-]?chart|chart\s*data|youtube.*chart/i, sub: "youtube_chart" },
   { test: /yt[_\s-]?table|table\s*data|youtube.*table/i, sub: "youtube_table" },
   { test: /youtube|yt[_\s-]/i, sub: "youtube_organic" },
+  { test: /profiles?\s*reached|accounts?\s*reached/i, sub: "instagram_profiles_reached" },
+  { test: /content\s*interactions?/i, sub: "instagram_content_interactions" },
+  { test: /live\s*videos?/i, sub: "instagram_live" },
+  { test: /(?:^|[\s_-])posts?(?:\.html|$|[\s_-])/i, sub: "instagram_posts" },
+  { test: /instagram|\big\b/i, sub: "instagram_organic" },
   { test: /li[_\s-]?all[_\s-]?posts|all[_\s-]?posts|linkedin.*posts/i, sub: "linkedin_posts" },
   {
     test: /(?:new[_\s-]?followers?|followers?).*(?:location)/i,
@@ -292,6 +301,20 @@ function refineLinkedIn(rest: string, columns?: { key: string }[]): DatasetSubca
   return detectSubcategoryFromColumns(columns) || "linkedin_metrics";
 }
 
+
+function refineInstagram(rest: string, columns?: { key: string }[]): DatasetSubcategory {
+  const blob = rest || "";
+  if (/profiles?\s*reached|accounts?\s*reached/i.test(blob)) return "instagram_profiles_reached";
+  if (/content\s*interactions?/i.test(blob)) return "instagram_content_interactions";
+  if (/live\s*videos?/i.test(blob)) return "instagram_live";
+  if (/posts?/i.test(blob)) return "instagram_posts";
+  const keys = new Set((columns || []).map((c) => c.key.replace(/[^a-z0-9]/gi, "").toLowerCase()));
+  if (keys.has("caption") || keys.has("thumbnailurl") || keys.has("createdat")) return "instagram_posts";
+  if (keys.has("contentinteractions") || keys.has("postinteractions")) return "instagram_content_interactions";
+  if (keys.has("accountsreached") || keys.has("followerspct")) return "instagram_profiles_reached";
+  return "instagram_organic";
+}
+
 function refineYouTube(rest: string, columns?: { key: string }[]): DatasetSubcategory {
   if (/chart/i.test(rest)) return "youtube_chart";
   if (/table/i.test(rest)) return "youtube_table";
@@ -331,7 +354,7 @@ export function detectSubcategory(
     return detectSubcategoryFromName(rest) || detectSubcategoryFromColumns(columns) || "meta_ads";
   }
   if (kind === "seo") return refineGsc(rest || name, columns);
-  if (kind === "instagram") return "instagram_organic";
+  if (kind === "instagram") return refineInstagram(rest || name, columns);
   if (kind === "facebook") return "facebook_organic";
 
   return (
@@ -361,6 +384,10 @@ export function subcategoryLabel(sub: string | null | undefined): string {
     linkedin_demo_follower_company_size: "Li · New Followers · Company size",
     linkedin_demo_follower_location: "Li · New Followers · Location",
     instagram_organic: "Instagram Organic",
+    instagram_profiles_reached: "IG · Profiles Reached",
+    instagram_content_interactions: "IG · Content Interactions",
+    instagram_posts: "IG · Posts",
+    instagram_live: "IG · Live videos",
     facebook_organic: "Facebook Organic",
     youtube_organic: "YouTube Organic",
     youtube_table: "YouTube · Table data",
@@ -380,7 +407,7 @@ export function subcategoryLabel(sub: string | null | undefined): string {
 
 export function suggestedUploadCategory(sub: DatasetSubcategory): string {
   if (sub.startsWith("linkedin_") && sub !== "linkedin_ads") return "Social";
-  if (sub.startsWith("youtube") || sub === "instagram_organic" || sub === "facebook_organic")
+  if (sub.startsWith("youtube") || sub.startsWith("instagram") || sub === "facebook_organic")
     return "Social";
   if (sub === "meta_ads" || sub === "google_ads" || sub === "linkedin_ads") return "Ads";
   if (sub === "ga4") return "Website";
@@ -414,4 +441,8 @@ export function isGoogleAdsSub(sub: string | null | undefined): boolean {
 
 export function isLinkedInAdsSub(sub: string | null | undefined): boolean {
   return sub === "linkedin_ads";
+}
+
+export function isInstagramOrganicSub(sub: string | null | undefined): boolean {
+  return !!sub && (sub === "instagram_organic" || sub.startsWith("instagram_"));
 }

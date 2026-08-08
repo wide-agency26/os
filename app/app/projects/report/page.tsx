@@ -521,7 +521,7 @@ function CentralReportHub() {
       case "Ads":
         return "Upload a Meta Ads CSV in the Data Hub under category Ads.";
       case "Social":
-        return "Upload LinkedIn (or other organic) CSVs / Excel in the Data Hub under Social.";
+        return "Upload LinkedIn / YouTube CSVs or Instagram Meta HTML (Profiles Reached, Posts) in the Data Hub under Social.";
       case "Website":
         return "Upload a GA4 CSV in the Data Hub under category Website.";
       case "SEO":

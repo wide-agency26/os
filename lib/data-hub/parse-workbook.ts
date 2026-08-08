@@ -1,10 +1,14 @@
 /**
- * Parse CSV / TSV / XLS / XLSX into sheet payloads for Data Hub import.
- * Handles Google Ads preamble, LinkedIn UTF-16 TSV + metadata rows.
+ * Parse CSV / TSV / XLS / XLSX / Instagram HTML into sheet payloads for Data Hub import.
+ * Handles Google Ads preamble, LinkedIn UTF-16 TSV + metadata rows, Meta IG HTML dumps.
  */
 
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
+import {
+  isInstagramHtmlFilename,
+  parseInstagramHtml,
+} from "@/lib/data-hub/parse-instagram-html";
 
 export interface ParsedSheet {
   name: string;
@@ -150,6 +154,17 @@ export async function parseUploadFile(file: File): Promise<ParsedSheet[]> {
   const name = file.name;
   const lower = name.toLowerCase();
 
+  if (isInstagramHtmlFilename(name) || lower.endsWith(".html") || lower.endsWith(".htm")) {
+    const html = await readFileText(file);
+    const sheet = await parseInstagramHtml(name, html);
+    if (!sheet.rows.length) {
+      throw new Error(
+        "HTML file produced no extractable metrics. Use Instagram Meta HTML exports (Profiles Reached, Content Interactions, Posts)."
+      );
+    }
+    return [sheet];
+  }
+
   if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
     const buf = await file.arrayBuffer();
     const workbook = XLSX.read(buf, { type: "array", cellDates: true });
@@ -193,5 +208,5 @@ export async function parseUploadFile(file: File): Promise<ParsedSheet[]> {
 }
 
 export function isAcceptedUploadName(filename: string): boolean {
-  return /\.(csv|tsv|txt|xlsx|xls)$/i.test(filename);
+  return /\.(csv|tsv|txt|xlsx|xls|html|htm)$/i.test(filename);
 }

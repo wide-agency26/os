@@ -304,13 +304,13 @@ function DataHubInner() {
     setActiveSheetId(null);
 
     if (!isAcceptedUploadName(file.name)) {
-      setError("Please upload a CSV, TSV, XLS, or XLSX file.");
+      setError("Please upload a CSV, TSV, XLS, XLSX, or HTML file.");
       return;
     }
 
     try {
       const sheets = await parseUploadFile(file);
-      const baseName = file.name.replace(/\.(csv|tsv|txt|xlsx|xls)$/i, "");
+      const baseName = file.name.replace(/\.(csv|tsv|txt|xlsx|xls|html|htm)$/i, "");
 
       const pending: PendingSheet[] = sheets.map((sheet, idx) => {
         const detectionResult = detectColumns(sheet.rows);
@@ -358,7 +358,7 @@ function DataHubInner() {
       if (file && isAcceptedUploadName(file.name)) {
         void processFile(file);
       } else {
-        setError("Please drop a CSV, TSV, XLS, or XLSX file.");
+        setError("Please drop a CSV, TSV, XLS, XLSX, or HTML file.");
       }
     },
     [processFile]
@@ -777,7 +777,7 @@ function DataHubInner() {
           >
             <input
               type="file"
-              accept=".csv,.tsv,.txt,.xlsx,.xls"
+              accept=".csv,.tsv,.txt,.xlsx,.xls,.html,.htm"
               ref={fileInputRef}
               onChange={handleFileSelect}
               className="hidden"
@@ -787,12 +787,13 @@ function DataHubInner() {
                 <Upload className="text-blue-600" size={24} />
               </div>
               <p className="text-[15px] font-semibold text-gray-800 mb-1">
-                Drop CSV or Excel here, or click to browse
+                Drop CSV, Excel, or HTML here, or click to browse
               </p>
               <p className="text-[12px] text-gray-500 max-w-md mx-auto">
                 Name sheets with prefixes: <span className="font-medium">Li -</span>,{" "}
                 <span className="font-medium">YT -</span>,{" "}
-                <span className="font-medium">Web -</span> — then review each tab before import
+                <span className="font-medium">Web -</span> — or upload Instagram Meta HTML
+                (Profiles Reached, Posts) for Social → Instagram
               </p>
             </div>
           </div>
@@ -1320,6 +1321,10 @@ function DataHubInner() {
                       "gsc_devices",
                       "gsc_search_appearance",
                       "instagram_organic",
+                      "instagram_profiles_reached",
+                      "instagram_content_interactions",
+                      "instagram_posts",
+                      "instagram_live",
                       "facebook_organic",
                     ] as DatasetSubcategory[]
                   ).map((sub) => (

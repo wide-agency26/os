@@ -57,10 +57,15 @@ import {
 } from "@/lib/reports/linkedin-ads";
 import { availableLiMonths, buildLinkedInBundle } from "@/lib/reports/linkedin-organic";
 import { availableYtMonths, buildYouTubeBundle } from "@/lib/reports/youtube-organic";
+import {
+  availableIgMonths,
+  buildInstagramBundle,
+} from "@/lib/reports/instagram-organic";
 import { availableGscMonths, buildGscBundle } from "@/lib/reports/gsc";
 import {
   pickLinkedInPayloads,
   pickYouTubePayloads,
+  pickInstagramPayloads,
   pickGscPayloads,
 } from "@/lib/reports/aggregation";
 import {
@@ -192,8 +197,9 @@ export function GeneralReportView({
 
     const liOrg = availableLiMonths(buildLinkedInBundle(pickLinkedInPayloads(datasets)));
     const yt = availableYtMonths(buildYouTubeBundle(pickYouTubePayloads(datasets)));
+    const ig = availableIgMonths(buildInstagramBundle(pickInstagramPayloads(datasets)));
     const gsc = availableGscMonths(buildGscBundle(pickGscPayloads(datasets)));
-    return mergeMonthOptions(metaMs, gMs, liAdsMs, webMs, liOrg, yt, gsc);
+    return mergeMonthOptions(metaMs, gMs, liAdsMs, webMs, liOrg, yt, ig, gsc);
   }, [datasets]);
 
   const funnel = useMemo(

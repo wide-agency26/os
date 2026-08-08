@@ -19,6 +19,9 @@ export type FunnelStreamId =
   | "gsc_impressions"
   | "gsc_clicks"
   | "social_impressions"
+  | "social_engagements"
+  | "ig_profile_visits"
+  | "ig_external_link_taps"
   | "youtube_views"
   | "ga4_sessions"
   | "ad_spend";
@@ -63,9 +66,21 @@ export const FUNNEL_STREAM_OPTIONS: FunnelStreamOption[] = [
   },
   {
     id: "social_impressions",
-    label: "Organic Social Impressions",
+    label: "Organic Social Reach / Impressions",
     stage: "awareness",
-    description: "LinkedIn / YouTube organic reach footprint",
+    description: "LinkedIn + YouTube + Instagram organic footprint",
+  },
+  {
+    id: "social_engagements",
+    label: "Organic Social Engagements",
+    stage: "consideration",
+    description: "LinkedIn interactions + Instagram content interactions",
+  },
+  {
+    id: "ig_profile_visits",
+    label: "Instagram Profile Visits",
+    stage: "consideration",
+    description: "Brand interest from Instagram organic",
   },
   {
     id: "ga4_sessions",
@@ -122,6 +137,12 @@ export const FUNNEL_STREAM_OPTIONS: FunnelStreamOption[] = [
     description: "LinkedIn conversion proxy",
   },
   {
+    id: "ig_external_link_taps",
+    label: "Instagram External Link Taps",
+    stage: "conversion",
+    description: "High-intent outbound taps from Instagram bio / posts",
+  },
+  {
     id: "ad_spend",
     label: "Total Ad Spend",
     stage: "spend",
@@ -156,13 +177,15 @@ export const DEFAULT_FUNNEL_CONFIG: ProjectFunnelConfig = {
     "linkedin_ads_clicks",
     "gsc_clicks",
     "youtube_views",
+    "social_engagements",
+    "ig_profile_visits",
   ],
   conversionPrimary: [
     "meta_conversions",
     "google_conversions",
     "linkedin_ads_conversions",
   ],
-  conversionSecondary: [],
+  conversionSecondary: ["ig_external_link_taps"],
   loyaltyEnabled: false,
   advocacyEnabled: false,
 };

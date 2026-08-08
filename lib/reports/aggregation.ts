@@ -56,6 +56,14 @@ import {
   type DatasetPayload as YtDatasetPayload,
 } from "@/lib/reports/youtube-organic";
 import {
+  buildInstagramBundle,
+  computeIgHeadline,
+  hasInstagramData,
+  type IgBundle,
+  type IgHeadline,
+  type DatasetPayload as IgDatasetPayload,
+} from "@/lib/reports/instagram-organic";
+import {
   normalizeRows,
   computeHeadline,
   filterByMonths,
@@ -75,6 +83,7 @@ import {
 import {
   isLinkedInOrganicSub,
   isYouTubeOrganicSub,
+  isInstagramOrganicSub,
   isMetaAdsSub,
   isGoogleAdsSub,
   isLinkedInAdsSub,
@@ -156,8 +165,18 @@ export interface SocialOverallResult {
   linkedInBundle: LinkedInBundle | null;
   youTube: YtHeadline | null;
   youTubeBundle: YouTubeBundle | null;
-  /** Combined organic reach for General / blended cards */
+  instagram: IgHeadline | null;
+  instagramBundle: IgBundle | null;
+  /** Combined organic reach (LI impressions + YT views + IG accounts reached) */
   blendedReach: number;
+  /** Combined organic impressions when available */
+  blendedImpressions: number;
+  /** Combined engagements (LI interactions + IG content interactions) */
+  blendedEngagements: number;
+  /** Outbound / high-intent taps (IG external link taps) */
+  outboundClicks: number;
+  /** Profile visits (IG) */
+  profileVisits: number;
   notice: string;
 }
 
@@ -503,6 +522,52 @@ export function pickYouTubePayloads(datasets: LoadedDataset[]): YtDatasetPayload
     }));
 }
 
+export function pickInstagramPayloads(datasets: LoadedDataset[]): IgDatasetPayload[] {
+  return datasets
+    .filter((d) => {
+      const sub = d.subcategory || detectSubcategory(d.name, d.columns);
+      return isInstagramOrganicSub(sub);
+    })
+    .map((d) => ({
+      name: d.name,
+      subcategory: d.subcategory || detectSubcategory(d.name, d.columns),
+      columns: d.columns,
+      rows: d.rows,
+    }));
+}
+
+export function buildFilteredInstagramBundle(
+  datasets: LoadedDataset[],
+  opts: PeriodOpts
+): IgBundle {
+  const bundle = buildInstagramBundle(pickInstagramPayloads(datasets));
+  // Meta HTML is a period snapshot; optionally filter posts by creation month/range.
+  if (opts.mode === "months" && opts.months.length) {
+    const set = new Set(opts.months);
+    return {
+      ...bundle,
+      posts: bundle.posts.filter((p) => {
+        if (!p.createdAt) return true;
+        const key = `${p.createdAt.getFullYear()}-${String(p.createdAt.getMonth() + 1).padStart(2, "0")}`;
+        return set.has(key);
+      }),
+    };
+  }
+  if (opts.mode === "custom" && opts.customStart && opts.customEnd) {
+    const a = new Date(opts.customStart + "T00:00:00").getTime();
+    const b = new Date(opts.customEnd + "T23:59:59").getTime();
+    return {
+      ...bundle,
+      posts: bundle.posts.filter((p) => {
+        if (!p.createdAt) return true;
+        const t = p.createdAt.getTime();
+        return t >= a && t <= b;
+      }),
+    };
+  }
+  return bundle;
+}
+
 export function buildFilteredLinkedInBundle(
   datasets: LoadedDataset[],
   opts: PeriodOpts
@@ -562,6 +627,7 @@ export function computeSocialOverall(
 ): SocialOverallResult {
   const liBundle = buildFilteredLinkedInBundle(datasets, opts);
   const ytBundle = buildFilteredYouTubeBundle(datasets, opts);
+  const igBundle = buildFilteredInstagramBundle(datasets, opts);
   const channels: ActiveChannelTag[] = [];
 
   if (hasLinkedInData(liBundle)) {
@@ -577,6 +643,11 @@ export function computeSocialOverall(
     channels.push(tagChannel("youtube", "YouTube Organic", srcName));
   }
 
+  if (hasInstagramData(igBundle)) {
+    const srcName = igBundle.sources[0]?.name || "Instagram Organic";
+    channels.push(tagChannel("instagram", "Instagram Organic", srcName));
+  }
+
   if (!channels.length) {
     return {
       mode: "empty",
@@ -585,15 +656,34 @@ export function computeSocialOverall(
       linkedInBundle: null,
       youTube: null,
       youTubeBundle: null,
+      instagram: null,
+      instagramBundle: null,
       blendedReach: 0,
+      blendedImpressions: 0,
+      blendedEngagements: 0,
+      outboundClicks: 0,
+      profileVisits: 0,
       notice:
-        "No organic social datasets found. Upload LinkedIn (Li - …) or YouTube (YT - …) sheets under Social.",
+        "No organic social datasets found. Upload LinkedIn (Li - …), YouTube (YT - …), or Instagram HTML (Profiles Reached / Posts) under Social.",
     };
   }
 
   const linkedIn = hasLinkedInData(liBundle) ? computeLiHeadline(liBundle) : null;
   const youTube = hasYouTubeData(ytBundle) ? computeYtHeadline(ytBundle) : null;
-  const blendedReach = (linkedIn?.impressions || 0) + (youTube?.views || 0);
+  const instagram = hasInstagramData(igBundle) ? computeIgHeadline(igBundle) : null;
+
+  const blendedReach =
+    (linkedIn?.impressions || 0) +
+    (youTube?.views || 0) +
+    (instagram?.accountsReached || 0);
+  const blendedImpressions =
+    (linkedIn?.impressions || 0) +
+    (youTube?.impressions || 0) +
+    (instagram?.impressions || 0);
+  const blendedEngagements =
+    (linkedIn?.interactions || 0) + (instagram?.contentInteractions || 0);
+  const outboundClicks = instagram?.externalLinkTaps || 0;
+  const profileVisits = instagram?.profileVisits || 0;
   const mode = channels.length === 1 ? "single" : "blended";
 
   return {
@@ -603,7 +693,13 @@ export function computeSocialOverall(
     linkedInBundle: hasLinkedInData(liBundle) ? liBundle : null,
     youTube,
     youTubeBundle: hasYouTubeData(ytBundle) ? ytBundle : null,
+    instagram,
+    instagramBundle: hasInstagramData(igBundle) ? igBundle : null,
     blendedReach,
+    blendedImpressions,
+    blendedEngagements,
+    outboundClicks,
+    profileVisits,
     notice:
       mode === "single"
         ? `1 Active Channel Ingested: ${channels[0].label}`
@@ -664,7 +760,11 @@ export function computeGeneralFunnel(
   const liNet = ads.networks.find((n) => n.id === "linkedin");
 
   const socialReach = social.blendedReach || 0;
+  const socialImpressions = social.blendedImpressions || socialReach;
   const ytViews = social.youTube?.views || 0;
+  const socialEngagements = social.blendedEngagements || 0;
+  const igProfileVisits = social.profileVisits || 0;
+  const igLinkTaps = social.outboundClicks || 0;
   const paidImpressions = ads.totals?.impressions || 0;
   const paidClicks = ads.totals?.clicks || 0;
   const spendParts = ads.totals?.spendByCurrency || [];
@@ -706,7 +806,10 @@ export function computeGeneralFunnel(
     linkedin_ads_conversions: liNet?.conversions || 0,
     gsc_impressions: seoImpressions,
     gsc_clicks: seoClicks,
-    social_impressions: socialReach,
+    social_impressions: socialImpressions || socialReach,
+    social_engagements: socialEngagements,
+    ig_profile_visits: igProfileVisits,
+    ig_external_link_taps: igLinkTaps,
     youtube_views: ytViews,
     ga4_sessions: webSessions,
     ad_spend: adSpend,
@@ -775,8 +878,11 @@ export function computeGeneralFunnel(
     {
       channel: "Social Organic",
       awareness: streamValues.social_impressions || 0,
-      consideration: streamValues.youtube_views || 0,
-      conversion: 0,
+      consideration:
+        (streamValues.youtube_views || 0) +
+        (streamValues.social_engagements || 0) +
+        (streamValues.ig_profile_visits || 0),
+      conversion: streamValues.ig_external_link_taps || 0,
     },
     {
       channel: "Direct Web",

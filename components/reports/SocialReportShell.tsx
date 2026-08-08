@@ -11,6 +11,7 @@ import {
 import { ReportSubTabs, type ReportSubTab } from "@/components/reports/ReportSubTabs";
 import { LinkedInOrganicDashboard } from "@/components/reports/LinkedInOrganicDashboard";
 import { YouTubeOrganicDashboard } from "@/components/reports/YouTubeOrganicDashboard";
+import { InstagramOrganicDashboard } from "@/components/reports/InstagramOrganicDashboard";
 import {
   DateRangeControls,
   useDateRangeFilter,
@@ -21,8 +22,10 @@ import {
   computeSocialOverall,
   buildFilteredLinkedInBundle,
   buildFilteredYouTubeBundle,
+  buildFilteredInstagramBundle,
   pickLinkedInPayloads,
   pickYouTubePayloads,
+  pickInstagramPayloads,
 } from "@/lib/reports/aggregation";
 import {
   availableLiMonths,
@@ -30,8 +33,14 @@ import {
 } from "@/lib/reports/linkedin-organic";
 import { availableYtMonths, buildYouTubeBundle } from "@/lib/reports/youtube-organic";
 import {
+  availableIgMonths,
+  buildInstagramBundle,
+  hasInstagramData,
+} from "@/lib/reports/instagram-organic";
+import {
   isLinkedInOrganicSub,
   isYouTubeOrganicSub,
+  isInstagramOrganicSub,
   detectSubcategory,
 } from "@/lib/data-hub/subcategory";
 import { SocialOverallDashboard } from "@/components/reports/SocialOverallDashboard";
@@ -67,7 +76,8 @@ function SocialOverallBlended({ datasets }: { datasets: LoadedDataset[] }) {
   const months = useMemo(() => {
     const li = availableLiMonths(buildLinkedInBundle(pickLinkedInPayloads(datasets)));
     const yt = availableYtMonths(buildYouTubeBundle(pickYouTubePayloads(datasets)));
-    return mergeMonthOptions(li, yt);
+    const ig = availableIgMonths(buildInstagramBundle(pickInstagramPayloads(datasets)));
+    return mergeMonthOptions(li, yt, ig);
   }, [datasets]);
 
   const result = useMemo(
@@ -101,6 +111,21 @@ function SocialOverallBlended({ datasets }: { datasets: LoadedDataset[] }) {
         </div>
       );
     }
+    if (result.channels[0]?.id === "instagram" && result.instagramBundle) {
+      return (
+        <div className="space-y-4">
+          <NoticeBanner text={result.notice} />
+          <InstagramOrganicDashboard
+            bundle={result.instagramBundle}
+            datasetMeta={{
+              name: result.channels[0]?.datasetName,
+              rowCount: result.instagramBundle.sources.reduce((s, x) => s + x.rowCount, 0),
+            }}
+            notice="Showing the single active organic channel as Social Overall."
+          />
+        </div>
+      );
+    }
     if (result.linkedInBundle) {
       return (
         <div className="space-y-4">
@@ -118,8 +143,6 @@ function SocialOverallBlended({ datasets }: { datasets: LoadedDataset[] }) {
     }
   }
 
-  const li = result.linkedIn;
-  const yt = result.youTube;
   return (
     <div className="space-y-4">
       <DateRangeControls months={months} state={dateState} accent="#4f46e5" />
@@ -135,6 +158,11 @@ export function SocialReportShell({
 }: SocialReportShellProps) {
   const [tab, setTab] = useState<SocialTab>("overall");
 
+  const igHasData = useMemo(() => {
+    const bundle = buildInstagramBundle(pickInstagramPayloads(datasets));
+    return hasInstagramData(bundle);
+  }, [datasets]);
+
   const tabs: ReportSubTab[] = [
     {
       id: "overall",
@@ -148,7 +176,7 @@ export function SocialReportShell({
       label: "Instagram",
       hint: "Organic profile & posts",
       icon: Images,
-      enabled: false,
+      enabled: true,
     },
     {
       id: "facebook",
@@ -187,6 +215,17 @@ export function SocialReportShell({
   const ytBundle = useMemo(
     () =>
       buildFilteredYouTubeBundle(datasets, {
+        mode: "all",
+        months: [],
+        customStart: "",
+        customEnd: "",
+      }),
+    [datasets]
+  );
+
+  const igBundle = useMemo(
+    () =>
+      buildFilteredInstagramBundle(datasets, {
         mode: "all",
         months: [],
         customStart: "",
@@ -237,6 +276,23 @@ export function SocialReportShell({
       : undefined;
   }, [datasets]);
 
+  const igMeta = useMemo(() => {
+    const igDs = datasets.filter((d) =>
+      isInstagramOrganicSub(d.subcategory || detectSubcategory(d.name, d.columns))
+    );
+    const first = igDs[0];
+    return first
+      ? {
+          name:
+            igDs.length > 1
+              ? `Instagram bundle (${igDs.length} files)`
+              : first.name,
+          createdAt: first.createdAt,
+          rowCount: igDs.reduce((s, d) => s + d.rowCount, 0),
+        }
+      : undefined;
+  }, [datasets]);
+
   return (
     <div className="space-y-5">
       <ReportSubTabs
@@ -247,6 +303,18 @@ export function SocialReportShell({
       />
 
       {tab === "overall" && <SocialOverallBlended datasets={datasets} />}
+
+      {tab === "instagram" && (
+        <InstagramOrganicDashboard
+          bundle={igBundle}
+          datasetMeta={
+            igMeta ||
+            (igHasData
+              ? undefined
+              : { name: "Instagram Organic", rowCount: 0 })
+          }
+        />
+      )}
 
       {tab === "linkedin" && (
         <LinkedInOrganicDashboard

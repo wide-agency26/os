@@ -16,16 +16,16 @@ import {
 } from "recharts";
 import {
   Eye,
-  Clapperboard,
   UserPlus,
-  Percent,
   MousePointerClick,
   Activity,
+  Images,
+  ExternalLink,
 } from "lucide-react";
 import type { SocialOverallResult } from "@/lib/reports/aggregation";
 import { formatCompact } from "@/lib/reports/linkedin-organic";
 
-const COLORS = ["#0a66c2", "#ff0000", "#6366f1", "#10b981"];
+const COLORS = ["#0a66c2", "#ff0000", "#E1306C", "#6366f1", "#10b981"];
 
 interface SocialOverallDashboardProps {
   result: SocialOverallResult;
@@ -34,6 +34,7 @@ interface SocialOverallDashboardProps {
 export function SocialOverallDashboard({ result }: SocialOverallDashboardProps) {
   const li = result.linkedIn;
   const yt = result.youTube;
+  const ig = result.instagram;
   const reach = result.blendedReach || 0;
 
   const reachShare = useMemo(() => {
@@ -44,8 +45,11 @@ export function SocialOverallDashboard({ result }: SocialOverallDashboardProps) 
     if (yt && (yt.views || 0) > 0) {
       rows.push({ name: "YouTube views", value: yt.views });
     }
+    if (ig && (ig.accountsReached || 0) > 0) {
+      rows.push({ name: "Instagram accounts reached", value: ig.accountsReached });
+    }
     return rows;
-  }, [li, yt]);
+  }, [li, yt, ig]);
 
   const channelRows = useMemo(() => {
     const rows: {
@@ -79,8 +83,22 @@ export function SocialOverallDashboard({ result }: SocialOverallDashboardProps) 
         reachShare: reach > 0 ? (yt.views / reach) * 100 : 0,
       });
     }
+    if (ig) {
+      rows.push({
+        id: "instagram",
+        label: "Instagram Organic",
+        reach: ig.accountsReached,
+        engagement: ig.contentInteractions,
+        growth: ig.profileVisits,
+        engRate:
+          ig.accountsReached > 0
+            ? (ig.contentInteractions / ig.accountsReached) * 100
+            : 0,
+        reachShare: reach > 0 ? (ig.accountsReached / reach) * 100 : 0,
+      });
+    }
     return rows;
-  }, [li, yt, reach]);
+  }, [li, yt, ig, reach]);
 
   const growthBars = useMemo(
     () =>
@@ -98,29 +116,29 @@ export function SocialOverallDashboard({ result }: SocialOverallDashboardProps) 
         {[
           { label: "Total organic reach", value: formatCompact(reach), icon: Eye },
           {
-            label: "LinkedIn impressions",
-            value: formatCompact(li?.impressions || 0),
+            label: "Organic impressions",
+            value: formatCompact(result.blendedImpressions || 0),
             icon: Activity,
           },
           {
-            label: "YouTube views",
-            value: formatCompact(yt?.views || 0),
-            icon: Clapperboard,
+            label: "Instagram reached",
+            value: formatCompact(ig?.accountsReached || 0),
+            icon: Images,
           },
           {
-            label: "Followers / subs",
-            value: formatCompact((li?.newFollowers || 0) + (yt?.subscribers || 0)),
-            icon: UserPlus,
-          },
-          {
-            label: "LinkedIn engagements",
-            value: formatCompact(li?.interactions || 0),
+            label: "Social engagements",
+            value: formatCompact(result.blendedEngagements || 0),
             icon: MousePointerClick,
           },
           {
-            label: "LI eng. rate",
-            value: `${(li?.engagementRate || 0).toFixed(2)}%`,
-            icon: Percent,
+            label: "Profile visits",
+            value: formatCompact(result.profileVisits || 0),
+            icon: UserPlus,
+          },
+          {
+            label: "Outbound link taps",
+            value: formatCompact(result.outboundClicks || 0),
+            icon: ExternalLink,
           },
         ].map((c) => {
           const Icon = c.icon;
@@ -147,7 +165,7 @@ export function SocialOverallDashboard({ result }: SocialOverallDashboardProps) 
         <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
           <h3 className="text-[14px] font-bold text-gray-900 mb-1">Reach by channel</h3>
           <p className="text-[12px] text-gray-500 mb-4">
-            Share of blended organic reach (LinkedIn impressions + YouTube views).
+            Share of blended organic reach (LinkedIn + YouTube + Instagram).
           </p>
           {reachShare.length === 0 ? (
             <p className="text-[13px] text-gray-400 text-center py-16">No reach data yet</p>
@@ -178,7 +196,7 @@ export function SocialOverallDashboard({ result }: SocialOverallDashboardProps) 
         <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
           <h3 className="text-[14px] font-bold text-gray-900 mb-1">Growth & reach</h3>
           <p className="text-[12px] text-gray-500 mb-4">
-            New followers/subscribers and reach by channel.
+            Followers/subs/profile visits and reach by channel.
           </p>
           {growthBars.length === 0 ? (
             <p className="text-[13px] text-gray-400 text-center py-16">No channel data yet</p>
@@ -191,7 +209,12 @@ export function SocialOverallDashboard({ result }: SocialOverallDashboardProps) 
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v) => formatCompact(Number(v ?? 0))} />
                   <Legend />
-                  <Bar dataKey="growth" name="New followers / subs" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <Bar
+                    dataKey="growth"
+                    name="Growth / profile visits"
+                    fill="#6366f1"
+                    radius={[4, 4, 0, 0]}
+                  />
                   <Bar dataKey="reach" name="Reach" fill="#0a66c2" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -210,8 +233,8 @@ export function SocialOverallDashboard({ result }: SocialOverallDashboardProps) 
               <tr>
                 <th className="text-left px-4 py-2.5">Channel</th>
                 <th className="text-right px-4 py-2.5">Reach</th>
-                <th className="text-right px-4 py-2.5">Engagements / YT impr.</th>
-                <th className="text-right px-4 py-2.5">Growth</th>
+                <th className="text-right px-4 py-2.5">Engagements</th>
+                <th className="text-right px-4 py-2.5">Growth / visits</th>
                 <th className="text-right px-4 py-2.5">Eng. rate / CTR</th>
                 <th className="text-right px-4 py-2.5">% Reach share</th>
               </tr>
