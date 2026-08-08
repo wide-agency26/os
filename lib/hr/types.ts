@@ -13,6 +13,18 @@ export type CompModel =
 
 export type CompFrequency = "monthly" | "per_project" | "per_hour" | "one_off" | "n/a";
 
+export type OverheadFrequency = "monthly" | "quarterly" | "yearly" | "one_off" | "n/a";
+
+export type OverheadCostCategory =
+  | "desk"
+  | "office_rent_share"
+  | "office_utilities"
+  | "equipment"
+  | "software_seat"
+  | "insurance"
+  | "travel_allowance"
+  | "other";
+
 export type RaciCode = "responsible" | "accountable" | "consulted" | "informed";
 
 export type PipelineStage = "met" | "testing" | "onboarding" | "converted" | "passed";
@@ -118,6 +130,43 @@ export const COMP_FREQUENCIES: { value: CompFrequency; label: string }[] = [
   { value: "one_off", label: "One-off" },
   { value: "n/a", label: "N/A" },
 ];
+
+export const OVERHEAD_CATEGORIES: { value: OverheadCostCategory; label: string }[] = [
+  { value: "desk", label: "Desk / seat" },
+  { value: "office_rent_share", label: "Office rent share" },
+  { value: "office_utilities", label: "Office utilities / bills" },
+  { value: "equipment", label: "Equipment" },
+  { value: "software_seat", label: "Software seat" },
+  { value: "insurance", label: "Insurance" },
+  { value: "travel_allowance", label: "Travel allowance" },
+  { value: "other", label: "Other" },
+];
+
+export const OVERHEAD_FREQUENCIES: { value: OverheadFrequency; label: string }[] = [
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "yearly", label: "Yearly" },
+  { value: "one_off", label: "One-off" },
+  { value: "n/a", label: "N/A" },
+];
+
+/** Normalize overhead amount to a monthly run-rate for rollups. */
+export function monthlyOverheadAmount(
+  amount: number | null | undefined,
+  frequency: OverheadFrequency | string
+): number {
+  const n = Number(amount || 0);
+  switch (frequency) {
+    case "monthly":
+      return n;
+    case "quarterly":
+      return n / 3;
+    case "yearly":
+      return n / 12;
+    default:
+      return 0;
+  }
+}
 
 export const PIPELINE_STAGES: { value: PipelineStage; label: string }[] = [
   { value: "met", label: "Met" },

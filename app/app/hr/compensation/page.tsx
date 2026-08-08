@@ -30,6 +30,17 @@ function accountingCost(row: CompRow): number | null {
 
 export default function HrCompensationPage() {
   const [rows, setRows] = useState<CompRow[]>([]);
+  const [loaded, setLoaded] = useState<
+    {
+      person_id: string;
+      full_name: string;
+      engagement_type_label: string | null;
+      monthly_compensation: number;
+      monthly_overhead: number;
+      monthly_fully_loaded: number;
+      currency: string | null;
+    }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [modelFilter, setModelFilter] = useState<CompModel | "">("");
 
@@ -54,13 +65,20 @@ export default function HrCompensationPage() {
       query = query.eq("comp_model", modelFilter);
     }
 
-    const { data, error } = await query;
+    const [{ data, error }, { data: fl }] = await Promise.all([
+      query,
+      (supabase as any)
+        .from("hr_person_fully_loaded_cost")
+        .select("*")
+        .order("full_name"),
+    ]);
     if (error) {
       console.error(error);
       setRows([]);
     } else {
       setRows((data || []) as CompRow[]);
     }
+    setLoaded(fl || []);
     setLoading(false);
   }, [modelFilter]);
 
@@ -89,9 +107,9 @@ export default function HrCompensationPage() {
     <Workspace wide>
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Compensation</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Compensation & loaded cost</h2>
           <p className="text-[13px] text-gray-500 mt-1">
-            Active compensation records across the roster
+            Pay records plus person overhead (desk, office, seats) for fully-loaded cost
           </p>
         </div>
         <label className="flex items-center gap-2 text-[13px] text-gray-700">
@@ -127,6 +145,59 @@ export default function HrCompensationPage() {
               </p>
             </div>
           ))}
+        </div>
+      ) : null}
+
+      {loaded.length > 0 ? (
+        <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm mb-6">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="text-[14px] font-bold text-gray-900">
+              Fully-loaded monthly (active people)
+            </h3>
+            <p className="text-[12px] text-gray-500">
+              Compensation run-rate + overhead (desk / office / seats). One-off overhead
+              excluded from monthly.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="text-left px-4 py-2.5">Person</th>
+                  <th className="text-left px-4 py-2.5">Engagement</th>
+                  <th className="text-right px-4 py-2.5">Comp / mo</th>
+                  <th className="text-right px-4 py-2.5">Overhead / mo</th>
+                  <th className="text-right px-4 py-2.5">Fully loaded</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loaded.map((r) => (
+                  <tr key={r.person_id} className="border-t border-gray-50">
+                    <td className="px-4 py-2.5">
+                      <Link
+                        href={`/app/hr/${r.person_id}`}
+                        className="font-semibold text-blue-700 hover:underline"
+                      >
+                        {r.full_name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-700">
+                      {r.engagement_type_label || "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {formatMoney(Number(r.monthly_compensation || 0), r.currency || "EUR")}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {formatMoney(Number(r.monthly_overhead || 0), r.currency || "EUR")}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900">
+                      {formatMoney(Number(r.monthly_fully_loaded || 0), r.currency || "EUR")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
 

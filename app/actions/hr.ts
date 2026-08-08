@@ -32,12 +32,17 @@ export async function getPersonDeleteImpact(personId: string) {
 
   const [
     { count: compensationRecords },
+    { count: overheadCosts },
     { count: esopAllocations },
     { count: documents },
     { count: pipelineLinks },
   ] = await Promise.all([
     (supabase as any)
       .from("compensation_records")
+      .select("id", { count: "exact", head: true })
+      .eq("person_id", personId),
+    (supabase as any)
+      .from("person_overhead_costs")
       .select("id", { count: "exact", head: true })
       .eq("person_id", personId),
     (supabase as any)
@@ -60,6 +65,7 @@ export async function getPersonDeleteImpact(personId: string) {
       openTasks,
       doneTasks,
       compensationRecords: compensationRecords || 0,
+      overheadCosts: overheadCosts || 0,
       esopAllocations: esopAllocations || 0,
       documents: documents || 0,
       pipelineLinks: pipelineLinks || 0,

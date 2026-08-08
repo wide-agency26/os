@@ -7,6 +7,7 @@ import { Workspace, Section } from "@/components/frappe-ui/Workspace";
 import { ArrowLeft, Save, Trash } from "lucide-react";
 import Link from "next/link";
 import { PersonCompensationPanel } from "@/components/hr/PersonCompensationPanel";
+import { PersonOverheadCostsPanel } from "@/components/hr/PersonOverheadCostsPanel";
 import { PersonDocumentsPanel } from "@/components/hr/PersonDocumentsPanel";
 import { OnboardingChecklist } from "@/components/hr/OnboardingChecklist";
 import { getPersonDeleteImpact } from "@/app/actions/hr";
@@ -21,7 +22,7 @@ import {
   type Skill,
 } from "@/lib/hr/types";
 
-type Tab = "profile" | "compensation" | "documents" | "esop";
+type Tab = "profile" | "compensation" | "costs" | "documents" | "esop";
 
 type EsopRow = {
   id: string;
@@ -40,6 +41,7 @@ type DocRow = {
 const TABS: { id: Tab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "compensation", label: "Compensation" },
+  { id: "costs", label: "Costs" },
   { id: "documents", label: "Documents" },
   { id: "esop", label: "ESOP" },
 ];
@@ -534,6 +536,8 @@ export default function PersonDetailPage() {
         {tab === "compensation" ? (
           <PersonCompensationPanel personId={id} />
         ) : null}
+
+        {tab === "costs" ? <PersonOverheadCostsPanel personId={id} /> : null}
 
         {tab === "documents" ? (
           <div className="space-y-6">

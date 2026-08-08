@@ -12,6 +12,7 @@ export type PersonDeleteImpact = {
   }[];
   doneTasks: number;
   compensationRecords: number;
+  overheadCosts: number;
   esopAllocations: number;
   documents: number;
   pipelineLinks: number;
@@ -40,6 +41,11 @@ export function summarizeDeleteImpact(impact: PersonDeleteImpact): string {
   if (impact.compensationRecords > 0) {
     lines.push(
       `${impact.compensationRecords} compensation record(s) will be deleted.`
+    );
+  }
+  if (impact.overheadCosts > 0) {
+    lines.push(
+      `${impact.overheadCosts} overhead cost line(s) (desk/office/etc.) will be deleted.`
     );
   }
   if (impact.esopAllocations > 0) {
