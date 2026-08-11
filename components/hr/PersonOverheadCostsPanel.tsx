@@ -19,6 +19,7 @@ import {
   type OverheadCostCategory,
   type OverheadFrequency,
 } from "@/lib/hr/types";
+import { runSyncHrAndOverheadLedger } from "@/app/actions/accounting";
 
 type OverheadRow = {
   id: string;
@@ -244,6 +245,7 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
       )
     );
     await load();
+    void runSyncHrAndOverheadLedger();
   };
 
   const handleDelete = async (id: string) => {
@@ -261,6 +263,7 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
       setEditing(false);
     }
     await load();
+    void runSyncHrAndOverheadLedger();
   };
 
   if (loading) {

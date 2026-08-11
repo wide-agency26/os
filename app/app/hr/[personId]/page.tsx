@@ -11,6 +11,7 @@ import { PersonOverheadCostsPanel } from "@/components/hr/PersonOverheadCostsPan
 import { PersonDocumentsPanel } from "@/components/hr/PersonDocumentsPanel";
 import { OnboardingChecklist } from "@/components/hr/OnboardingChecklist";
 import { getPersonDeleteImpact } from "@/app/actions/hr";
+import { runSyncHrAndOverheadLedger } from "@/app/actions/accounting";
 import { summarizeDeleteImpact } from "@/lib/hr/delete-impact";
 import {
   ROSTER_STATUSES,
@@ -265,6 +266,7 @@ export default function PersonDetailPage() {
       alert("Error deleting: " + error.message);
       return;
     }
+    void runSyncHrAndOverheadLedger();
     router.push("/app/hr/roster");
   };
 

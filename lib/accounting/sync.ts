@@ -225,11 +225,13 @@ export async function syncHrAndOverheadLedger(): Promise<{
   ok: boolean;
   error?: string;
   upserted?: number;
+  pruned?: number;
 }> {
   const supabase = (await createClient()) as Sb;
   const today = new Date().toISOString().slice(0, 10);
   const entryDate = monthStart();
   let upserted = 0;
+  const activeKeys = new Set<string>();
 
   // Compensation without project: monthly retainers / salaries as actual HR cost
   const { data: comps, error: cErr } = await supabase
@@ -244,10 +246,11 @@ export async function syncHrAndOverheadLedger(): Promise<{
   for (const c of comps || []) {
     if (c.frequency === "one_off" || c.frequency === "per_project") continue;
     if (c.comp_model === "non_monetary" || c.comp_model === "equity") continue;
-    let amount = Number(c.amount || 0);
+    const amount = Number(c.amount || 0);
     if (c.frequency === "per_hour") continue; // need hours; skip org-level hourly
     if (!amount) continue;
     const syncKey = `auto_hr:comp:${c.id}`;
+    activeKeys.add(syncKey);
     const name = (c as any).people?.full_name || "Person";
     const { error: upErr } = await upsertBySyncKey(supabase, {
       sync_key: syncKey,
@@ -280,6 +283,7 @@ export async function syncHrAndOverheadLedger(): Promise<{
     const monthly = monthlyOverheadAmount(o.amount, o.frequency);
     if (!monthly) continue;
     const syncKey = `auto_overhead:${o.id}`;
+    activeKeys.add(syncKey);
     const name = (o as any).people?.full_name || "Person";
     const { error: upErr } = await upsertBySyncKey(supabase, {
       sync_key: syncKey,
@@ -299,5 +303,23 @@ export async function syncHrAndOverheadLedger(): Promise<{
     upserted += 1;
   }
 
-  return { ok: true, upserted };
+  // Drop auto HR / overhead ledger rows whose source records were deleted or ended
+  const { data: existing, error: exErr } = await supabase
+    .from("ledger_entries")
+    .select("id, sync_key")
+    .in("source", ["auto_hr", "auto_overhead"]);
+  if (exErr) return { ok: false, error: exErr.message };
+
+  let pruned = 0;
+  for (const row of existing || []) {
+    if (!row.sync_key || activeKeys.has(row.sync_key)) continue;
+    const { error: delErr } = await supabase
+      .from("ledger_entries")
+      .delete()
+      .eq("id", row.id);
+    if (delErr) return { ok: false, error: delErr.message };
+    pruned += 1;
+  }
+
+  return { ok: true, upserted, pruned };
 }

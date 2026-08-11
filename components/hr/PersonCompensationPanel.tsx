@@ -26,6 +26,7 @@ import {
   type CompensationRecord,
   type SalaryBreakdown,
 } from "@/lib/hr/types";
+import { runSyncHrAndOverheadLedger } from "@/app/actions/accounting";
 
 type Props = { personId: string };
 
@@ -320,6 +321,8 @@ export function PersonCompensationPanel({ personId }: Props) {
     setEditing(false);
     setRangeAnchor(null);
     await load();
+    // Keep accounting Actual in sync with org-level payroll changes
+    void runSyncHrAndOverheadLedger();
   };
 
   const handleSaveWithGuard = async () => {
@@ -351,6 +354,7 @@ export function PersonCompensationPanel({ personId }: Props) {
     }
     setEditing(false);
     await load();
+    void runSyncHrAndOverheadLedger();
   };
 
   const selectionHint =
