@@ -13,12 +13,34 @@ import { parseManifest } from "@/lib/ci-builder/parser";
 import { applyImportResult } from "@/lib/ci-builder/import/apply-import-result";
 import { CI_ADDABLE_GLOSSARY } from "@/lib/ci-builder/glossary";
 import { CI_MODULES, defaultDataForSubModule, getSubModule } from "@/lib/ci-builder/modules-catalog";
-import { Settings, Share, Plus, GripVertical, CheckSquare, Square, X, AlertTriangle, Layers, Save, Check, Loader2, Trash2 } from "lucide-react";
+import { needsLegacyMigration } from "@/lib/ci-builder/migrate-legacy-sections";
+import {
+  Settings,
+  Share,
+  Plus,
+  GripVertical,
+  CheckSquare,
+  Square,
+  X,
+  AlertTriangle,
+  Layers,
+  Save,
+  Check,
+  Loader2,
+  Trash2,
+  Printer,
+  Copy,
+} from "lucide-react";
 import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
 import { ImportPanel } from "./ImportPanel";
-import { resetCiGuideline } from "@/app/actions/ci-builder";
+import {
+  resetCiGuideline,
+  migrateCiGuidelineToSubmodules,
+} from "@/app/actions/ci-builder";
 import { triggerToast, ToastContainer } from "./Toast";
+
+type AdminViewMode = "edit" | "elements" | "brand_book";
 
 function themeHasFonts(theme: any): boolean {
   if (!theme) return false;
@@ -44,10 +66,13 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const [showAddSectionDropdown, setShowAddSectionDropdown] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [reverting, setReverting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [importReport, setImportReport] = useState<any>(null);
   const [selectedUnassigned, setSelectedUnassigned] = useState<Set<string>>(new Set());
   const [dragSectionId, setDragSectionId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<AdminViewMode>("edit");
+  const [migrating, setMigrating] = useState(false);
 
   const supabase = createClient();
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -99,20 +124,36 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
       if (gl) {
         // 2. Fetch sections
-        const { data: secs, error: secErr } = await (supabase as any)
+        let { data: secs, error: secErr } = await (supabase as any)
           .from("ci_sections")
           .select("*")
           .eq("guideline_id", gl.id)
           .order("position", { ascending: true });
         if (secErr) throw secErr;
-        if (secs) setSections(secs);
 
         // 3. Fetch assets
-        const { data: asts, error: astErr } = await (supabase as any)
+        let { data: asts, error: astErr } = await (supabase as any)
           .from("ci_assets")
           .select("*")
           .eq("guideline_id", gl.id);
         if (astErr) throw astErr;
+
+        // Adapt legacy combined sections → 9×52 submodule catalog
+        if (secs && needsLegacyMigration(secs)) {
+          setMigrating(true);
+          const mig = await migrateCiGuidelineToSubmodules(projectId);
+          setMigrating(false);
+          if (!mig.ok) {
+            throw new Error(mig.error || "Failed to migrate legacy sections");
+          }
+          if (mig.migrated) {
+            secs = mig.sections || [];
+            asts = mig.assets || [];
+            triggerToast("Adapted imported sections to the new CI module structure");
+          }
+        }
+
+        if (secs) setSections(secs);
         if (asts) setAssets(asts);
       }
       
@@ -121,6 +162,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       console.error("Failed to load CI Builder data:", err);
       setLoadError(`Failed to load guideline data: ${err.message || err}`);
       setSaveStatus("error");
+      setMigrating(false);
     } finally {
       setLoading(false);
     }
@@ -337,6 +379,19 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     return Array.from(set);
   })();
 
+  const adaptLegacyIfNeeded = async () => {
+    const mig = await migrateCiGuidelineToSubmodules(projectId);
+    if (!mig.ok) {
+      triggerToast(mig.error || "Failed to adapt imported structure");
+      return;
+    }
+    if (mig.migrated) {
+      if (mig.sections) setSections(mig.sections);
+      if (mig.assets) setAssets(mig.assets);
+      triggerToast("Adapted imported sections to the new CI module structure");
+    }
+  };
+
   // Handle manifest upload with IMMEDIATE DB WRITE-THROUGH
   const handleJsonFile = async (file: File) => {
     if (!guideline) return;
@@ -373,6 +428,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         ...applied.assets,
       ]);
       setGuideline({ ...guideline, theme: applied.theme });
+      await adaptLegacyIfNeeded();
       setSaveStatus("saved");
       if (!themeHasFonts(applied.theme)) {
         triggerToast(
@@ -393,7 +449,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     }
   };
 
-  const handleFigmaImported = (result: {
+  const handleFigmaImported = async (result: {
     sections: any[];
     assets: any[];
     theme: any;
@@ -419,6 +475,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           }
         : g
     );
+    await adaptLegacyIfNeeded();
     setSaveStatus("saved");
     if (!themeHasFonts(result.theme)) {
       triggerToast(
@@ -532,48 +589,102 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
           <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex justify-between">
-            <span>Sections</span>
+            <span>Modules</span>
             {sections.length > 0 && <span className="text-gray-400">{sections.length}</span>}
           </h3>
+          {migrating && (
+            <p className="text-[11px] text-blue-600 flex items-center gap-1.5 mb-2">
+              <Loader2 className="w-3 h-3 animate-spin" /> Adapting structure…
+            </p>
+          )}
           {sections.length === 0 ? (
-            <p className="text-gray-400 text-xs italic">No sections. Import from JSON or Figma, or click + Add Section.</p>
+            <p className="text-gray-400 text-xs italic">
+              No sections. Import from JSON or Figma, or click + Add Sub-Module.
+            </p>
           ) : (
-            sections.map((sec) => (
-              <div
-                key={sec.id}
-                draggable
-                onDragStart={(e) => {
-                  setDragSectionId(sec.id || null);
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", sec.id || "");
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const fromId =
-                    e.dataTransfer.getData("text/plain") || dragSectionId;
-                  if (fromId && sec.id) reorderSections(fromId, sec.id);
-                  setDragSectionId(null);
-                }}
-                onDragEnd={() => setDragSectionId(null)}
-                className={`flex items-center gap-2 p-2 rounded hover:bg-gray-200 cursor-grab active:cursor-grabbing group ${
-                  dragSectionId === sec.id ? "opacity-50 bg-gray-200" : ""
-                }`}
-              >
-                <GripVertical className="w-3 h-3 text-gray-400 opacity-50 group-hover:opacity-100 shrink-0" />
-                <a
-                  href={`#${sec.section_type}`}
-                  className="flex-1 truncate text-gray-700"
-                  onClick={(e) => e.stopPropagation()}
-                  draggable={false}
-                >
-                  {sec.eyebrow_label || sec.section_type}
-                </a>
+            CI_MODULES.map((mod) => {
+              const modSections = sections.filter((sec) => {
+                const def = getSubModule(sec.section_type);
+                return def?.moduleId === mod.id;
+              });
+              if (modSections.length === 0) return null;
+              return (
+                <div key={mod.id} className="mb-3">
+                  <div className="px-1 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    {String(mod.index).padStart(2, "0")} · {mod.label}
+                  </div>
+                  {modSections.map((sec) => {
+                    const def = getSubModule(sec.section_type);
+                    const label =
+                      sec.eyebrow_label ||
+                      sec.headline ||
+                      def?.defaultHeadline ||
+                      sec.section_type;
+                    return (
+                      <div
+                        key={sec.id}
+                        draggable={viewMode === "edit"}
+                        onDragStart={(e) => {
+                          if (viewMode !== "edit") return;
+                          setDragSectionId(sec.id || null);
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("text/plain", sec.id || "");
+                        }}
+                        onDragOver={(e) => {
+                          if (viewMode !== "edit") return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                        }}
+                        onDrop={(e) => {
+                          if (viewMode !== "edit") return;
+                          e.preventDefault();
+                          const fromId =
+                            e.dataTransfer.getData("text/plain") || dragSectionId;
+                          if (fromId && sec.id) reorderSections(fromId, sec.id);
+                          setDragSectionId(null);
+                        }}
+                        onDragEnd={() => setDragSectionId(null)}
+                        className={`flex items-center gap-2 p-1.5 rounded hover:bg-gray-100 group ${
+                          viewMode === "edit"
+                            ? "cursor-grab active:cursor-grabbing"
+                            : ""
+                        } ${dragSectionId === sec.id ? "opacity-50 bg-gray-200" : ""}`}
+                      >
+                        {viewMode === "edit" && (
+                          <GripVertical className="w-3 h-3 text-gray-400 opacity-50 group-hover:opacity-100 shrink-0" />
+                        )}
+                        <a
+                          href={`#${sec.id || sec.section_type}`}
+                          className="flex-1 truncate text-gray-700 text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                          draggable={false}
+                        >
+                          {label}
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })
+          )}
+          {sections.some((s) => !getSubModule(s.section_type)) && (
+            <div className="mb-3">
+              <div className="px-1 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">
+                Other
               </div>
-            ))
+              {sections
+                .filter((s) => !getSubModule(s.section_type))
+                .map((sec) => (
+                  <a
+                    key={sec.id}
+                    href={`#${sec.id || sec.section_type}`}
+                    className="block p-1.5 rounded hover:bg-gray-100 text-xs text-gray-700 truncate"
+                  >
+                    {sec.eyebrow_label || sec.section_type}
+                  </a>
+                ))}
+            </div>
           )}
           
           <div className="mt-2">
@@ -631,49 +742,144 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           )}
         </div>
 
-        <div className="p-4 border-t border-gray-200 space-y-2">
-          {/* Explicit Save Control */}
-          <button 
-            onClick={flushPendingSaves}
-            disabled={saveStatus === "saving"}
-            className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white rounded px-3 py-1.5 font-medium hover:bg-black disabled:opacity-50 transition-colors"
-          >
-            <Save className="w-4 h-4" />
-            {saveStatus === "saving" ? "Saving Draft..." : "Save Draft"}
-          </button>
-
-          <button 
-            onClick={() => setShowThemePanel(true)}
-            className="w-full flex items-center justify-center gap-2 bg-white border border-gray-300 rounded px-3 py-1.5 font-medium hover:bg-gray-50 text-gray-700"
-          >
-            <Settings className="w-4 h-4" /> Theme Settings
-          </button>
-
-          <button 
-            onClick={() => setShowPublishModal(true)}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white rounded px-3 py-1.5 font-medium hover:bg-blue-700"
-          >
-            <Share className="w-4 h-4" /> Publish
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowResetConfirm(true)}
-            className="w-full flex items-center justify-center gap-2 bg-white border border-red-200 text-red-700 rounded px-3 py-1.5 font-medium hover:bg-red-50"
-          >
-            <Trash2 className="w-4 h-4" /> Reset guideline
-          </button>
-        </div>
       </div>
 
       {/* RIGHT PANE: Live Preview / Full Visual Editor */}
-      <div className="flex-1 overflow-y-auto relative bg-[#f9f9f9]">
+      <div className="flex-1 overflow-y-auto relative bg-[#f9f9f9] flex flex-col min-w-0">
+        <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-4 py-2.5 shrink-0 no-print">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-xs">
+              {(
+                [
+                  { id: "edit" as const, label: "Edit" },
+                  { id: "elements" as const, label: "Elements" },
+                  { id: "brand_book" as const, label: "Brand book" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`px-3 py-1.5 rounded-md ${
+                    viewMode === tab.id
+                      ? "bg-gray-900 text-white"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                  onClick={() => setViewMode(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+              onClick={() => window.print()}
+              title="Save as PDF — continuous document (browser Print → Save as PDF)"
+            >
+              <Printer size={14} /> PDF / Print
+            </button>
+
+            {viewMode === "edit" && (
+              <>
+                <button
+                  type="button"
+                  onClick={flushPendingSaves}
+                  disabled={saveStatus === "saving"}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <Save size={14} />
+                  {saveStatus === "saving" ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowThemePanel(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+                >
+                  <Settings size={14} /> Theme
+                </button>
+              </>
+            )}
+
+            {guideline?.status === "published" ? (
+              <button
+                type="button"
+                disabled={reverting}
+                onClick={async () => {
+                  if (!guideline?.id) return;
+                  setReverting(true);
+                  try {
+                    const { error } = await (supabase as any)
+                      .from("ci_guidelines")
+                      .update({
+                        status: "draft",
+                        published_at: null,
+                        updated_at: new Date().toISOString(),
+                      })
+                      .eq("id", guideline.id);
+                    if (error) throw error;
+                    await (supabase as any)
+                      .from("ci_guideline_versions")
+                      .update({ is_published: false })
+                      .eq("guideline_id", guideline.id);
+                    setGuideline({ ...guideline, status: "draft", published_at: null });
+                    triggerToast("Reverted to draft");
+                  } catch (err: any) {
+                    triggerToast(err.message || "Failed to revert");
+                  } finally {
+                    setReverting(false);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {reverting ? <Loader2 size={14} className="animate-spin" /> : null}
+                Revert to draft
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowPublishModal(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+              >
+                <Share size={14} /> Publish
+              </button>
+            )}
+
+            {guideline?.status === "published" && guideline?.slug && (
+              <button
+                type="button"
+                title={`/app/client-guidelines/${guideline.slug}`}
+                onClick={async () => {
+                  const url = `${window.location.origin}/app/client-guidelines/${guideline.slug}`;
+                  try {
+                    await navigator.clipboard.writeText(url);
+                    triggerToast("Share URL copied");
+                  } catch {
+                    triggerToast(url);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-800 bg-emerald-50 hover:bg-emerald-100"
+              >
+                <Copy size={14} /> Copy share URL
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowResetConfirm(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+            >
+              <Trash2 size={14} /> Reset guideline
+            </button>
+          </div>
+        </div>
+
         <div 
-          className="min-h-full transition-colors duration-300"
+          className="min-h-full transition-colors duration-300 flex-1 ci-guideline-print"
           style={applyThemeToCSS()}
         >
           {/* Unassigned Assets Queue */}
-          {assets.filter(a => a.section_id === null).length > 0 && (
+          {viewMode === "edit" && assets.filter(a => a.section_id === null).length > 0 && (
             <div className="max-w-6xl mx-auto p-8 mb-8 bg-amber-50/50 border-b border-amber-200 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -820,7 +1026,8 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                   assets={assets.filter(a => a.section_id === section.id || a.kind === section.section_type)} 
                   allAssets={assets}
                   allSections={sections}
-                  isAdmin={true} 
+                  isAdmin={viewMode === "edit"}
+                  viewMode={viewMode === "elements" ? "elements" : "presentation"}
                   onUpdateData={handleUpdateSectionData}
                   onEditSectionFields={handleEditSectionFields}
                   onAddAssetRecord={handleAddAssetRecord}
@@ -850,6 +1057,14 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           onClose={() => setShowPublishModal(false)}
           onFlushSaves={flushPendingSaves}
           saveStatus={saveStatus}
+          onPublished={(slug) => {
+            setGuideline((g: any) => ({
+              ...g,
+              status: "published",
+              slug,
+              published_at: new Date().toISOString(),
+            }));
+          }}
         />
       )}
 

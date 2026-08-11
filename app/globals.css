@@ -161,7 +161,7 @@ textarea::placeholder {
 /* Client executive report — print / PDF export */
 @media print {
   @page {
-    size: landscape;
+    size: auto;
     margin: 12mm;
   }
 
@@ -188,6 +188,31 @@ textarea::placeholder {
   .client-report-viewer .shadow-sm,
   .client-report-viewer .shadow-md {
     box-shadow: none !important;
+  }
+
+  /* CI Brand Guidelines — continuous document (not slide-per-page) */
+  .ci-guideline-print {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  .ci-guideline-print section {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+}
+
+@page client-report {
+  size: landscape;
+  margin: 12mm;
+}
+
+@media print {
+  .client-report-viewer {
+    page: client-report;
   }
 }
 

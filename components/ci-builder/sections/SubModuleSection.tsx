@@ -502,8 +502,114 @@ export function SubModuleSection({
       case "ui_button":
       case "email_sig":
       case "container_spec": {
-        const asset = findAsset(pool, data.assetId);
+        const variants: {
+          id: string;
+          assetId: string;
+          label: string;
+        }[] =
+          Array.isArray(data.variants) && data.variants.length > 0
+            ? data.variants
+            : data.assetId
+              ? [
+                  {
+                    id: "main",
+                    assetId: data.assetId,
+                    label: data.label || "",
+                  },
+                ]
+              : [];
         const stageBg = stage === "dark" ? "bg-gray-900" : "bg-gray-50";
+        if (variants.length > 1) {
+          return (
+            <div className="space-y-4">
+              {!elements && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStage("light")}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${
+                      stage === "light" ? "bg-white border-gray-300" : "border-transparent"
+                    }`}
+                  >
+                    <Sun size={12} /> Light
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStage("dark")}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${
+                      stage === "dark"
+                        ? "bg-gray-800 text-white border-gray-700"
+                        : "border-transparent"
+                    }`}
+                  >
+                    <Moon size={12} /> Dark
+                  </button>
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {variants.map((v) => (
+                  <div
+                    key={v.id}
+                    className={`rounded-2xl border border-[var(--ci-border,#eaeaea)] p-6 flex flex-col ${stageBg}`}
+                  >
+                    <div className="min-h-[140px] flex items-center justify-center mb-3">
+                      <LocalImage
+                        assetId={v.assetId}
+                        assets={allAssets.length ? allAssets : pool}
+                        isAdmin={isAdmin}
+                        guidelineId={guidelineId}
+                        compatibleKind={section.section_type || "logo"}
+                        onSelect={(selected) => {
+                          const next = variants.map((x) =>
+                            x.id === v.id
+                              ? {
+                                  ...x,
+                                  assetId: selected.id || "",
+                                  label: selected.label || x.label,
+                                }
+                              : x
+                          );
+                          update({
+                            variants: next,
+                            assetId: next[0]?.assetId || "",
+                            label: next[0]?.label || data.label || "",
+                          });
+                        }}
+                        className="max-h-36 max-w-full object-contain"
+                      />
+                    </div>
+                    <EditableText
+                      value={v.label}
+                      placeholder="Label"
+                      onSave={(label) => {
+                        const next = variants.map((x) =>
+                          x.id === v.id ? { ...x, label } : x
+                        );
+                        update({
+                          variants: next,
+                          label: next[0]?.label || "",
+                        });
+                      }}
+                      isAdmin={isAdmin}
+                      className="font-semibold text-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+              {kind === "clearspace" && (data.notes || isAdmin) && (
+                <EditableText
+                  multiline
+                  value={data.notes || ""}
+                  placeholder="Clearspace notes…"
+                  onSave={(notes) => update({ notes })}
+                  isAdmin={isAdmin}
+                  className="text-sm text-gray-600"
+                />
+              )}
+            </div>
+          );
+        }
+        const slotAsset = findAsset(pool, data.assetId);
         return (
           <div className="space-y-4">
             {!elements && (
@@ -574,16 +680,16 @@ export function SubModuleSection({
                 )}
               </div>
             )}
-            {elements && asset?.public_url && (
+            {elements && slotAsset?.public_url && (
               <div className="flex flex-wrap gap-2">
                 <a
-                  href={asset.public_url}
+                  href={slotAsset.public_url}
                   download
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold hover:bg-gray-50"
                 >
                   <Download size={12} /> Download asset
                 </a>
-                <CopyableValue label="CDN URL" value={asset.public_url} />
+                <CopyableValue label="CDN URL" value={slotAsset.public_url} />
               </div>
             )}
             {kind === "ui_button" && (

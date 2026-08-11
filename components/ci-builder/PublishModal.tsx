@@ -11,6 +11,7 @@ interface PublishModalProps {
   onClose: () => void;
   onFlushSaves?: () => Promise<boolean>;
   saveStatus?: "saved" | "saving" | "error";
+  onPublished?: (slug: string) => void;
 }
 
 function slugify(input: string) {
@@ -29,6 +30,7 @@ export function PublishModal({
   onClose,
   onFlushSaves,
   saveStatus = "saved",
+  onPublished,
 }: PublishModalProps) {
   const [slug, setSlug] = useState(
     guideline?.slug || slugify(guideline?.projects?.title || guideline?.id || "brand-guide")
@@ -124,6 +126,7 @@ export function PublishModal({
       }
 
       setPublishedSlug(cleanSlug);
+      onPublished?.(cleanSlug);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setPublishError(`Unexpected error during publish: ${message}`);
