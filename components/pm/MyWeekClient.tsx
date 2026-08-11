@@ -17,6 +17,49 @@ import {
   ArrowRight,
 } from "lucide-react";
 
+/**
+ * Resolve HR roster person(s) for the signed-in portal user.
+ * Prefer people.auth_user_id; fall back to primary_email match and auto-link.
+ */
+async function resolveMyPersonIds(
+  supabase: any,
+  userId: string
+): Promise<string[]> {
+  const { data: byAuth } = await supabase
+    .from("people")
+    .select("id")
+    .eq("auth_user_id", userId);
+  const ids = new Set<string>(
+    (byAuth || []).map((p: { id: string }) => p.id).filter(Boolean)
+  );
+  if (ids.size > 0) return [...ids];
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const email = (user?.email || "").trim().toLowerCase();
+  if (!email) return [];
+
+  const { data: byEmail } = await supabase
+    .from("people")
+    .select("id, auth_user_id")
+    .ilike("primary_email", email);
+
+  for (const p of byEmail || []) {
+    if (!p?.id) continue;
+    ids.add(p.id);
+    if (!p.auth_user_id) {
+      // Soft-link so future assignee_id mirrors work for My Week / RLS
+      await supabase
+        .from("people")
+        .update({ auth_user_id: userId, updated_at: new Date().toISOString() })
+        .eq("id", p.id)
+        .is("auth_user_id", null);
+    }
+  }
+  return [...ids];
+}
+
 export function MyWeekClient({ userId }: { userId: string }) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,18 +68,29 @@ export function MyWeekClient({ userId }: { userId: string }) {
   const load = async () => {
     setLoading(true);
     const supabase = createClient();
-    const { data } = await (supabase as any)
+    const personIds = await resolveMyPersonIds(supabase, userId);
+
+    let query = (supabase as any)
       .from("pm_tasks")
       .select(
         `id, title, status, is_gate, phase_label, cycle_key, last_activity_at, project_id,
+         assignee_id, assignee_person_id,
          project:project_id ( title, client:client_id ( company ) )`
       )
-      .eq("assignee_id", userId)
       .in("status", ["todo", "in_progress", "blocked"])
       .order("last_activity_at", { ascending: true });
 
-    // Also include unassigned gate/blocked tasks? Brief: assigned to user.
-    // Prioritize: blocked/gates first, then in_progress, then todo by staleness
+    // Match either auth mirror (assignee_id) or HR person (assignee_person_id)
+    if (personIds.length > 0) {
+      query = query.or(
+        `assignee_id.eq.${userId},assignee_person_id.in.(${personIds.join(",")})`
+      );
+    } else {
+      query = query.eq("assignee_id", userId);
+    }
+
+    const { data } = await query;
+
     const sorted = (data || []).slice().sort((a: any, b: any) => {
       const rank = (t: any) =>
         t.status === "blocked" || (t.is_gate && t.status !== "done")
@@ -47,8 +101,8 @@ export function MyWeekClient({ userId }: { userId: string }) {
       const d = rank(a) - rank(b);
       if (d !== 0) return d;
       return (
-        new Date(a.last_activity_at).getTime() -
-        new Date(b.last_activity_at).getTime()
+        new Date(a.last_activity_at || 0).getTime() -
+        new Date(b.last_activity_at || 0).getTime()
       );
     });
     setTasks(sorted);

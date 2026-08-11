@@ -222,7 +222,9 @@ export async function updatePmTaskAssignee(
   if (personId) {
     const { data: person, error: personErr } = await (supabase as any)
       .from("people")
-      .select("id, auth_user_id, roster_status, engagement_types ( assignable_to_tasks )")
+      .select(
+        "id, auth_user_id, primary_email, roster_status, engagement_types ( assignable_to_tasks )"
+      )
       .eq("id", personId)
       .single();
     if (personErr || !person) {
@@ -238,6 +240,15 @@ export async function updatePmTaskAssignee(
       };
     }
     authUserId = person.auth_user_id || null;
+
+    // If HR person isn't linked to a portal login yet, match by primary_email
+    if (!authUserId && person.primary_email) {
+      const { data: linkedId } = await (supabase as any).rpc(
+        "link_person_to_auth_by_email",
+        { p_person_id: personId }
+      );
+      if (linkedId) authUserId = linkedId as string;
+    }
   }
 
   const { error } = await (supabase as any)
