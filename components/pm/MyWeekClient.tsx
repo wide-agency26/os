@@ -1,14 +1,21 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import type { Block } from "@blocknote/core";
 import { createClient } from "@/utils/supabase/client";
+import { TaskRow, type TaskRowProfile } from "@/components/pm/TaskRow";
+import { TaskDetailPage } from "@/components/pm/TaskDetailPage";
 import {
-  GateIcon,
-  RecurringIcon,
-  TaskStatusBadge,
-} from "@/components/pm/PmBadges";
-import { updatePmTaskStatus } from "@/app/actions/pm";
+  updatePmTaskStatus,
+  updatePmTaskAssignee,
+  updatePmTaskContent,
+  updatePmTaskTitle,
+  deletePmTask,
+  duplicatePmTask,
+  movePmTaskPhase,
+} from "@/app/actions/pm";
+import { blocksToPlainSummary } from "@/lib/pm/blocknote";
 import type { PmTaskStatus } from "@/lib/pm/types";
 import {
   Building2,
@@ -49,7 +56,6 @@ async function resolveMyPersonIds(
     if (!p?.id) continue;
     ids.add(p.id);
     if (!p.auth_user_id) {
-      // Soft-link so future assignee_id mirrors work for My Week / RLS
       await supabase
         .from("people")
         .update({ auth_user_id: userId, updated_at: new Date().toISOString() })
@@ -62,25 +68,51 @@ async function resolveMyPersonIds(
 
 export function MyWeekClient({ userId }: { userId: string }) {
   const [tasks, setTasks] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<TaskRowProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, startTransition] = useTransition();
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  const patchTaskLocal = (taskId: string, patch: Record<string, unknown>) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t))
+    );
+  };
 
   const load = async () => {
     setLoading(true);
     const supabase = createClient();
     const personIds = await resolveMyPersonIds(supabase, userId);
 
+    const { data: peopleRows } = await (supabase as any)
+      .from("people")
+      .select(
+        `id, full_name, auth_user_id, roster_status,
+         engagement_types ( key, label )`
+      )
+      .eq("roster_status", "active")
+      .order("full_name");
+    setProfiles(
+      (peopleRows || []).map((p: any) => ({
+        id: p.id,
+        full_name: p.full_name,
+        auth_user_id: p.auth_user_id || null,
+        engagement_key: p.engagement_types?.key || null,
+        engagement_label: p.engagement_types?.label || null,
+      }))
+    );
+
     let query = (supabase as any)
       .from("pm_tasks")
       .select(
-        `id, title, status, is_gate, phase_label, cycle_key, last_activity_at, project_id,
-         assignee_id, assignee_person_id,
-         project:project_id ( title, client:client_id ( company ) )`
+        `id, title, status, is_gate, phase_label, cycle_key, last_activity_at,
+         project_id, assignee_id, assignee_person_id, default_role, source,
+         description, content_blocks, task_template_id, sort_order,
+         project:project_id ( title, client:client_id ( company, name ) )`
       )
       .in("status", ["todo", "in_progress", "blocked"])
       .order("last_activity_at", { ascending: true });
 
-    // Match either auth mirror (assignee_id) or HR person (assignee_person_id)
     if (personIds.length > 0) {
       query = query.or(
         `assignee_id.eq.${userId},assignee_person_id.in.(${personIds.join(",")})`
@@ -112,6 +144,49 @@ export function MyWeekClient({ userId }: { userId: string }) {
   useEffect(() => {
     void load();
   }, [userId]);
+
+  const openTask = useMemo(
+    () => tasks.find((t) => t.id === openTaskId) || null,
+    [tasks, openTaskId]
+  );
+
+  const phaseOptions = useMemo(() => {
+    const set = new Set<string>(["General"]);
+    for (const t of tasks) {
+      if (t.phase_label) set.add(t.phase_label);
+    }
+    return [...set];
+  }, [tasks]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, { projectId: string; label: string; items: any[] }>();
+    for (const t of tasks) {
+      const key = t.project_id || "none";
+      if (!map.has(key)) {
+        const company =
+          t.project?.client?.company || t.project?.client?.name || "";
+        const title = t.project?.title || "Project";
+        map.set(key, {
+          projectId: t.project_id,
+          label: company ? `${title} · ${company}` : title,
+          items: [],
+        });
+      }
+      map.get(key)!.items.push(t);
+    }
+    return [...map.values()];
+  }, [tasks]);
+
+  const setStatus = (taskId: string, status: PmTaskStatus) => {
+    patchTaskLocal(taskId, { status });
+    startTransition(async () => {
+      await updatePmTaskStatus(taskId, status);
+      if (status === "done" || status === "cancelled") {
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+        if (openTaskId === taskId) setOpenTaskId(null);
+      }
+    });
+  };
 
   return (
     <div>
@@ -167,45 +242,112 @@ export function MyWeekClient({ userId }: { userId: string }) {
           yourself as assignee on tasks.
         </p>
       ) : (
-        <ul className="border border-gray-200 rounded-lg divide-y divide-gray-100">
-          {tasks.map((t) => (
-            <li key={t.id} className="px-3 py-2.5 flex flex-wrap items-center gap-2 text-sm">
-              {t.is_gate || t.status === "blocked" ? <GateIcon /> : null}
-              {t.cycle_key ? <RecurringIcon /> : null}
-              <div className="flex-1 min-w-[14rem]">
-                <div className="text-gray-900">{t.title}</div>
+        <div className="space-y-3">
+          {grouped.map((group) => (
+            <section
+              key={group.projectId || group.label}
+              className="border border-gray-200 rounded-lg overflow-visible"
+            >
+              <header className="bg-gray-50 px-3 py-2 flex items-center justify-between gap-2">
                 <Link
-                  href={`/app/projects/${t.project_id}/tasks`}
-                  className="text-xs text-gray-500 hover:underline"
+                  href={`/app/projects/${group.projectId}/tasks`}
+                  className="text-sm font-medium text-gray-800 hover:underline"
                 >
-                  {t.project?.title}
-                  {t.project?.client?.company
-                    ? ` · ${t.project.client.company}`
-                    : ""}
+                  {group.label}
                 </Link>
-              </div>
-              <TaskStatusBadge status={t.status} />
-              <select
-                disabled={pending}
-                className="text-xs border border-gray-200 rounded px-1 py-0.5"
-                value={t.status}
-                onChange={(e) => {
-                  const status = e.target.value as PmTaskStatus;
-                  startTransition(async () => {
-                    await updatePmTaskStatus(t.id, status);
-                    await load();
-                  });
-                }}
-              >
-                <option value="todo">To do</option>
-                <option value="in_progress">In progress</option>
-                <option value="done">Done</option>
-                <option value="blocked">Blocked</option>
-              </select>
-            </li>
+                <span className="text-[11px] text-gray-400">
+                  {group.items.length} task{group.items.length === 1 ? "" : "s"}
+                </span>
+              </header>
+              <ul className="divide-y divide-gray-100">
+                {group.items.map((t) => (
+                  <TaskRow
+                    key={t.id}
+                    task={t}
+                    profiles={profiles}
+                    phaseOptions={phaseOptions}
+                    disabled={pending}
+                    onOpen={setOpenTaskId}
+                    onToggleDone={(id, done) =>
+                      setStatus(id, done ? "done" : "todo")
+                    }
+                    onTitleChange={(id, title) => {
+                      patchTaskLocal(id, { title });
+                      startTransition(async () => {
+                        await updatePmTaskTitle(id, title);
+                      });
+                    }}
+                    onAssigneeChange={(id, personId) => {
+                      patchTaskLocal(id, { assignee_person_id: personId });
+                      startTransition(async () => {
+                        await updatePmTaskAssignee(id, personId);
+                        // If reassigned away from me, drop from My Week
+                        await load();
+                      });
+                    }}
+                    onDelete={(id) => {
+                      setTasks((prev) => prev.filter((x) => x.id !== id));
+                      if (openTaskId === id) setOpenTaskId(null);
+                      startTransition(async () => {
+                        await deletePmTask(id);
+                      });
+                    }}
+                    onDuplicate={(id) => {
+                      startTransition(async () => {
+                        await duplicatePmTask(id);
+                        await load();
+                      });
+                    }}
+                    onMovePhase={(id, label) => {
+                      patchTaskLocal(id, {
+                        phase_label: label === "General" ? null : label,
+                      });
+                      startTransition(async () => {
+                        await movePmTaskPhase(
+                          id,
+                          label === "General" ? null : label
+                        );
+                      });
+                    }}
+                    onDragStart={() => {}}
+                    onDragOver={() => {}}
+                    onDrop={() => {}}
+                  />
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
+
+      {openTask ? (
+        <TaskDetailPage
+          task={openTask}
+          profiles={profiles}
+          open
+          onClose={() => setOpenTaskId(null)}
+          onTitleChange={(id, title) => {
+            patchTaskLocal(id, { title });
+            startTransition(async () => {
+              await updatePmTaskTitle(id, title);
+            });
+          }}
+          onAssigneeChange={(id, personId) => {
+            patchTaskLocal(id, { assignee_person_id: personId });
+            startTransition(async () => {
+              await updatePmTaskAssignee(id, personId);
+              await load();
+            });
+          }}
+          onStatusChange={setStatus}
+          onContentSave={(id, blocks: Block[]) => {
+            patchTaskLocal(id, { content_blocks: blocks });
+            startTransition(async () => {
+              await updatePmTaskContent(id, blocks, blocksToPlainSummary(blocks));
+            });
+          }}
+        />
+      ) : null}
     </div>
   );
 }
