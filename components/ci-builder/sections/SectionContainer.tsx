@@ -12,13 +12,16 @@ export interface SectionContainerProps {
   children: React.ReactNode;
   onEditSectionFields?: (fields: Partial<CISection>) => void;
   isAdmin?: boolean;
+  /** Optional live values for catalog prompt templates. */
+  promptVars?: Record<string, string>;
 }
 
 export function SectionContainer({
   section,
   children,
   onEditSectionFields,
-  isAdmin
+  isAdmin,
+  promptVars,
 }: SectionContainerProps) {
   const handleSaveField = (field: keyof CISection, value: any) => {
     if (onEditSectionFields) {
@@ -27,7 +30,7 @@ export function SectionContainer({
   };
 
   const handleCopySectionPrompt = () => {
-    const text = toPromptText(section);
+    const text = toPromptText(section, promptVars);
     navigator.clipboard.writeText(text);
     const label = section.eyebrow_label || section.headline || section.section_type || "Section";
     triggerToast(`"${label}" prompt copied`);

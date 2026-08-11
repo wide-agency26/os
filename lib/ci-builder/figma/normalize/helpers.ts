@@ -1,8 +1,15 @@
 import type { SectionType, CISection, CIAsset } from "@/lib/ci-builder/types";
 import { generateUUID } from "@/lib/ci-builder/types";
 import { CI_GLOSSARY } from "@/lib/ci-builder/glossary";
+import {
+  defaultDataForSubModule,
+  getSubModule,
+} from "@/lib/ci-builder/modules-catalog";
 
 export function defaultDataFor(type: SectionType): Record<string, unknown> {
+  if (getSubModule(type)) {
+    return defaultDataForSubModule(type);
+  }
   switch (type) {
     case "logo":
       return { logos: [], minSizes: [] };

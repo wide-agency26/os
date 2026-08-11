@@ -1,0 +1,36 @@
+---
+description: CI Builder 9×52 module model — resume context
+alwaysApply: true
+---
+
+# CI Builder — 9 modules / 52 sub-modules (Aug 2026)
+
+Canonical catalog: `lib/ci-builder/modules-catalog.ts` (from `lib/sow/CI Builder Modules - for cursor.csv`).
+
+## Model
+
+- Each `ci_sections` row = one **sub-module** (`section_type` = catalog id, e.g. `mission`, `primary_logo`, `color_primary`).
+- 9 modules: Brand Core, Voice & AI, Logo, Colors, Typography, Design Tokens, UI Elements, Imagery, Touchpoints.
+- Legacy 11 types (`overview`, `logo`, `colors`, …) still render via old section components for existing guidelines.
+- Unmatched Figma frames → Unassigned Assets pool (no hard crash).
+
+## 4-column contract
+
+- Admin edit: `SubModuleSection` + primitives (`EditableText/Image/Color/ListItem`)
+- Client **Presentation** vs **Elements** toggle: `/g/[slug]` `PublicGuidelineClient`
+- Copy Prompt: catalog `promptTemplate` via `lib/ci-builder/prompts.ts`
+
+## Key paths
+
+- Catalog / defaults: `lib/ci-builder/modules-catalog.ts`
+- Glossary / Figma match: `lib/ci-builder/glossary.ts`
+- Renderer: `components/ci-builder/sections/SubModuleSection.tsx` + `sections/index.tsx`
+- Admin add: `AdminEditor` → “Add Sub-Module” grouped by module
+- Seed data: `defaultDataForSubModule` / `figma/normalize/helpers.ts`
+
+## Next polish (if needed)
+
+- Deepen per-submodule elements downloads (woff2, zip, CMYK overrides)
+- Map Figma CSS/Variables import into color_/type_/layout_/spacing_ slots more precisely
+- Optional “seed all 52” on new guideline
+- Migrate old combined sections → split sub-modules

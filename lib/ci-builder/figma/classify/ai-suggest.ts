@@ -10,6 +10,24 @@ import {
 import type { SectionType } from "@/lib/ci-builder/types";
 
 const ALLOWED: SectionType[] = [
+  "primary_logo",
+  "secondary_logo",
+  "favicon",
+  "clear_space",
+  "misuse_examples",
+  "color_primary",
+  "color_secondary",
+  "color_accent",
+  "headline_primary",
+  "body",
+  "ui_primary",
+  "ui_secondary",
+  "interactive_states",
+  "photography_style",
+  "social_4x5",
+  "social_9x16",
+  "presentation_deck",
+  // Legacy buckets still accepted for older files
   "logo",
   "colors",
   "typography",

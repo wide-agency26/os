@@ -11,7 +11,8 @@ function isValidUUID(str?: string): boolean {
 import { SectionRenderer } from "./sections/index";
 import { parseManifest } from "@/lib/ci-builder/parser";
 import { applyImportResult } from "@/lib/ci-builder/import/apply-import-result";
-import { CI_GLOSSARY } from "@/lib/ci-builder/glossary";
+import { CI_ADDABLE_GLOSSARY } from "@/lib/ci-builder/glossary";
+import { CI_MODULES, defaultDataForSubModule, getSubModule } from "@/lib/ci-builder/modules-catalog";
 import { Settings, Share, Plus, GripVertical, CheckSquare, Square, X, AlertTriangle, Layers, Save, Check, Loader2, Trash2 } from "lucide-react";
 import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
@@ -238,6 +239,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const handleAddSection = async (entry: any) => {
     if (!guideline?.id) return;
     const realId = generateUUID();
+    const catalog = getSubModule(entry.section_type);
     const newSection: Partial<CISection> = {
       id: realId,
       guideline_id: guideline.id,
@@ -246,7 +248,9 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       headline: entry.default_headline,
       position: sections.length,
       is_visible: true,
-      data: {}
+      data: catalog
+        ? defaultDataForSubModule(entry.section_type)
+        : {},
     };
 
     setSections(prev => [...prev, newSection]);
@@ -577,21 +581,37 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               onClick={() => setShowAddSectionDropdown(!showAddSectionDropdown)}
               className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-xs p-2 w-full"
             >
-              <Plus className="w-3 h-3" /> Add Section
+              <Plus className="w-3 h-3" /> Add Sub-Module
             </button>
             {showAddSectionDropdown && (
-              <div className="mt-1 w-full bg-white border border-gray-200 shadow-sm rounded-md overflow-hidden py-1 z-30 relative">
-                {CI_GLOSSARY.map((entry) => (
-                  <button
-                    key={entry.section_type}
-                    onClick={() => {
-                      handleAddSection(entry);
-                      setShowAddSectionDropdown(false);
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100"
-                  >
-                    {entry.eyebrow_label}
-                  </button>
+              <div className="mt-1 w-full max-h-80 overflow-y-auto bg-white border border-gray-200 shadow-sm rounded-md py-1 z-30 relative">
+                {CI_MODULES.map((mod) => (
+                  <div key={mod.id} className="border-b border-gray-100 last:border-0">
+                    <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 sticky top-0 bg-white">
+                      {mod.index}. {mod.label}
+                    </div>
+                    {CI_ADDABLE_GLOSSARY.filter((e) => e.moduleId === mod.id).map((entry) => {
+                      const already = sections.some((s) => s.section_type === entry.section_type);
+                      return (
+                        <button
+                          key={entry.section_type}
+                          disabled={already}
+                          onClick={() => {
+                            handleAddSection(entry);
+                            setShowAddSectionDropdown(false);
+                          }}
+                          className={`w-full text-left px-3 py-1.5 text-xs ${
+                            already
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-gray-700 hover:bg-gray-100"
+                          }`}
+                        >
+                          {entry.default_headline}
+                          {already ? " ✓" : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
                 ))}
               </div>
             )}

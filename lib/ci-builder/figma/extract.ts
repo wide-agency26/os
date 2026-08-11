@@ -7,6 +7,7 @@ import { matchSectionType, CI_GLOSSARY } from "@/lib/ci-builder/glossary";
 import type { SectionType, CISection, CIAsset } from "@/lib/ci-builder/types";
 import { generateUUID } from "@/lib/ci-builder/types";
 import type { ParseResult } from "@/lib/ci-builder/parser";
+import { defaultDataFor } from "@/lib/ci-builder/figma/normalize/helpers";
 
 export type FigmaTreeNode = {
   id: string;
@@ -243,27 +244,4 @@ export function figmaSummaryToParseResult(
       message: `Figma P1 extract: ${summary.pageCount} pages, ${summary.frameCount} frames, ${summary.componentCount} components, ${summary.styleCount} styles. Colors/typography/assets full import arrives in P2–P3.`,
     },
   };
-}
-
-function defaultDataFor(type: SectionType): Record<string, unknown> {
-  switch (type) {
-    case "logo":
-      return { logos: [], minSizes: [] };
-    case "colors":
-      return { groups: [] };
-    case "typography":
-      return { rows: [] };
-    case "buttons":
-      return { samples: [] };
-    case "grid_frames":
-      return { frames: [] };
-    case "backgrounds":
-      return { groups: [] };
-    case "applications":
-      return { apps: [] };
-    case "dos_donts":
-      return { items: [] };
-    default:
-      return {};
-  }
 }

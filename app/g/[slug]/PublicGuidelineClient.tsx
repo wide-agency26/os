@@ -37,6 +37,9 @@ export function PublicGuidelineClient({
     visibleSections[0]?.section_type || ""
   );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"presentation" | "elements">(
+    "presentation"
+  );
 
   useEffect(() => {
     if (visibleSections.length === 0) return;
@@ -236,14 +239,40 @@ export function PublicGuidelineClient({
               {activeLabel || "Brand Guidelines"}
             </span>
           </div>
-          <button
-            type="button"
-            onClick={handleCopyBrandPrompt}
-            className="inline-flex items-center gap-2 px-3.5 py-2 bg-[var(--ci-accent,#0066ff)] hover:opacity-90 text-white font-bold text-xs rounded-xl shadow-sm transition-all shrink-0"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Copy Brand Prompt</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden bg-white text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setViewMode("presentation")}
+                className={`px-3 py-1.5 ${
+                  viewMode === "presentation"
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                Presentation
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("elements")}
+                className={`px-3 py-1.5 ${
+                  viewMode === "elements"
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                Elements
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyBrandPrompt}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-[var(--ci-accent,#0066ff)] hover:opacity-90 text-white font-bold text-xs rounded-xl shadow-sm transition-all shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Copy Brand Prompt</span>
+            </button>
+          </div>
         </div>
 
         <main className="flex-1 pb-20">
@@ -264,6 +293,7 @@ export function PublicGuidelineClient({
                   allAssets={assets}
                   allSections={visibleSections}
                   isAdmin={false}
+                  viewMode={viewMode}
                 />
               );
             })
