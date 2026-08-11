@@ -267,12 +267,14 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="prospect">Prospect (Identified P&amp;L)</option>
-                  <option value="signed">Signed (Actual P&amp;L)</option>
-                  <option value="completed">Completed (Actual P&amp;L)</option>
+                  <option value="prospect">Prospect → Unidentified</option>
+                  <option value="lead">Lead → Identified</option>
+                  <option value="signed">Client (signed) → Actual</option>
+                  <option value="completed">Completed → Actual</option>
                 </select>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Prospect → signed migrates identified ledger rows to actual automatically.
+                  Drives where Cost / Revenue Center amounts land in financials.
+                  Stage changes migrate auto ledger rows automatically.
                 </p>
               </div>
               <div>
@@ -349,7 +351,8 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                   placeholder="0.00"
                 />
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Feeds auto revenue on Actual / Identified P&amp;L.
+                  Feeds auto revenue into Unidentified / Identified / Actual based on
+                  accounting stage (also editable in Revenue Center).
                 </p>
               </div>
             </div>

@@ -19,6 +19,7 @@ const TABS = [
   { name: "Tasks", href: (id: string) => `/app/projects/${id}/tasks`, icon: CheckSquare },
   { name: "Timesheet", href: (id: string) => `/app/projects/${id}/timesheet`, icon: Timer },
   { name: "Cost Center", href: (id: string) => `/app/projects/${id}/cost`, icon: PM_ICONS.costCenter },
+  { name: "Revenue Center", href: (id: string) => `/app/projects/${id}/revenue`, icon: PM_ICONS.revenueCenter },
   { name: "Review", href: (id: string) => `/app/projects/${id}/review`, icon: Inbox },
   {
     name: "CI Builder",

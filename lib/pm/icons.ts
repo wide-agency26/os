@@ -4,6 +4,7 @@ import {
   RefreshCw,
   Clock,
   Coins,
+  Banknote,
   Mail,
   Inbox,
   type LucideIcon,
@@ -16,6 +17,7 @@ export const PM_ICONS = {
   recurring: RefreshCw,
   stale: Clock,
   costCenter: Coins,
+  revenueCenter: Banknote,
   fromEmail: Mail,
   pendingReview: Inbox,
 } as const satisfies Record<string, LucideIcon>;

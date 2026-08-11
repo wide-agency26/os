@@ -24,11 +24,10 @@ async function upsertBySyncKey(
     .maybeSingle();
 
   if (existing?.id) {
-    // Preserve migration audit fields; keep actual if already migrated.
+    // Refresh amounts/pillar from current project stage; keep migration audit fields.
     const patch = { ...row };
     delete patch.sync_key;
-    if (existing.moved_from_pillar) {
-      patch.pillar = existing.pillar;
+    if (existing.moved_from_pillar && existing.pillar === patch.pillar) {
       patch.moved_from_pillar = existing.moved_from_pillar;
       patch.moved_at = existing.moved_at;
     }
@@ -91,36 +90,77 @@ export async function syncProjectRevenue(projectId: string): Promise<{
     .single();
   if (error || !project) return { ok: false, error: error?.message || "Not found" };
 
-  const syncKey = `auto_project:rev:${projectId}`;
-  const amount = Number(project.deal_value || 0);
-  if (!amount) {
-    // Clear auto revenue if deal value removed
-    await supabase.from("ledger_entries").delete().eq("sync_key", syncKey);
-    return { ok: true };
-  }
-
   const stage = (project.stage || "signed") as ProjectAccountingStage;
   const pillar = pillarFromStage(stage);
-  const entryDate = project.expected_start_date
-    ? `${String(project.expected_start_date).slice(0, 7)}-01`
-    : monthStart();
-
   const companyId = project.client_id || null;
-  const { error: upErr } = await upsertBySyncKey(supabase, {
-    sync_key: syncKey,
-    pillar,
-    type: "revenue",
-    amount,
-    entry_date: entryDate,
-    company_id: companyId,
-    client_id: companyId,
-    project_id: projectId,
-    person_id: null,
-    category: project.title ? `Deal — ${project.title}` : "Project deal value",
-    source: "auto_project",
-    updated_at: new Date().toISOString(),
-  });
-  if (upErr) return { ok: false, error: upErr };
+  const activeKeys = new Set<string>();
+
+  // Primary deal value
+  const dealKey = `auto_project:rev:${projectId}`;
+  const dealAmount = Number(project.deal_value || 0);
+  if (dealAmount) {
+    activeKeys.add(dealKey);
+    const entryDate = project.expected_start_date
+      ? `${String(project.expected_start_date).slice(0, 7)}-01`
+      : monthStart();
+    const { error: upErr } = await upsertBySyncKey(supabase, {
+      sync_key: dealKey,
+      pillar,
+      type: "revenue",
+      amount: dealAmount,
+      entry_date: entryDate,
+      company_id: companyId,
+      client_id: companyId,
+      project_id: projectId,
+      person_id: null,
+      category: project.title ? `Deal — ${project.title}` : "Project deal value",
+      source: "auto_project",
+      updated_at: new Date().toISOString(),
+    });
+    if (upErr) return { ok: false, error: upErr };
+  }
+
+  // Additional revenue center lines
+  const { data: lines } = await supabase
+    .from("project_revenue_lines")
+    .select("id, label, amount, entry_date, category")
+    .eq("project_id", projectId);
+
+  for (const line of lines || []) {
+    const amount = Number(line.amount || 0);
+    if (!amount) continue;
+    const syncKey = `auto_project:revline:${line.id}`;
+    activeKeys.add(syncKey);
+    const { error: upErr } = await upsertBySyncKey(supabase, {
+      sync_key: syncKey,
+      pillar,
+      type: "revenue",
+      amount,
+      entry_date: line.entry_date || monthStart(),
+      company_id: companyId,
+      client_id: companyId,
+      project_id: projectId,
+      person_id: null,
+      category: line.label || line.category || "Project revenue",
+      source: "auto_project",
+      updated_at: new Date().toISOString(),
+    });
+    if (upErr) return { ok: false, error: upErr };
+  }
+
+  // Prune stale auto revenue rows for this project
+  const { data: existing } = await supabase
+    .from("ledger_entries")
+    .select("id, sync_key")
+    .eq("project_id", projectId)
+    .eq("source", "auto_project")
+    .eq("type", "revenue");
+  for (const row of existing || []) {
+    if (row.sync_key && !activeKeys.has(row.sync_key)) {
+      await supabase.from("ledger_entries").delete().eq("id", row.id);
+    }
+  }
+
   return { ok: true };
 }
 
@@ -195,7 +235,35 @@ export async function syncProjectAssignmentCosts(projectId: string): Promise<{
     if (upErr) return { ok: false, error: upErr };
   }
 
-  // Remove stale auto cost rows for people no longer assigned
+  // Real cost center lines
+  const { data: costLines } = await supabase
+    .from("project_cost_lines")
+    .select("id, label, amount, entry_date, category")
+    .eq("project_id", projectId);
+
+  for (const line of costLines || []) {
+    const amount = Number(line.amount || 0);
+    if (!amount) continue;
+    const syncKey = `auto_project:realcost:${line.id}`;
+    activeKeys.add(syncKey);
+    const { error: upErr } = await upsertBySyncKey(supabase, {
+      sync_key: syncKey,
+      pillar,
+      type: "cost",
+      amount,
+      entry_date: line.entry_date || monthStart(),
+      company_id: companyId,
+      client_id: companyId,
+      project_id: projectId,
+      person_id: null,
+      category: line.label || line.category || "Actual cost",
+      source: "auto_project",
+      updated_at: new Date().toISOString(),
+    });
+    if (upErr) return { ok: false, error: upErr };
+  }
+
+  // Remove stale auto cost rows for people / lines no longer present
   const { data: existing } = await supabase
     .from("ledger_entries")
     .select("id, sync_key")

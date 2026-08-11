@@ -165,3 +165,116 @@ export async function deleteCashBalance(id: string) {
   revalidatePath("/app/accounting/runway");
   return { ok: true as const };
 }
+
+export type ProjectFinanceLineInput = {
+  id?: string;
+  project_id: string;
+  label: string;
+  amount: number;
+  entry_date: string;
+  category?: string;
+  notes?: string | null;
+};
+
+async function saveProjectFinanceLine(
+  table: "project_cost_lines" | "project_revenue_lines",
+  input: ProjectFinanceLineInput
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const payload = {
+    project_id: input.project_id,
+    label: input.label.trim() || (table === "project_cost_lines" ? "Actual cost" : "Revenue"),
+    amount: Number(input.amount) || 0,
+    entry_date: input.entry_date,
+    category:
+      input.category?.trim() ||
+      (table === "project_cost_lines" ? "Actual cost" : "Revenue"),
+    notes: input.notes?.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.id) {
+    const { error } = await (supabase as any)
+      .from(table)
+      .update(payload)
+      .eq("id", input.id);
+    if (error) return { ok: false as const, error: error.message };
+  } else {
+    const { error } = await (supabase as any).from(table).insert([
+      { ...payload, created_by: user?.id || null },
+    ]);
+    if (error) return { ok: false as const, error: error.message };
+  }
+
+  const sync =
+    table === "project_cost_lines"
+      ? await syncProjectAssignmentCosts(input.project_id)
+      : await syncProjectRevenue(input.project_id);
+  if (!sync.ok) return { ok: false as const, error: sync.error || "Sync failed" };
+
+  revalidatePath("/app/accounting");
+  revalidatePath(`/app/projects/${input.project_id}/cost`);
+  revalidatePath(`/app/projects/${input.project_id}/revenue`);
+  return { ok: true as const };
+}
+
+export async function saveProjectCostLine(input: ProjectFinanceLineInput) {
+  return saveProjectFinanceLine("project_cost_lines", input);
+}
+
+export async function saveProjectRevenueLine(input: ProjectFinanceLineInput) {
+  return saveProjectFinanceLine("project_revenue_lines", input);
+}
+
+async function deleteProjectFinanceLine(
+  table: "project_cost_lines" | "project_revenue_lines",
+  id: string,
+  projectId: string
+) {
+  const supabase = await createClient();
+  const { error } = await (supabase as any).from(table).delete().eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+
+  const sync =
+    table === "project_cost_lines"
+      ? await syncProjectAssignmentCosts(projectId)
+      : await syncProjectRevenue(projectId);
+  if (!sync.ok) return { ok: false as const, error: sync.error || "Sync failed" };
+
+  revalidatePath("/app/accounting");
+  revalidatePath(`/app/projects/${projectId}/cost`);
+  revalidatePath(`/app/projects/${projectId}/revenue`);
+  return { ok: true as const };
+}
+
+export async function deleteProjectCostLine(id: string, projectId: string) {
+  return deleteProjectFinanceLine("project_cost_lines", id, projectId);
+}
+
+export async function deleteProjectRevenueLine(id: string, projectId: string) {
+  return deleteProjectFinanceLine("project_revenue_lines", id, projectId);
+}
+
+export async function updateProjectDealValue(
+  projectId: string,
+  dealValue: number | null
+) {
+  const supabase = await createClient();
+  const { error } = await (supabase as any)
+    .from("projects")
+    .update({
+      deal_value: dealValue,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", projectId);
+  if (error) return { ok: false as const, error: error.message };
+  const sync = await syncProjectRevenue(projectId);
+  if (!sync.ok) return { ok: false as const, error: sync.error || "Sync failed" };
+  revalidatePath("/app/accounting");
+  revalidatePath(`/app/projects/${projectId}/revenue`);
+  return { ok: true as const };
+}

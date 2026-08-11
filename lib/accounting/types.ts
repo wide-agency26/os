@@ -8,7 +8,12 @@ export type LedgerSource =
   | "auto_hr"
   | "auto_overhead"
   | "auto_lexware";
-export type ProjectAccountingStage = "prospect" | "signed" | "completed";
+export type ProjectAccountingStage =
+  | "prospect"
+  | "lead"
+  | "signed"
+  | "completed";
+
 export type CashBalanceSource = "manual" | "auto_lexware";
 
 export type LedgerEntry = {
@@ -52,17 +57,44 @@ export type LedgerActivity = {
   created_at: string;
 };
 
-export const PROJECT_STAGES: { value: ProjectAccountingStage; label: string }[] =
+export const PROJECT_STAGES: { value: ProjectAccountingStage; label: string; pillar: LedgerPillar }[] =
   [
-    { value: "prospect", label: "Prospect" },
-    { value: "signed", label: "Signed" },
-    { value: "completed", label: "Completed" },
+    {
+      value: "prospect",
+      label: "Prospect → Unidentified revenue",
+      pillar: "unidentified",
+    },
+    {
+      value: "lead",
+      label: "Lead → Identified revenue",
+      pillar: "identified",
+    },
+    {
+      value: "signed",
+      label: "Client (signed) → Actual revenue",
+      pillar: "actual",
+    },
+    {
+      value: "completed",
+      label: "Completed → Actual revenue",
+      pillar: "actual",
+    },
   ];
 
+/** Map project accounting stage → ledger pillar. */
 export function pillarFromStage(
   stage: string | null | undefined
-): "actual" | "identified" {
-  return stage === "prospect" ? "identified" : "actual";
+): LedgerPillar {
+  if (stage === "prospect") return "unidentified";
+  if (stage === "lead") return "identified";
+  return "actual"; // signed | completed | default (client work)
+}
+
+export function stagePillarLabel(stage: string | null | undefined): string {
+  const pillar = pillarFromStage(stage);
+  if (pillar === "unidentified") return "Unidentified";
+  if (pillar === "identified") return "Identified";
+  return "Actual";
 }
 
 export function formatEuro(amount: number | null | undefined): string {

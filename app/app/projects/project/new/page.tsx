@@ -239,10 +239,15 @@ export default function NewProjectPage() {
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="prospect">Prospect</option>
-                  <option value="signed">Signed</option>
-                  <option value="completed">Completed</option>
+                  <option value="prospect">Prospect → Unidentified</option>
+                  <option value="lead">Lead → Identified</option>
+                  <option value="signed">Client (signed) → Actual</option>
+                  <option value="completed">Completed → Actual</option>
                 </select>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Prospect / Lead / Client stage controls which accounting pillar
+                  receives project revenue and costs.
+                </p>
               </div>
               <div>
                 <label className="block text-[12px] font-medium text-gray-700 mb-1">Priority</label>
