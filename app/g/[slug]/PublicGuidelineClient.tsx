@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { SectionRenderer } from "@/components/ci-builder/sections";
+import { BrandBookPresentation } from "@/components/ci-builder/BrandBookPresentation";
 import { CITheme, CISection, CIAsset, cssFontStack } from "@/lib/ci-builder/types";
 import { getSubModule, CI_MODULES } from "@/lib/ci-builder/modules-catalog";
 import {
@@ -48,7 +49,7 @@ export function PublicGuidelineClient({
   );
 
   useEffect(() => {
-    if (visibleSections.length === 0) return;
+    if (viewMode !== "elements" || visibleSections.length === 0) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -70,12 +71,12 @@ export function PublicGuidelineClient({
     });
 
     return () => observer.disconnect();
-  }, [visibleSections]);
+  }, [visibleSections, viewMode]);
 
   const styleVariables = {
     "--ci-bg": theme?.backgroundColor || "#ffffff",
     "--ci-text": theme?.textColor || "#111827",
-    "--ci-accent": theme?.accentColors?.[0] || "#0066FF",
+    "--ci-accent": theme?.accentColors?.[0] || "#111111",
     "--ci-border": "#eaeaea",
     "--ci-font": cssFontStack(
       theme?.primaryFont || theme?.fontFamily,
@@ -108,6 +109,33 @@ export function PublicGuidelineClient({
   const handleSavePdf = () => {
     window.print();
   };
+
+  const modeToggle = (
+    <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-white text-xs font-semibold">
+      <button
+        type="button"
+        onClick={() => setViewMode("presentation")}
+        className={`px-3 py-1.5 rounded-md ${
+          viewMode === "presentation"
+            ? "bg-gray-900 text-white"
+            : "text-gray-600 hover:bg-gray-50"
+        }`}
+      >
+        Brand book
+      </button>
+      <button
+        type="button"
+        onClick={() => setViewMode("elements")}
+        className={`px-3 py-1.5 rounded-md ${
+          viewMode === "elements"
+            ? "bg-gray-900 text-white"
+            : "text-gray-600 hover:bg-gray-50"
+        }`}
+      >
+        Elements
+      </button>
+    </div>
+  );
 
   const sectionNav = (
     <nav className="space-y-3">
@@ -188,6 +216,59 @@ export function PublicGuidelineClient({
     </nav>
   );
 
+  if (viewMode === "presentation") {
+    return (
+      <div
+        className={
+          embedded ? "h-full min-h-0 flex-1 overflow-hidden" : "min-h-screen"
+        }
+      >
+        <ToastContainer />
+        <BrandBookPresentation
+          brandName={brandName}
+          theme={theme}
+          sections={visibleSections}
+          assets={assets}
+          className={embedded ? "h-full" : "min-h-screen"}
+          toolbar={
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 lg:px-8 py-3 border-b border-black/5 bg-white/95 backdrop-blur-sm no-print">
+              <div className="flex items-center gap-3 min-w-0">
+                {embedded && (
+                  <Link
+                    href="/app/client-guidelines"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 hover:text-blue-600 shrink-0"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    All guidelines
+                  </Link>
+                )}
+                {modeToggle}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleSavePdf}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 bg-white"
+                >
+                  <Printer size={14} /> Save as PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyBrandPrompt}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 bg-[var(--ci-accent,#111)] hover:opacity-90 text-white font-bold text-xs rounded-xl shadow-sm transition-all shrink-0"
+                  style={{ backgroundColor: theme?.accentColors?.[0] || "#111" }}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Copy Brand Prompt</span>
+                </button>
+              </div>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className={`flex flex-col md:flex-row text-[var(--ci-text)] bg-[var(--ci-bg)] font-[var(--ci-font)] ${
@@ -197,7 +278,6 @@ export function PublicGuidelineClient({
     >
       <ToastContainer />
 
-      {/* Section nav — sticky within portal shell, fixed only on public standalone */}
       <aside
         className={`border-r border-gray-200 flex-col justify-between overflow-y-auto hidden md:flex shrink-0 z-20 no-print ${
           embedded
@@ -219,7 +299,7 @@ export function PublicGuidelineClient({
             <div className="flex items-center gap-2 mb-2">
               <Layers className="w-4 h-4 text-blue-600" />
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Modules
+                Elements
               </span>
             </div>
             <h1 className="font-bold text-base tracking-tight text-gray-900 leading-snug">
@@ -234,7 +314,6 @@ export function PublicGuidelineClient({
             type="button"
             onClick={handleSavePdf}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-800 rounded-xl font-semibold text-xs shadow-sm transition-all"
-            title="Continuous PDF via browser Print → Save as PDF"
           >
             <Printer className="w-4 h-4" />
             <span>Save as PDF</span>
@@ -243,7 +322,6 @@ export function PublicGuidelineClient({
             type="button"
             onClick={handleCopyBrandPrompt}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs shadow-sm transition-all active:scale-[0.98]"
-            title="Copy full brand rules as AI system prompt"
           >
             <Sparkles className="w-4 h-4 text-amber-200" />
             <span>Copy Brand Prompt</span>
@@ -251,7 +329,6 @@ export function PublicGuidelineClient({
         </div>
       </aside>
 
-      {/* Mobile top bar */}
       <header className="md:hidden sticky top-0 bg-white/90 backdrop-blur-md border-b border-[var(--ci-border,#eaeaea)] px-4 py-3 flex items-center justify-between z-50 shrink-0 no-print">
         <div className="flex items-center gap-2 min-w-0">
           <button
@@ -261,35 +338,9 @@ export function PublicGuidelineClient({
           >
             {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          {embedded && (
-            <Link
-              href="/app/client-guidelines"
-              className="p-2 text-gray-500 hover:text-blue-600"
-              title="Back"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
-          )}
           <span className="font-bold text-sm truncate">{brandName}</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={handleSavePdf}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-200 text-gray-700 text-xs font-semibold rounded-lg"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            PDF
-          </button>
-          <button
-            type="button"
-            onClick={handleCopyBrandPrompt}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg shadow-sm"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Copy</span>
-          </button>
-        </div>
+        {modeToggle}
       </header>
 
       {mobileNavOpen && (
@@ -302,7 +353,9 @@ export function PublicGuidelineClient({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b pb-4">
-              <span className="font-bold text-sm uppercase tracking-wider">{brandName}</span>
+              <span className="font-bold text-sm uppercase tracking-wider">
+                {brandName}
+              </span>
               <button type="button" onClick={() => setMobileNavOpen(false)}>
                 <X className="w-5 h-5 text-gray-500" />
               </button>
@@ -312,7 +365,6 @@ export function PublicGuidelineClient({
         </div>
       )}
 
-      {/* Main content */}
       <div
         className={`flex-1 w-full min-w-0 flex flex-col ${
           embedded ? "overflow-y-auto h-full" : "min-h-screen md:ml-64"
@@ -322,50 +374,18 @@ export function PublicGuidelineClient({
           <div className="flex items-center gap-2 text-xs text-gray-500 font-medium min-w-0">
             <span className="truncate">{brandName}</span>
             <span>/</span>
-            <span className="text-[var(--ci-accent,#0066ff)] uppercase font-bold tracking-wider truncate">
-              {activeLabel || "Brand Guidelines"}
+            <span className="text-[var(--ci-accent,#111)] uppercase font-bold tracking-wider truncate">
+              {activeLabel || "Elements"}
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-white text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setViewMode("presentation")}
-                className={`px-3 py-1.5 rounded-md ${
-                  viewMode === "presentation"
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                Brand book
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("elements")}
-                className={`px-3 py-1.5 rounded-md ${
-                  viewMode === "elements"
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                Elements
-              </button>
-            </div>
+            {modeToggle}
             <button
               type="button"
               onClick={handleSavePdf}
               className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 bg-white"
-              title="Continuous PDF via browser Print → Save as PDF"
             >
               <Printer size={14} /> Save as PDF
-            </button>
-            <button
-              type="button"
-              onClick={handleCopyBrandPrompt}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-[var(--ci-accent,#0066ff)] hover:opacity-90 text-white font-bold text-xs rounded-xl shadow-sm transition-all shrink-0"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Copy Brand Prompt</span>
             </button>
           </div>
         </div>
@@ -388,7 +408,7 @@ export function PublicGuidelineClient({
                   allAssets={assets}
                   allSections={visibleSections}
                   isAdmin={false}
-                  viewMode={viewMode}
+                  viewMode="elements"
                 />
               );
             })

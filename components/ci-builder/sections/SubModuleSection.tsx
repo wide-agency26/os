@@ -30,6 +30,7 @@ export interface SubModuleSectionProps {
   allSections?: Partial<CISection>[];
   isAdmin?: boolean;
   viewMode?: ClientViewMode;
+  hidePromptActions?: boolean;
   onUpdateData?: (newData: any) => void;
   onEditSectionFields?: (fields: Partial<CISection>) => void;
   onAddAssetRecord?: (asset: Partial<CIAsset>) => void;
@@ -117,6 +118,7 @@ export function SubModuleSection({
   allAssets = [],
   isAdmin,
   viewMode = "presentation",
+  hidePromptActions = false,
   onUpdateData,
   onEditSectionFields,
   onAddAssetRecord,
@@ -1483,6 +1485,7 @@ export function SubModuleSection({
     <SectionContainer
       section={section}
       isAdmin={isAdmin}
+      hidePromptActions={hidePromptActions}
       onEditSectionFields={onEditSectionFields}
       promptVars={{
         "Brand Name": "",

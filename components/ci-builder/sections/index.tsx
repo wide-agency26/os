@@ -45,6 +45,8 @@ export interface SectionRendererProps {
   isAdmin?: boolean;
   /** Public client hub: presentation (brand book) vs elements (assets/tokens). */
   viewMode?: ClientViewMode;
+  /** Hide per-section Copy Prompt in sleek brand-book presentation. */
+  hidePromptActions?: boolean;
   onUpdateData?: (sectionId: string, newData: any) => void;
   onEditSectionFields?: (sectionId: string, fields: Partial<CISection>) => void;
   onAddAssetRecord?: (asset: Partial<CIAsset>) => void;
@@ -73,6 +75,7 @@ export function SectionRenderer({
   allSections = [],
   isAdmin,
   viewMode = "presentation",
+  hidePromptActions = false,
   onUpdateData,
   onEditSectionFields,
   onAddAssetRecord,
@@ -93,6 +96,7 @@ export function SectionRenderer({
         allSections={allSections}
         isAdmin={isAdmin}
         viewMode={viewMode}
+        hidePromptActions={hidePromptActions}
         onUpdateData={(newData: any) =>
           onUpdateData && section.id && onUpdateData(section.id, newData)
         }

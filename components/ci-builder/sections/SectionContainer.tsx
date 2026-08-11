@@ -14,6 +14,8 @@ export interface SectionContainerProps {
   isAdmin?: boolean;
   /** Optional live values for catalog prompt templates. */
   promptVars?: Record<string, string>;
+  /** Sleek brand-book presentation: hide Copy Prompt chrome. */
+  hidePromptActions?: boolean;
 }
 
 export function SectionContainer({
@@ -22,6 +24,7 @@ export function SectionContainer({
   onEditSectionFields,
   isAdmin,
   promptVars,
+  hidePromptActions = false,
 }: SectionContainerProps) {
   const handleSaveField = (field: keyof CISection, value: any) => {
     if (onEditSectionFields) {
@@ -39,9 +42,9 @@ export function SectionContainer({
   return (
     <section
       id={section.id || section.section_type}
-      className="py-20 border-b border-[var(--ci-border,#eaeaea)] scroll-mt-16"
+      className="py-20 md:py-24 border-b border-[var(--ci-border,#eaeaea)] scroll-mt-20"
     >
-      <div className="w-full max-w-[1440px] mx-auto px-6 lg:px-10">
+      <div className="w-full max-w-[1600px] mx-auto px-6 lg:px-12">
         <div className="mb-14">
           <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
             {(section.eyebrow_label || isAdmin) && (
@@ -56,7 +59,7 @@ export function SectionContainer({
             )}
 
             {/* Public Section Action: Copy as Prompt */}
-            {!isAdmin && (
+            {!isAdmin && !hidePromptActions && (
               <button
                 onClick={handleCopySectionPrompt}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100/80 hover:bg-gray-200/80 text-gray-700 text-xs font-semibold rounded-lg transition-colors select-none border border-gray-200/60 shadow-sm shrink-0"

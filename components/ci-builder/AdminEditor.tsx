@@ -34,6 +34,7 @@ import {
 import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
 import { ImportPanel } from "./ImportPanel";
+import { BrandBookPresentation } from "./BrandBookPresentation";
 import {
   resetCiGuideline,
   migrateCiGuidelineToSubmodules,
@@ -73,6 +74,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const [dragSectionId, setDragSectionId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<AdminViewMode>("edit");
   const [migrating, setMigrating] = useState(false);
+  const [brandName, setBrandName] = useState("Brand");
 
   const supabase = createClient();
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -100,6 +102,13 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     setLoadError(null);
     
     try {
+      const { data: proj } = await (supabase as any)
+        .from("projects")
+        .select("title")
+        .eq("id", projectId)
+        .maybeSingle();
+      if (proj?.title) setBrandName(proj.title);
+
       // 1. Fetch or create guideline for project
       let { data: gl, error: glErr } = await (supabase as any)
         .from("ci_guidelines")
@@ -495,7 +504,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     return {
       "--ci-bg": t.backgroundColor || "#ffffff",
       "--ci-text": t.textColor || "#111111",
-      "--ci-accent": t.accentColors?.[0] || "#000000",
+      "--ci-accent": t.accentColors?.[0] || "#111111",
       "--ci-border": "#eaeaea",
       "--ci-font": cssFontStack(t.primaryFont || t.fontFamily, t.primaryFontFallback),
       "--ci-font-secondary": cssFontStack(
@@ -533,6 +542,148 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         >
           Retry Loading
         </button>
+      </div>
+    );
+  }
+
+  const viewModeToggle = (
+    <div className="inline-flex rounded-lg border border-black/10 bg-white/90 p-0.5 text-xs shadow-sm backdrop-blur-sm">
+      {(
+        [
+          { id: "edit" as const, label: "Edit" },
+          { id: "elements" as const, label: "Elements" },
+          { id: "brand_book" as const, label: "Brand book" },
+        ] as const
+      ).map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          className={`px-3 py-1.5 rounded-md ${
+            viewMode === tab.id
+              ? "bg-gray-900 text-white"
+              : "text-gray-600 hover:text-gray-900"
+          }`}
+          onClick={() => setViewMode(tab.id)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // Brand book = presentation-only surface (no edit chrome / left rail)
+  if (viewMode === "brand_book") {
+    return (
+      <div className="relative h-full min-h-0">
+        <ToastContainer />
+        <BrandBookPresentation
+          brandName={brandName}
+          theme={guideline?.theme}
+          sections={sections}
+          assets={assets}
+          toolbar={
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-black/5 bg-white/95 backdrop-blur-sm">
+              <p className="text-[11px] text-gray-500 font-medium">
+                Presentation preview · theme colors apply live
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+              {viewModeToggle}
+              <button
+                type="button"
+                onClick={() => setShowThemePanel(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+                title="Theme colors update this brand book live"
+              >
+                <Settings size={14} /> Theme
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+                onClick={() => window.print()}
+              >
+                <Printer size={14} /> PDF
+              </button>
+              {guideline?.status === "published" ? (
+                <button
+                  type="button"
+                  disabled={reverting}
+                  onClick={async () => {
+                    if (!guideline?.id) return;
+                    setReverting(true);
+                    try {
+                      const { error } = await (supabase as any)
+                        .from("ci_guidelines")
+                        .update({
+                          status: "draft",
+                          published_at: null,
+                          updated_at: new Date().toISOString(),
+                        })
+                        .eq("id", guideline.id);
+                      if (error) throw error;
+                      await (supabase as any)
+                        .from("ci_guideline_versions")
+                        .update({ is_published: false })
+                        .eq("guideline_id", guideline.id);
+                      setGuideline({
+                        ...guideline,
+                        status: "draft",
+                        published_at: null,
+                      });
+                      triggerToast("Reverted to draft");
+                    } catch (err: any) {
+                      triggerToast(err.message || "Failed to revert");
+                    } finally {
+                      setReverting(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {reverting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : null}
+                  Draft
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowPublishModal(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  <Share size={14} /> Publish
+                </button>
+              )}
+              </div>
+            </div>
+          }
+        />
+
+        {showThemePanel && (
+          <ThemePanel
+            guideline={guideline}
+            discoveredFonts={discoveredFonts}
+            onClose={() => setShowThemePanel(false)}
+            onUpdate={handleUpdateTheme}
+          />
+        )}
+
+        {showPublishModal && (
+          <PublishModal
+            guideline={guideline}
+            sections={sections}
+            assets={assets}
+            onClose={() => setShowPublishModal(false)}
+            onFlushSaves={flushPendingSaves}
+            saveStatus={saveStatus}
+            onPublished={(slug) => {
+              setGuideline((g: any) => ({
+                ...g,
+                status: "published",
+                slug,
+                published_at: new Date().toISOString(),
+              }));
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -748,28 +899,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       <div className="flex-1 overflow-y-auto relative bg-[#f9f9f9] flex flex-col min-w-0">
         <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-4 py-2.5 shrink-0 no-print">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-xs">
-              {(
-                [
-                  { id: "edit" as const, label: "Edit" },
-                  { id: "elements" as const, label: "Elements" },
-                  { id: "brand_book" as const, label: "Brand book" },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className={`px-3 py-1.5 rounded-md ${
-                    viewMode === tab.id
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                  onClick={() => setViewMode(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+            {viewModeToggle}
 
             <button
               type="button"
@@ -780,17 +910,19 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               <Printer size={14} /> PDF / Print
             </button>
 
-            {viewMode === "edit" && (
+            {(viewMode === "edit" || viewMode === "elements") && (
               <>
-                <button
-                  type="button"
-                  onClick={flushPendingSaves}
-                  disabled={saveStatus === "saving"}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <Save size={14} />
-                  {saveStatus === "saving" ? "Saving…" : "Save"}
-                </button>
+                {viewMode === "edit" && (
+                  <button
+                    type="button"
+                    onClick={flushPendingSaves}
+                    disabled={saveStatus === "saving"}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Save size={14} />
+                    {saveStatus === "saving" ? "Saving…" : "Save"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowThemePanel(true)}

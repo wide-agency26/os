@@ -176,6 +176,39 @@ export function ThemePanel({
           </div>
         </div>
 
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-2">
+            Accent Color
+          </label>
+          <p className="text-[10px] text-gray-400 mb-1.5">
+            Brand book links, eyebrows, and highlights
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="color"
+              value={theme.accentColors?.[0] || "#111111"}
+              onChange={(e) =>
+                handleChange("accentColors", [
+                  e.target.value,
+                  ...(theme.accentColors || []).slice(1),
+                ])
+              }
+              className="w-8 h-8 rounded cursor-pointer border border-gray-300 bg-white"
+            />
+            <input
+              type="text"
+              value={theme.accentColors?.[0] || "#111111"}
+              onChange={(e) =>
+                handleChange("accentColors", [
+                  e.target.value,
+                  ...(theme.accentColors || []).slice(1),
+                ])
+              }
+              className={`flex-1 uppercase ${ciFieldMonoClass}`}
+            />
+          </div>
+        </div>
+
         {SLOT_META.map((slot) => {
           const fontVal = String(theme[slot.fontField] || "");
           const fallbackVal = String(
@@ -271,6 +304,7 @@ export function ThemePanel({
                   theme.primaryFont || theme.fontFamily,
                   theme.primaryFontFallback
                 ),
+                color: theme.accentColors?.[0] || theme.textColor || "#111",
               }}
             >
               Primary — Heading
