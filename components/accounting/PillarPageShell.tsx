@@ -30,7 +30,7 @@ import {
 import { formatEuro, isAutoSource, type LedgerEntry, type LedgerPillar } from "@/lib/accounting/types";
 import {
   deleteManualLedgerEntry,
-  runSyncHrAndOverheadLedger,
+  runAccountingHygiene,
   updateLedgerCategory,
 } from "@/app/actions/accounting";
 
@@ -41,7 +41,7 @@ type PillarPageShellProps = {
   pillar: LedgerPillar;
   title: string;
   description?: string;
-  /** Runs the HR/overhead auto-sync once on mount (Actual page only). */
+  /** Runs orphan prune + HR/overhead sync once on mount. */
   runSyncOnMount?: boolean;
   showConfidence?: boolean;
   groupMode?: "project" | "category";
@@ -93,7 +93,7 @@ export function PillarPageShell({
     if (!runSyncOnMount) return;
     (async () => {
       setSyncing(true);
-      await runSyncHrAndOverheadLedger();
+      await runAccountingHygiene();
       setSyncing(false);
       void reload();
     })();

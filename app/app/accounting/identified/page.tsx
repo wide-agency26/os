@@ -12,14 +12,15 @@ export default function IdentifiedLedgerPage() {
       <PillarPageShell
         pillar="identified"
         title="Identified"
-        description="Prospect deals — revenue and cost that aren't signed yet."
+        description="Lead deals — identified revenue and cost that aren't signed clients yet."
+        runSyncOnMount
         groupMode="project"
         headerExtra={
           <div className="flex items-center gap-2 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
             <Info size={14} className="shrink-0" />
             <span className="flex-1">
-              Rows migrate to Actual automatically when a project&apos;s stage changes from
-              Prospect to Signed or Completed.
+              Lead-stage projects land here. Moving a project to Client (signed) or
+              Completed migrates these auto rows to Actual.
             </span>
             <Link
               href="/app/projects/project"

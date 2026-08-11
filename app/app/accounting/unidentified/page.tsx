@@ -9,8 +9,9 @@ export default function UnidentifiedLedgerPage() {
       <PillarPageShell
         pillar="unidentified"
         title="Unidentified"
-        description="Speculative pipeline revenue &amp; cost — not yet tied to a specific company, client, or project."
+        description="Prospect / speculative pipeline — not yet a lead or client. Project stage Prospect lands here."
         showConfidence
+        runSyncOnMount
         groupMode="category"
       />
     </Workspace>

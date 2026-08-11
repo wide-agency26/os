@@ -7,6 +7,7 @@ import {
   syncProjectAssignmentCosts,
   syncProjectLedger,
   syncProjectRevenue,
+  pruneOrphanedProjectLedger,
 } from "@/lib/accounting/sync";
 import type { LedgerPillar, LedgerType } from "@/lib/accounting/types";
 import { isAutoSource } from "@/lib/accounting/types";
@@ -36,6 +37,23 @@ export async function runSyncProjectRevenue(projectId: string) {
   const result = await syncProjectRevenue(projectId);
   if (result.ok) revalidatePath("/app/accounting");
   return result;
+}
+
+/** Prune ghost auto rows + refresh HR/overhead. Call on accounting page load. */
+export async function runAccountingHygiene() {
+  const prune = await pruneOrphanedProjectLedger();
+  const hr = await syncHrAndOverheadLedger();
+  if (prune.ok || hr.ok) {
+    revalidatePath("/app/accounting");
+    revalidatePath("/app/accounting/actual");
+    revalidatePath("/app/accounting/identified");
+    revalidatePath("/app/accounting/unidentified");
+  }
+  return {
+    ok: prune.ok && hr.ok,
+    pruned: prune.pruned ?? 0,
+    error: prune.error || hr.error,
+  };
 }
 
 export type ManualLedgerInput = {

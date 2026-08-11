@@ -288,6 +288,92 @@ export async function syncProjectLedger(projectId: string): Promise<{
   return syncProjectAssignmentCosts(projectId);
 }
 
+/**
+ * Remove auto_project ledger ghosts left behind when projects/lines were deleted
+ * (or before project_id FK cascaded).
+ */
+export async function pruneOrphanedProjectLedger(): Promise<{
+  ok: boolean;
+  error?: string;
+  pruned?: number;
+}> {
+  const supabase = (await createClient()) as Sb;
+  let pruned = 0;
+
+  // 1) Rows with no project (legacy ON DELETE SET NULL)
+  const { data: nullProj, error: e1 } = await supabase
+    .from("ledger_entries")
+    .select("id")
+    .eq("source", "auto_project")
+    .is("project_id", null);
+  if (e1) return { ok: false, error: e1.message };
+  for (const row of nullProj || []) {
+    await supabase.from("ledger_entries").delete().eq("id", row.id);
+    pruned += 1;
+  }
+
+  // 2) Rows pointing at a deleted project id (should be rare with CASCADE)
+  const { data: autoRows, error: e2 } = await supabase
+    .from("ledger_entries")
+    .select("id, project_id")
+    .eq("source", "auto_project")
+    .not("project_id", "is", null);
+  if (e2) return { ok: false, error: e2.message };
+
+  const projectIds = [
+    ...new Set((autoRows || []).map((r: { project_id: string }) => r.project_id)),
+  ];
+  if (projectIds.length) {
+    const { data: live } = await supabase
+      .from("projects")
+      .select("id")
+      .in("id", projectIds);
+    const liveSet = new Set((live || []).map((p: { id: string }) => p.id));
+    for (const row of autoRows || []) {
+      if (row.project_id && !liveSet.has(row.project_id)) {
+        await supabase.from("ledger_entries").delete().eq("id", row.id);
+        pruned += 1;
+      }
+    }
+  }
+
+  // 3) Revenue / real-cost lines whose source rows are gone
+  const { data: lineRows } = await supabase
+    .from("ledger_entries")
+    .select("id, sync_key")
+    .eq("source", "auto_project")
+    .or("sync_key.like.auto_project:revline:%,sync_key.like.auto_project:realcost:%");
+
+  for (const row of lineRows || []) {
+    const key = String(row.sync_key || "");
+    const revMatch = key.match(/^auto_project:revline:(.+)$/);
+    const costMatch = key.match(/^auto_project:realcost:(.+)$/);
+    if (revMatch) {
+      const { data } = await supabase
+        .from("project_revenue_lines")
+        .select("id")
+        .eq("id", revMatch[1])
+        .maybeSingle();
+      if (!data) {
+        await supabase.from("ledger_entries").delete().eq("id", row.id);
+        pruned += 1;
+      }
+    } else if (costMatch) {
+      const { data } = await supabase
+        .from("project_cost_lines")
+        .select("id")
+        .eq("id", costMatch[1])
+        .maybeSingle();
+      if (!data) {
+        await supabase.from("ledger_entries").delete().eq("id", row.id);
+        pruned += 1;
+      }
+    }
+  }
+
+  return { ok: true, pruned };
+}
+
 /** Always-on payroll / retainers (no project) + overhead lines → actual costs. */
 export async function syncHrAndOverheadLedger(): Promise<{
   ok: boolean;

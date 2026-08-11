@@ -141,6 +141,12 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
     if (!confirm("Are you sure you want to delete this project? This action cannot be undone.")) return;
     setDeleting(true);
     const supabase = createClient();
+    // Ledger auto rows cascade with the project; wipe any stragglers first.
+    await (supabase as any)
+      .from("ledger_entries")
+      .delete()
+      .eq("project_id", projectId)
+      .eq("source", "auto_project");
     const { error } = await (supabase as any)
       .from("projects")
       .delete()
@@ -150,6 +156,12 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
       alert("Error deleting project: " + error.message);
       setDeleting(false);
     } else {
+      try {
+        const { runAccountingHygiene } = await import("@/app/actions/accounting");
+        await runAccountingHygiene();
+      } catch (e) {
+        console.error("accounting hygiene failed", e);
+      }
       router.push("/app/projects/project");
     }
   };
