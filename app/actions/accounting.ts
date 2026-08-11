@@ -296,3 +296,33 @@ export async function updateProjectDealValue(
   revalidatePath(`/app/projects/${projectId}/revenue`);
   return { ok: true as const };
 }
+
+export async function updateProjectAccountingStage(
+  projectId: string,
+  stage: "prospect" | "lead" | "client" | "completed"
+) {
+  const supabase = await createClient();
+  const { error } = await (supabase as any)
+    .from("projects")
+    .update({
+      stage,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", projectId);
+  if (error) return { ok: false as const, error: error.message };
+
+  // DB trigger re-pillars auto rows; sync refreshes amounts/keys from sources.
+  const sync = await syncProjectLedger(projectId);
+  if (!sync.ok) {
+    return { ok: false as const, error: sync.error || "Ledger sync failed" };
+  }
+
+  revalidatePath("/app/accounting");
+  revalidatePath("/app/accounting/actual");
+  revalidatePath("/app/accounting/identified");
+  revalidatePath("/app/accounting/unidentified");
+  revalidatePath(`/app/projects/${projectId}`);
+  revalidatePath(`/app/projects/${projectId}/cost`);
+  revalidatePath(`/app/projects/${projectId}/revenue`);
+  return { ok: true as const };
+}

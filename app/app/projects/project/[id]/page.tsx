@@ -17,7 +17,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
     client_id: "",
     project_type_id: "",
     status: "running",
-    stage: "signed",
+    stage: "client",
     priority: "Medium",
     department: "",
     expected_start_date: "",
@@ -77,7 +77,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
           client_id: project.client_id || "",
           project_type_id: project.project_type_id || "",
           status: project.status || "running",
-          stage: project.stage || "signed",
+          stage: project.stage === "signed" ? "client" : project.stage || "client",
           priority: project.priority || "Medium",
           department: project.department || "",
           expected_start_date: project.expected_start_date || "",
@@ -281,12 +281,12 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
                 >
                   <option value="prospect">Prospect → Unidentified</option>
                   <option value="lead">Lead → Identified</option>
-                  <option value="signed">Client (signed) → Actual</option>
+                  <option value="client">Client → Actual</option>
                   <option value="completed">Completed → Actual</option>
                 </select>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Drives where Cost / Revenue Center amounts land in financials.
-                  Stage changes migrate auto ledger rows automatically.
+                  Also changeable from the project header (Prospect / Lead / Client).
+                  Stage moves auto costs &amp; revenue between accounting pillars.
                 </p>
               </div>
               <div>

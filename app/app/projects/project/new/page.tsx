@@ -241,11 +241,11 @@ export default function NewProjectPage() {
                 >
                   <option value="prospect">Prospect → Unidentified</option>
                   <option value="lead">Lead → Identified</option>
-                  <option value="signed">Client (signed) → Actual</option>
+                  <option value="client">Client → Actual</option>
                   <option value="completed">Completed → Actual</option>
                 </select>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Prospect / Lead / Client stage controls which accounting pillar
+                  Prospect / Lead / Client controls which accounting pillar
                   receives project revenue and costs.
                 </p>
               </div>

@@ -11,6 +11,7 @@ export type LedgerSource =
 export type ProjectAccountingStage =
   | "prospect"
   | "lead"
+  | "client"
   | "signed"
   | "completed";
 
@@ -57,37 +58,79 @@ export type LedgerActivity = {
   created_at: string;
 };
 
-export const PROJECT_STAGES: { value: ProjectAccountingStage; label: string; pillar: LedgerPillar }[] =
-  [
-    {
-      value: "prospect",
-      label: "Prospect → Unidentified revenue",
-      pillar: "unidentified",
-    },
-    {
-      value: "lead",
-      label: "Lead → Identified revenue",
-      pillar: "identified",
-    },
-    {
-      value: "signed",
-      label: "Client (signed) → Actual revenue",
-      pillar: "actual",
-    },
-    {
-      value: "completed",
-      label: "Completed → Actual revenue",
-      pillar: "actual",
-    },
-  ];
+/** Primary funnel control shown on project pages. */
+export const PROJECT_FUNNEL_STAGES: {
+  value: "prospect" | "lead" | "client";
+  label: string;
+  pillar: LedgerPillar;
+  hint: string;
+}[] = [
+  {
+    value: "prospect",
+    label: "Prospect",
+    pillar: "unidentified",
+    hint: "Unidentified P&L",
+  },
+  {
+    value: "lead",
+    label: "Lead",
+    pillar: "identified",
+    hint: "Identified P&L",
+  },
+  {
+    value: "client",
+    label: "Client",
+    pillar: "actual",
+    hint: "Actual P&L",
+  },
+];
+
+export const PROJECT_STAGES: {
+  value: ProjectAccountingStage;
+  label: string;
+  pillar: LedgerPillar;
+}[] = [
+  {
+    value: "prospect",
+    label: "Prospect → Unidentified",
+    pillar: "unidentified",
+  },
+  {
+    value: "lead",
+    label: "Lead → Identified",
+    pillar: "identified",
+  },
+  {
+    value: "client",
+    label: "Client → Actual",
+    pillar: "actual",
+  },
+  {
+    value: "completed",
+    label: "Completed → Actual",
+    pillar: "actual",
+  },
+];
+
+/** Normalize legacy `signed` → `client` for UI. */
+export function normalizeProjectStage(
+  stage: string | null | undefined
+): ProjectAccountingStage {
+  if (stage === "signed") return "client";
+  if (stage === "prospect" || stage === "lead" || stage === "client" || stage === "completed") {
+    return stage;
+  }
+  return "prospect";
+}
 
 /** Map project accounting stage → ledger pillar. */
 export function pillarFromStage(
   stage: string | null | undefined
 ): LedgerPillar {
-  if (stage === "prospect") return "unidentified";
-  if (stage === "lead") return "identified";
-  return "actual"; // signed | completed | default (client work)
+  const s = normalizeProjectStage(stage);
+  if (s === "prospect") return "unidentified";
+  if (s === "lead") return "identified";
+  return "actual"; // client | signed | completed
 }
 
 export function stagePillarLabel(stage: string | null | undefined): string {
