@@ -1,0 +1,19 @@
+---
+description: Name Vercel production deploys after the change being shipped
+alwaysApply: true
+---
+
+# Vercel deploy naming
+
+When deploying with `vercel --prod`, always pass a descriptive commit message via meta so the Vercel dashboard does not reuse a stale git HEAD message:
+
+```bash
+vercel --prod --yes -m githubCommitMessage="Short imperative summary of this change"
+```
+
+Examples:
+- `fix: Meta Ads campaign chart tooltips`
+- `feat: report nav General / Social / Ads / Website / SEO`
+- `chore: clarify dataset source badges`
+
+Keep the message ≤72 characters, focused on **why/what changed in this deploy**, not an old unrelated commit.

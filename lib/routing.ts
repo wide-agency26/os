@@ -80,9 +80,11 @@ export function assertRouteAllowed(
     const isClientAllowedAppRoute =
       pathname === "/app/client-guidelines" ||
       pathname === "/app/client-reports" ||
+      pathname === "/app/client-sow" ||
       pathname === "/app/client-files" ||
       pathname === "/app/home" ||
-      pathname.startsWith("/app/client-guidelines/");
+      pathname.startsWith("/app/client-guidelines/") ||
+      pathname.startsWith("/app/client-sow/");
     if (!isFounder(r) && !isClientAllowedAppRoute) {
       return { allowed: false, redirectTo: "/app/client-guidelines" };
     }
@@ -112,9 +114,11 @@ export function assertRouteAllowed(
       (pathname.startsWith("/app") &&
         pathname !== "/app/client-guidelines" &&
         pathname !== "/app/client-reports" &&
+        pathname !== "/app/client-sow" &&
         pathname !== "/app/client-files" &&
         pathname !== "/app/home" &&
-        !pathname.startsWith("/app/client-guidelines/")))
+        !pathname.startsWith("/app/client-guidelines/") &&
+        !pathname.startsWith("/app/client-sow/")))
   ) {
     return { allowed: false, redirectTo: "/app/client-guidelines" };
   }

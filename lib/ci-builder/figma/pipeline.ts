@@ -1,5 +1,6 @@
 /**
  * Full Figma → Brand Guideline normalize pipeline (P2–P5).
+ * Hierarchy: Section=Module → Frame=Sub-Module → *_Container=data shell.
  */
 
 import {
@@ -19,7 +20,8 @@ import {
   collectVisualPendings,
   pendingsToAssets,
 } from "./normalize/visuals";
-import { ensureSection } from "./normalize/helpers";
+import { ensureSection, wireVisualAsset } from "./normalize/helpers";
+import { getSubModule } from "@/lib/ci-builder/modules-catalog";
 import { exportAndUploadAssets } from "./normalize/upload-assets";
 import { suggestSectionsForUnmapped } from "@/lib/ci-builder/figma/classify/ai-suggest";
 
@@ -35,6 +37,8 @@ export type FigmaPipelineResult = {
     assetsUploaded: number;
     assetsFailed: number;
     aiSuggestions: number;
+    skippedEmptyUi: number;
+    subModules: number;
   };
 };
 
@@ -56,10 +60,9 @@ export async function runFigmaImportPipeline(opts: {
     supabase,
     previewOnly = false,
     skipAssetUpload = false,
-    runAiSuggest = true,
+    runAiSuggest = false, // off by default — hierarchy map is authoritative
   } = opts;
 
-  // Full document for styles/fills/components (no depth cap)
   const file = await getFigmaFile(accessToken, fileKey);
   const summary = extractFigmaSummary(file);
 
@@ -84,7 +87,7 @@ export async function runFigmaImportPipeline(opts: {
         detectedNameKeys: ["name"],
         detectedFileKeys: [],
         missingFileRows: [],
-        message: `Preview: ${summary.pageCount} pages · ${summary.frameCount} frames · ${summary.componentCount} components · ${summary.styleCount} styles · variables ${variables?.meta ? "available" : "n/a"}`,
+        message: `Preview: ${summary.pageCount} pages · ${summary.frameCount} sub-module frames · ${summary.componentCount} components · ${summary.styleCount} styles · variables ${variables?.meta ? "available" : "n/a"}`,
       },
     };
     return {
@@ -99,6 +102,8 @@ export async function runFigmaImportPipeline(opts: {
         assetsUploaded: 0,
         assetsFailed: 0,
         aiSuggestions: 0,
+        skippedEmptyUi: 0,
+        subModules: 0,
       },
     };
   }
@@ -110,11 +115,16 @@ export async function runFigmaImportPipeline(opts: {
   const themeSuggested: Record<string, any> = { accentColors: [] };
 
   const colorStats = normalizeColors({ file, variables, sections, themeSuggested });
-  const typeStats = normalizeTypography({ file, sections, themeSuggested });
-  const buttonStats = normalizeButtons({ file, sections });
+  const typeStats = normalizeTypography({
+    file,
+    sections,
+    themeSuggested,
+    variables,
+  });
   const visual = collectVisualPendings({ file, sections });
+  const buttonStats = normalizeButtons({ file, sections });
 
-  // P5: AI suggestions for unmapped pending assets
+  // Optional AI for truly unmapped leftover pendings (rare with canvas map)
   let aiSuggestions = 0;
   if (runAiSuggest) {
     const unmatched = visual.pendings.filter((p) => p.sectionType === "unmatched");
@@ -129,9 +139,7 @@ export async function runFigmaImportPipeline(opts: {
         pending.sectionType = s.suggestedSection;
         pending.kind = s.suggestedSection;
         aiSuggestions++;
-
         const sec = ensureSection(sections, s.suggestedSection, file.name);
-        // Light-touch wiring into section data
         wireSuggestedAsset(sec, pending.assetId, pending.label, s.suggestedSection);
       }
     }
@@ -153,11 +161,16 @@ export async function runFigmaImportPipeline(opts: {
     failed = result.failed;
   }
 
+  // Only count truly failed uploads as "missing" — never pending_export phantoms
+  const missingFileRows = assets
+    .filter((a) => a.metadata?.pending_export && !a.public_url)
+    .map((a) => a.label || "")
+    .slice(0, 40);
+
   const assignedCount =
     visual.assigned +
     (colorStats.swatchCount > 0 ? 1 : 0) +
-    (typeStats.rowCount > 0 ? 1 : 0) +
-    (buttonStats.sampleCount > 0 ? 1 : 0) +
+    (typeStats.familyCount > 0 || typeStats.scaleCount > 0 ? 1 : 0) +
     aiSuggestions;
 
   const parsed: ParseResult = {
@@ -166,22 +179,24 @@ export async function runFigmaImportPipeline(opts: {
     themeSuggested,
     report: {
       format: "items_manifest",
-      totalItems: summary.items.length + colorStats.swatchCount + typeStats.rowCount,
+      totalItems: visual.subModules + colorStats.swatchCount + typeStats.rowCount,
       assignedCount,
-      unassignedCount: visual.unassigned - aiSuggestions,
-      missingFiles: assets.filter((a) => !a.public_url).length,
+      unassignedCount: Math.max(0, visual.unassigned - aiSuggestions),
+      missingFiles: failed,
       detectedNameKeys: ["name"],
       detectedFileKeys: ["figma_node_id"],
-      missingFileRows: assets
-        .filter((a) => a.metadata?.pending_export)
-        .map((a) => a.label || "")
-        .slice(0, 40),
+      missingFileRows: failed > 0 ? missingFileRows : [],
       message: [
         `Figma import complete for “${summary.fileName}”.`,
+        `Sub-modules: ${visual.subModules} (1 section each).`,
+        `Assets exported: ${uploaded} parent frames.`,
+        visual.skippedEmptyUi
+          ? `Skipped empty UI frames: ${visual.skippedEmptyUi}.`
+          : "",
         `Colors: ${colorStats.swatchCount} (${colorStats.fromVariables} vars / ${colorStats.fromStyles} styles).`,
-        `Typography: ${typeStats.rowCount} rows.`,
-        `Buttons: ${buttonStats.sampleCount}.`,
-        `Assets uploaded: ${uploaded}, pending/failed: ${failed}.`,
+        `Typography: ${typeStats.familyCount} families · ${typeStats.scaleCount} scale steps.`,
+        buttonStats.sampleCount ? `Button samples: ${buttonStats.sampleCount}.` : "",
+        failed ? `Upload failures: ${failed}.` : "",
         aiSuggestions ? `AI suggestions applied: ${aiSuggestions}.` : "",
         variables?.meta ? "" : "Variables API unavailable (non-Enterprise or missing scope).",
       ]
@@ -202,6 +217,8 @@ export async function runFigmaImportPipeline(opts: {
       assetsUploaded: uploaded,
       assetsFailed: failed,
       aiSuggestions,
+      skippedEmptyUi: visual.skippedEmptyUi,
+      subModules: visual.subModules,
     },
   };
 }
@@ -213,6 +230,12 @@ function wireSuggestedAsset(
   section: SectionType
 ) {
   if (!sec.data) return;
+
+  if (getSubModule(section)) {
+    wireVisualAsset(sec, section, assetId, label);
+    return;
+  }
+
   if (section === "logo") {
     if (!sec.data.logos) sec.data.logos = [];
     sec.data.logos.push({

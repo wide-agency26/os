@@ -1,1 +1,12 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/cron/bd-on-hold",
+      "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/cron/bd-quotations",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 /**
  * Extract a shallow tree from a Figma file for P1 preview + section suggestions.
+ * Respects canvas hierarchy: Section → Sub-Module Frame (ignores *_Container children).
  */
 
 import type { FigmaFileNode, FigmaFileResponse } from "@/lib/ci-builder/figma/client";
@@ -8,6 +9,11 @@ import type { SectionType, CISection, CIAsset } from "@/lib/ci-builder/types";
 import { generateUUID } from "@/lib/ci-builder/types";
 import type { ParseResult } from "@/lib/ci-builder/parser";
 import { defaultDataFor } from "@/lib/ci-builder/figma/normalize/helpers";
+import {
+  isContainerFrame,
+  lookupCanvasFrame,
+  matchCanvasModule,
+} from "@/lib/ci-builder/figma/canvas-map";
 
 export type FigmaTreeNode = {
   id: string;
@@ -36,26 +42,22 @@ export type FigmaExtractSummary = {
   }[];
 };
 
-function walkRelevant(
-  node: FigmaFileNode,
-  out: { id: string; name: string; type: string }[],
-  depth: number
-) {
-  const interesting = ["PAGE", "FRAME", "COMPONENT", "COMPONENT_SET", "SECTION"];
-  if (interesting.includes(node.type)) {
-    out.push({ id: node.id, name: node.name, type: node.type });
-  }
-  if (depth <= 0 || !node.children) return;
-  for (const child of node.children) {
-    walkRelevant(child, out, depth - 1);
-  }
-}
-
 function classifyName(name: string): {
   section: SectionType | null;
   confidence: "mapped" | "suggested" | "unmapped";
   reason?: string;
 } {
+  if (isContainerFrame(name)) {
+    return { section: null, confidence: "unmapped", reason: "Container wrapper (skipped)" };
+  }
+  const canvas = lookupCanvasFrame(name);
+  if (canvas) {
+    return {
+      section: canvas.sectionType,
+      confidence: "mapped",
+      reason: "Canvas generator frame map",
+    };
+  }
   const match = matchSectionType(name);
   if (match.type) {
     return {
@@ -70,13 +72,58 @@ function classifyName(name: string): {
   return { section: null, confidence: "unmapped", reason: "No glossary match" };
 }
 
+function collectSubModuleFrames(doc: FigmaFileNode): FigmaFileNode[] {
+  const out: FigmaFileNode[] = [];
+
+  const walkSections = (n: FigmaFileNode) => {
+    if (n.type === "SECTION" && matchCanvasModule(n.name)) {
+      for (const child of n.children || []) {
+        if (
+          (child.type === "FRAME" ||
+            child.type === "COMPONENT" ||
+            child.type === "COMPONENT_SET") &&
+          !isContainerFrame(child.name)
+        ) {
+          out.push(child);
+        }
+      }
+      return;
+    }
+    for (const c of n.children || []) walkSections(c);
+  };
+  walkSections(doc);
+
+  if (out.length === 0) {
+    // Flat fallback: page-level frames that match the canvas map
+    const pages = (doc.children || []).filter(
+      (c) => c.type === "PAGE" || c.type === "CANVAS"
+    );
+    for (const page of pages.length ? pages : [doc]) {
+      for (const child of page.children || []) {
+        if (
+          (child.type === "FRAME" || child.type === "COMPONENT") &&
+          !isContainerFrame(child.name) &&
+          lookupCanvasFrame(child.name)
+        ) {
+          out.push(child);
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
 function toTree(node: FigmaFileNode, depth: number): FigmaTreeNode {
   const { section, confidence } = classifyName(node.name);
   const children =
     depth > 0 && node.children
       ? node.children
-          .filter((c) =>
-            ["PAGE", "FRAME", "COMPONENT", "COMPONENT_SET", "SECTION"].includes(c.type)
+          .filter(
+            (c) =>
+              ["PAGE", "FRAME", "COMPONENT", "COMPONENT_SET", "SECTION"].includes(
+                c.type
+              ) && !isContainerFrame(c.name)
           )
           .slice(0, 40)
           .map((c) => toTree(c, depth - 1))
@@ -92,33 +139,30 @@ function toTree(node: FigmaFileNode, depth: number): FigmaTreeNode {
 }
 
 export function extractFigmaSummary(file: FigmaFileResponse): FigmaExtractSummary {
-  const flat: { id: string; name: string; type: string }[] = [];
-  walkRelevant(file.document, flat, 4);
+  const subFrames = collectSubModuleFrames(file.document);
 
   const pages = (file.document.children || [])
     .filter((c) => c.type === "PAGE")
     .map((p) => toTree(p, 2));
 
-  const items = flat
-    .filter((n) => n.type === "FRAME" || n.type === "COMPONENT" || n.type === "COMPONENT_SET")
-    .map((n) => {
-      const c = classifyName(n.name);
-      return {
-        sourceId: n.id,
-        sourceName: n.name,
-        targetSection: c.section,
-        confidence: c.confidence,
-        reason: c.reason,
-      };
-    });
+  const items = subFrames.map((n) => {
+    const c = classifyName(n.name);
+    return {
+      sourceId: n.id,
+      sourceName: n.name,
+      targetSection: c.section,
+      confidence: c.confidence,
+      reason: c.reason,
+    };
+  });
 
   return {
     fileName: file.name,
     version: file.version || null,
     lastModified: file.lastModified || null,
     pageCount: pages.length,
-    frameCount: flat.filter((n) => n.type === "FRAME").length,
-    componentCount: Object.keys(file.components || {}).length || flat.filter((n) => n.type === "COMPONENT" || n.type === "COMPONENT_SET").length,
+    frameCount: subFrames.length,
+    componentCount: Object.keys(file.components || {}).length,
     styleCount: Object.keys(file.styles || {}).length,
     pages,
     items,
@@ -126,8 +170,8 @@ export function extractFigmaSummary(file: FigmaFileResponse): FigmaExtractSummar
 }
 
 /**
- * P1 normalize: create section shells for confidently mapped types,
- * leave visual assets for later phases (no image upload yet).
+ * P1 normalize: create section shells for confidently mapped sub-modules only.
+ * Does NOT create phantom asset rows for containers or missing binaries.
  */
 export function figmaSummaryToParseResult(
   summary: FigmaExtractSummary,
@@ -159,69 +203,15 @@ export function figmaSummaryToParseResult(
   let unassigned = 0;
 
   for (const item of summary.items) {
-    if (item.confidence === "mapped" && item.targetSection) {
-      // Skip admin-only sections
-      if (["overview", "imagery", "voice_tone"].includes(item.targetSection)) {
-        unassigned++;
-        continue;
-      }
-      const sec = ensureSection(item.targetSection);
+    if (
+      (item.confidence === "mapped" || item.confidence === "suggested") &&
+      item.targetSection
+    ) {
+      ensureSection(item.targetSection);
       assigned++;
-      // Placeholder asset row (no binary yet) for review queue / future export
-      assets.push({
-        id: generateUUID(),
-        section_id: sec.id || null,
-        kind: "figma_frame",
-        storage_path: `figma://${item.sourceId}`,
-        public_url: "",
-        label: item.sourceName,
-        caption: null,
-        metadata: {
-          match_method: "exact",
-          figma_node_id: item.sourceId,
-          import_confidence: item.confidence,
-          pending_export: true,
-        },
-        sort_order: assets.length,
-      });
-    } else if (item.confidence === "suggested" && item.targetSection) {
-      const sec = ensureSection(item.targetSection);
-      assigned++;
-      assets.push({
-        id: generateUUID(),
-        section_id: sec.id || null,
-        kind: "figma_frame",
-        storage_path: `figma://${item.sourceId}`,
-        public_url: "",
-        label: item.sourceName,
-        caption: null,
-        metadata: {
-          match_method: "substring",
-          figma_node_id: item.sourceId,
-          import_confidence: "suggested",
-          pending_export: true,
-        },
-        sort_order: assets.length,
-      });
+      // No phantom asset rows in P1 — full pipeline exports parent frames later
     } else {
       unassigned++;
-      assets.push({
-        id: generateUUID(),
-        section_id: null,
-        kind: "figma_frame",
-        storage_path: `figma://${item.sourceId}`,
-        public_url: "",
-        label: item.sourceName,
-        caption: null,
-        metadata: {
-          match_method: null,
-          figma_node_id: item.sourceId,
-          import_confidence: "unmapped",
-          pending_export: true,
-          reason: item.reason,
-        },
-        sort_order: assets.length,
-      });
     }
   }
 
@@ -234,14 +224,11 @@ export function figmaSummaryToParseResult(
       totalItems: summary.items.length,
       assignedCount: assigned,
       unassignedCount: unassigned,
-      missingFiles: assets.filter((a) => !a.public_url).length,
+      missingFiles: 0,
       detectedNameKeys: ["name"],
       detectedFileKeys: [],
-      missingFileRows: assets
-        .filter((a) => a.metadata?.pending_export)
-        .map((a) => a.label || "")
-        .slice(0, 50),
-      message: `Figma P1 extract: ${summary.pageCount} pages, ${summary.frameCount} frames, ${summary.componentCount} components, ${summary.styleCount} styles. Colors/typography/assets full import arrives in P2–P3.`,
+      missingFileRows: [],
+      message: `Figma extract: ${summary.pageCount} pages, ${summary.frameCount} sub-module frames, ${summary.componentCount} components, ${summary.styleCount} styles.`,
     },
   };
 }

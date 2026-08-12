@@ -109,6 +109,33 @@ const MODULES: ModuleItem[] = [
     ],
   },
   {
+    name: "BD",
+    href: "/app/bd",
+    icon: FileText,
+    founderOnly: true,
+    items: [
+      { name: "Pipeline", href: "/app/bd" },
+      { name: "Qualification", href: "/app/bd/qualification" },
+      { name: "LMS / SOW", href: "/app/bd/lms" },
+      { name: "Proposal Builder", href: "/app/bd/proposal" },
+      { name: "Contract Builder", href: "/app/bd/contract" },
+      { name: "Quotations", href: "/app/bd/quotation" },
+      { name: "Opportunity Finder", href: "/app/bd/discovery" },
+    ],
+  },
+  {
+    name: "SEO Audit",
+    href: "/app/seo-audit",
+    icon: Search,
+    founderOnly: true,
+  },
+  {
+    name: "Sentiment",
+    href: "/app/sentiment",
+    icon: Users,
+    founderOnly: true,
+  },
+  {
     name: "Playbooks",
     href: "/app/playbooks",
     icon: BookOpen,
@@ -138,13 +165,24 @@ function itemOrChildrenActive(pathname: string, item: SubItem): boolean {
   return Boolean(item.items?.some((child) => itemOrChildrenActive(pathname, child)));
 }
 
-export function Sidebar() {
+export function Sidebar({
+  initialRole = null,
+  initialDisplayName = "Admin User",
+}: {
+  initialRole?: string | null;
+  initialDisplayName?: string;
+} = {}) {
   const pathname = usePathname();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [userRole, setUserRole] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState("Admin User");
+  const [userRole, setUserRole] = useState<string | null>(initialRole);
+  const [displayName, setDisplayName] = useState(initialDisplayName);
 
   useEffect(() => {
+    if (initialRole) {
+      setUserRole(initialRole);
+      setDisplayName(initialDisplayName);
+      return;
+    }
     async function fetchRole() {
       try {
         const supabase = createClient();
@@ -167,7 +205,7 @@ export function Sidebar() {
       }
     }
     void fetchRole();
-  }, []);
+  }, [initialRole, initialDisplayName]);
 
   const isFounderRole = isFounder(userRole);
 

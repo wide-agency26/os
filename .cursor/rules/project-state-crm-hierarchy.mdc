@@ -34,14 +34,22 @@ Prod: https://os-bice-nine.vercel.app · Always deploy at end of work (`vercel -
 - Client access / picker: `app/app/client-access/page.tsx`, `components/client/CompanyPickerModal.tsx`, `app/actions/company-members.ts`
 - Accounting: `lib/accounting/*`, `components/accounting/*`, `app/app/accounting/**`
 
+## BD ↔ CRM (Aug 12 2026)
+
+- Every BD prospect creates/links **CRM company** (`record_kind=company`) + **CRM contact** (`record_kind=contact`, `parent_company_id` → company)
+- `bd_records.company_id` + `bd_records.contact_id` both FK → `crm_customers`
+- Helper: `lib/bd/crm-link.ts` (`ensureBdCrmCompanyAndContact`); wired on create / update / stage move / discovery log / handoff
+- Stage → CRM status: early=`Prospect`, mid=`Lead`, `client_won`=`Client` (never downgrade Client)
+- Handoff projects still attach to **company** row only (`projects.client_id`)
+
 ## Next when user returns (priority)
 
 1. **Portal scope**: company members see that company’s projects / reports / CI overview
 2. **Ledger form**: `LedgerEntryForm` still can write contact id into `company_id` / company into `client_id` on change handlers — options loaders are correct; persistence needs parent resolution
 3. Home/CRM “Client” counts may double-count company + contact with `status=Client`
 4. Bulk import: set `record_kind` + parent company linking
-5. Regenerate `types/supabase.ts` for `record_kind` / `parent_company_id`
-6. Optional: ClientsHub filter to Client-status companies; backfill orphan contacts
+5. Optional: ClientsHub filter to Client-status companies; backfill orphan contacts
+6. Optional: CRM detail page show linked BD record(s) via `company_id` / `contact_id`
 
 ## Test checklist (this close-out)
 

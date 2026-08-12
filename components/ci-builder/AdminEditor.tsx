@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { CISection, CIAsset, CITheme, generateUUID, cssFontStack } from "@/lib/ci-builder/types";
 
@@ -12,7 +12,8 @@ import { SectionRenderer } from "./sections/index";
 import { parseManifest } from "@/lib/ci-builder/parser";
 import { applyImportResult } from "@/lib/ci-builder/import/apply-import-result";
 import { CI_ADDABLE_GLOSSARY } from "@/lib/ci-builder/glossary";
-import { CI_MODULES, defaultDataForSubModule, getSubModule } from "@/lib/ci-builder/modules-catalog";
+import { CI_MODULES, defaultDataForSubModule, getSubModule, sortSectionsByCatalog } from "@/lib/ci-builder/modules-catalog";
+import { scrollToSectionAnchor } from "@/lib/ci-builder/scroll";
 import { needsLegacyMigration } from "@/lib/ci-builder/migrate-legacy-sections";
 import {
   Settings,
@@ -78,6 +79,21 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
   const supabase = createClient();
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const rightPaneRef = useRef<HTMLDivElement>(null);
+
+  const orderedSections = useMemo(
+    () => sortSectionsByCatalog(sections),
+    [sections]
+  );
+
+  const unassignedCount = useMemo(
+    () => assets.filter((a) => a.section_id === null).length,
+    [assets]
+  );
+
+  const scrollToSection = useCallback((anchorId: string) => {
+    scrollToSectionAnchor(anchorId, rightPaneRef.current);
+  }, []);
   const pendingUpdatesRef = useRef<Map<string, { type: "data" | "fields"; payload: any }>>(new Map());
 
   useEffect(() => {
@@ -162,7 +178,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           }
         }
 
-        if (secs) setSections(secs);
+        if (secs) setSections(sortSectionsByCatalog(secs));
         if (asts) setAssets(asts);
       }
       
@@ -395,7 +411,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       return;
     }
     if (mig.migrated) {
-      if (mig.sections) setSections(mig.sections);
+      if (mig.sections) setSections(sortSectionsByCatalog(mig.sections));
       if (mig.assets) setAssets(mig.assets);
       triggerToast("Adapted imported sections to the new CI module structure");
     }
@@ -431,7 +447,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         rawPayload: { fileName: file.name, format: parsed.report.format },
       });
 
-      setSections(applied.sections);
+      setSections(sortSectionsByCatalog(applied.sections));
       setAssets((prev) => [
         ...prev.filter((pa) => !applied.assets.find((na) => na.id === pa.id)),
         ...applied.assets,
@@ -466,7 +482,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     figma?: { fileKey?: string; fileName?: string; version?: string };
   }) => {
     setImportReport(result.report);
-    if (result.sections?.length) setSections(result.sections);
+    if (result.sections?.length) setSections(sortSectionsByCatalog(result.sections));
     if (result.assets) setAssets(result.assets);
     setGuideline((g: any) =>
       g
@@ -579,7 +595,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         <BrandBookPresentation
           brandName={brandName}
           theme={guideline?.theme}
-          sections={sections}
+          sections={orderedSections}
           assets={assets}
           toolbar={
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-black/5 bg-white/95 backdrop-blur-sm">
@@ -669,7 +685,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         {showPublishModal && (
           <PublishModal
             guideline={guideline}
-            sections={sections}
+            sections={orderedSections}
             assets={assets}
             onClose={() => setShowPublishModal(false)}
             onFlushSaves={flushPendingSaves}
@@ -754,10 +770,12 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             </p>
           ) : (
             CI_MODULES.map((mod) => {
-              const modSections = sections.filter((sec) => {
-                const def = getSubModule(sec.section_type);
-                return def?.moduleId === mod.id;
-              });
+              const modSections = sortSectionsByCatalog(
+                sections.filter((sec) => {
+                  const def = getSubModule(sec.section_type);
+                  return def?.moduleId === mod.id;
+                })
+              );
               if (modSections.length === 0) return null;
               return (
                 <div key={mod.id} className="mb-3">
@@ -804,14 +822,15 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                         {viewMode === "edit" && (
                           <GripVertical className="w-3 h-3 text-gray-400 opacity-50 group-hover:opacity-100 shrink-0" />
                         )}
-                        <a
-                          href={`#${sec.id || sec.section_type}`}
-                          className="flex-1 truncate text-gray-700 text-xs"
-                          onClick={(e) => e.stopPropagation()}
-                          draggable={false}
+                        <button
+                          type="button"
+                          className="flex-1 truncate text-left text-gray-700 text-xs"
+                          onClick={() =>
+                            scrollToSection(sec.id || sec.section_type || "")
+                          }
                         >
                           {label}
-                        </a>
+                        </button>
                       </div>
                     );
                   })}
@@ -824,17 +843,18 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               <div className="px-1 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">
                 Other
               </div>
-              {sections
-                .filter((s) => !getSubModule(s.section_type))
-                .map((sec) => (
-                  <a
+              {sortSectionsByCatalog(sections.filter((s) => !getSubModule(s.section_type))).map(
+                (sec) => (
+                  <button
                     key={sec.id}
-                    href={`#${sec.id || sec.section_type}`}
-                    className="block p-1.5 rounded hover:bg-gray-100 text-xs text-gray-700 truncate"
+                    type="button"
+                    onClick={() => scrollToSection(sec.id || sec.section_type || "")}
+                    className="block w-full text-left p-1.5 rounded hover:bg-gray-100 text-xs text-gray-700 truncate"
                   >
                     {sec.eyebrow_label || sec.section_type}
-                  </a>
-                ))}
+                  </button>
+                )
+              )}
             </div>
           )}
           
@@ -880,15 +900,21 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           </div>
 
           {/* Unassigned Assets Queue Summary */}
-          {assets.filter(a => a.section_id === null).length > 0 && (
+          {unassignedCount > 0 && (
             <div className="mt-6 border-t border-gray-200 pt-4">
               <h3 className="text-xs font-medium text-amber-600 uppercase tracking-wider mb-2 flex items-center justify-between">
                 <span>Unassigned</span>
                 <span className="bg-amber-100 text-amber-800 py-0.5 px-2 rounded-full text-[10px] font-bold">
-                  {assets.filter(a => a.section_id === null).length}
+                  {unassignedCount}
                 </span>
               </h3>
-              <p className="text-[10px] text-gray-500 mb-2 leading-tight">View main editor pane to assign these assets.</p>
+              <button
+                type="button"
+                onClick={() => scrollToSection("unassigned-assets-queue")}
+                className="text-[10px] text-amber-700 hover:text-amber-900 font-medium leading-tight"
+              >
+                Jump to unassigned queue →
+              </button>
             </div>
           )}
         </div>
@@ -896,7 +922,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       </div>
 
       {/* RIGHT PANE: Live Preview / Full Visual Editor */}
-      <div className="flex-1 overflow-y-auto relative bg-[#f9f9f9] flex flex-col min-w-0">
+      <div ref={rightPaneRef} className="flex-1 overflow-y-auto relative bg-[#f9f9f9] flex flex-col min-w-0 scroll-smooth">
         <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-4 py-2.5 shrink-0 no-print">
           <div className="flex flex-wrap items-center gap-2">
             {viewModeToggle}
@@ -1011,13 +1037,16 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           style={applyThemeToCSS()}
         >
           {/* Unassigned Assets Queue */}
-          {viewMode === "edit" && assets.filter(a => a.section_id === null).length > 0 && (
-            <div className="max-w-6xl mx-auto p-8 mb-8 bg-amber-50/50 border-b border-amber-200 shadow-sm">
+          {(viewMode === "edit" || viewMode === "elements") && unassignedCount > 0 && (
+            <div
+              id="unassigned-assets-queue"
+              className="max-w-6xl mx-auto p-8 mb-8 bg-amber-50/50 border-b border-amber-200 shadow-sm scroll-mt-24"
+            >
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-lg font-semibold text-amber-900 flex items-center gap-2">
                     <Layers className="w-5 h-5" /> 
-                    Unassigned Assets Queue ({assets.filter(a => a.section_id === null).length})
+                    Unassigned Assets Queue ({unassignedCount})
                   </h2>
                   <p className="text-sm text-amber-700 mt-1">Select items to assign them to a section.</p>
                 </div>
@@ -1050,7 +1079,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                       }}
                     >
                       <option value="" disabled>Bulk Assign to...</option>
-                      {sections.map(s => (
+                      {orderedSections.map(s => (
                         <option key={s.id} value={s.id}>{s.eyebrow_label || s.section_type}</option>
                       ))}
                     </select>
@@ -1133,7 +1162,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                           }}
                         >
                           <option value="" disabled>Assign to...</option>
-                          {sections.map(s => (
+                          {orderedSections.map(s => (
                             <option key={s.id} value={s.id}>{s.eyebrow_label || s.section_type}</option>
                           ))}
                         </select>
@@ -1145,19 +1174,19 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             </div>
           )}
 
-          {sections.length === 0 && assets.filter(a => a.section_id === null).length === 0 ? (
+          {orderedSections.length === 0 && unassignedCount === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 min-h-[500px]">
               <p>Upload a manifest.json or click &quot;+ Add Section&quot; to build the guideline</p>
             </div>
           ) : (
             <div className="pb-32">
-              {sections.map(section => (
+              {orderedSections.map(section => (
                 <SectionRenderer 
                   key={section.id} 
                   section={section} 
                   assets={assets.filter(a => a.section_id === section.id || a.kind === section.section_type)} 
                   allAssets={assets}
-                  allSections={sections}
+                  allSections={orderedSections}
                   isAdmin={viewMode === "edit"}
                   viewMode={viewMode === "elements" ? "elements" : "presentation"}
                   onUpdateData={handleUpdateSectionData}
@@ -1184,7 +1213,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
       {showPublishModal && (
         <PublishModal 
           guideline={guideline} 
-          sections={sections}
+          sections={orderedSections}
           assets={assets}
           onClose={() => setShowPublishModal(false)}
           onFlushSaves={flushPendingSaves}
@@ -1337,12 +1366,20 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                   )}
 
                   {importReport.missingFiles > 0 && (
-                    <div className="bg-red-50 border border-red-100 rounded-lg p-4">
+                    <div className="bg-amber-50 border border-amber-100 rounded-lg p-4">
                       <div className="flex items-start gap-2">
-                        <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                        <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                         <div>
-                          <h4 className="text-sm font-semibold text-red-800">Missing File References ({importReport.missingFiles})</h4>
-                          <p className="text-xs text-red-600 mt-1">Some rows in the manifest did not point to a valid image file. They were imported but flagged as broken.</p>
+                          <h4 className="text-sm font-semibold text-amber-900">
+                            Notes ({importReport.missingFiles})
+                          </h4>
+                          <p className="text-xs text-amber-700 mt-1">
+                            Some manifest rows had no image file. They were flagged in the report
+                            without creating broken asset rows
+                            {importReport.missingFileRows?.length
+                              ? `: ${importReport.missingFileRows.slice(0, 8).join(", ")}`
+                              : "."}
+                          </p>
                         </div>
                       </div>
                     </div>

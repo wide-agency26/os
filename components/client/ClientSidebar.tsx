@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   BookOpen,
   BarChart3,
+  FileText,
   Folder,
   LogOut,
   ChevronLeft,
@@ -16,6 +17,7 @@ import { performSignOut } from "@/lib/auth/sign-out";
 const CLIENT_NAV = [
   { name: "Brand Guidelines", href: "/app/client-guidelines", icon: BookOpen },
   { name: "Reports", href: "/app/client-reports", icon: BarChart3 },
+  { name: "Scope of Work", href: "/app/client-sow", icon: FileText },
   { name: "Files", href: "/app/client-files", icon: Folder, badge: "Soon" },
 ];
 
@@ -26,13 +28,19 @@ function isGuidelineDetail(pathname: string) {
   );
 }
 
+function isSowDetail(pathname: string) {
+  return (
+    pathname.startsWith("/app/client-sow/") && pathname !== "/app/client-sow"
+  );
+}
+
 export function ClientSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     // Auto-minimize on guideline detail so section nav + main nav can coexist
-    if (isGuidelineDetail(pathname)) {
+    if (isGuidelineDetail(pathname) || isSowDetail(pathname)) {
       setCollapsed(true);
       return;
     }
@@ -108,7 +116,9 @@ export function ClientSidebar() {
           const isActive =
             pathname === item.href ||
             (item.href === "/app/client-guidelines" &&
-              pathname.startsWith("/app/client-guidelines"));
+              pathname.startsWith("/app/client-guidelines")) ||
+            (item.href === "/app/client-sow" &&
+              pathname.startsWith("/app/client-sow"));
           const Icon = item.icon;
 
           return (

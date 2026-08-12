@@ -35,6 +35,8 @@ export function isClientFacingAppPath(pathname: string): boolean {
     pathname === "/app/client-guidelines" ||
     pathname.startsWith("/app/client-guidelines/") ||
     pathname === "/app/client-reports" ||
+    pathname === "/app/client-sow" ||
+    pathname.startsWith("/app/client-sow/") ||
     pathname === "/app/client-files"
   );
 }

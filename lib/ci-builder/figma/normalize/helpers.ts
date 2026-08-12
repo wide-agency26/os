@@ -100,6 +100,95 @@ export type PendingExport = {
   doDont?: "do" | "dont";
 };
 
+export function classifyDoDont(label: string): "do" | "dont" {
+  if (
+    /dont|don't|do-not|incorrect|falsch|verboten|wrong|misuse|not\s+to\b|bad\s+example/i.test(
+      label
+    )
+  ) {
+    return "dont";
+  }
+  return "do";
+}
+
+/** Wire an imported Figma visual into a catalog sub-module section's data payload. */
+export function wireVisualAsset(
+  sec: Partial<CISection>,
+  sectionType: SectionType,
+  assetId: string,
+  label: string,
+  opts?: {
+    stage?: "dark" | "light" | "any";
+    doDont?: "do" | "dont";
+    groupLabel?: string;
+    aspectRatio?: string;
+  }
+): void {
+  if (!sec.data) sec.data = defaultDataFor(sectionType);
+  const def = getSubModule(sectionType);
+  const renderer = def?.renderer;
+  const shortLabel = label.split("/").pop()?.trim() || label;
+
+  if (
+    renderer === "image_slot" ||
+    renderer === "clearspace" ||
+    renderer === "ui_button" ||
+    renderer === "email_sig" ||
+    renderer === "container_spec"
+  ) {
+    if (!sec.data.assetId) {
+      sec.data.assetId = assetId;
+      sec.data.label = shortLabel;
+      if (opts?.stage) sec.data.stage = opts.stage;
+    } else {
+      const variants = Array.isArray(sec.data.variants)
+        ? [...sec.data.variants]
+        : [
+            {
+              id: "main",
+              assetId: sec.data.assetId,
+              label: sec.data.label || "",
+            },
+          ];
+      variants.push({ id: generateUUID(), assetId, label: shortLabel });
+      sec.data.variants = variants;
+    }
+    return;
+  }
+
+  if (renderer === "image_dual") {
+    if (!sec.data.items) sec.data.items = [];
+    sec.data.items.push({
+      id: generateUUID(),
+      type: opts?.doDont || classifyDoDont(label),
+      assetId,
+      caption:
+        label.replace(/^(do|dont|don't|misuse)[/\-_\s]*/i, "").trim() || label,
+    });
+    return;
+  }
+
+  if (renderer === "deck") {
+    if (!sec.data.slides) sec.data.slides = [];
+    sec.data.slides.push({
+      id: generateUUID(),
+      label: shortLabel,
+      assetId,
+    });
+    return;
+  }
+
+  if (renderer === "icon_set") {
+    if (!sec.data.icons) sec.data.icons = [];
+    sec.data.icons.push({
+      id: generateUUID(),
+      assetId,
+      label: shortLabel,
+    });
+    return;
+  }
+}
+
 export function makePendingAsset(
   pending: PendingExport,
   sectionId: string | null

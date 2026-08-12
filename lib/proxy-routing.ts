@@ -11,40 +11,36 @@ import { resolveLegacyRedirect } from "@/lib/wide-os/legacy-redirects";
 import { clientPaths } from "@/lib/wide-os/paths";
 import { isClient, isSuperadmin, normalizeRole } from "@/lib/rbac";
 
-const PUBLIC_PREFIXES = ["/login", "/auth"];
+const PUBLIC_PREFIXES = ["/login", "/auth", "/g", "/s", "/a", "/n", "/p"];
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-async function getProfileRole(supabase: SupabaseClient, userId: string) {
-  const { data } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle();
-  return data?.role ?? null;
-}
+type ProfileRoutingRow = {
+  role: string | null;
+  primary_account_id: string | null;
+  prospect_id: string | null;
+};
 
-async function getProspectIdForUser(supabase: SupabaseClient, userId: string) {
+async function getProfileRouting(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<ProfileRoutingRow> {
   const { data } = await supabase
     .from("profiles")
-    .select("prospect_id")
+    .select("role, primary_account_id, prospect_id")
     .eq("id", userId)
     .maybeSingle();
-  const pid = data?.prospect_id;
-  return typeof pid === "string" ? pid : null;
-}
-
-async function getWorkspaceClientId(supabase: SupabaseClient, userId: string) {
-  const { data } = await supabase
-    .from("profiles")
-    .select("primary_account_id")
-    .eq("id", userId)
-    .maybeSingle();
-  const primary = data?.primary_account_id;
-  if (primary && typeof primary === "string") return primary;
-  return userId;
+  return {
+    role: data?.role ?? null,
+    primary_account_id:
+      typeof data?.primary_account_id === "string"
+        ? data.primary_account_id
+        : null,
+    prospect_id:
+      typeof data?.prospect_id === "string" ? data.prospect_id : null,
+  };
 }
 
 async function rpcCanAccessClient(supabase: SupabaseClient, clientId: string) {
@@ -72,9 +68,10 @@ export async function applyProxyRouting(
     return null;
   }
 
-  const actualRole = await getProfileRole(supabase, user.id);
-  const workspaceId = await getWorkspaceClientId(supabase, user.id);
-  const profileProspectId = await getProspectIdForUser(supabase, user.id);
+  const profile = await getProfileRouting(supabase, user.id);
+  const actualRole = profile.role;
+  const workspaceId = profile.primary_account_id || user.id;
+  const profileProspectId = profile.prospect_id;
   const role = actualRole;
   const routeRole = normalizeRole(role);
   const contextClientId = workspaceId;

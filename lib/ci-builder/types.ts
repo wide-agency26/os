@@ -149,6 +149,8 @@ export type ColorSwatch = {
   name: string;
   hex: string;
   cssVar?: string;
+  /** Optional CSS rgb() string populated from Figma Variables. */
+  rgb?: string;
 };
 
 export type ColorGroup = {

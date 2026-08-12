@@ -3,6 +3,7 @@ import {
   CI_SUBMODULES,
   type CiSubModuleDef,
 } from "./modules-catalog";
+import { lookupCanvasFrame, isContainerFrame } from "./figma/canvas-map";
 
 export interface GlossaryEntry {
   section_type: SectionType;
@@ -222,6 +223,11 @@ export interface MatchResult {
 }
 
 export function matchSectionType(rawName: string): MatchResult {
+  // Never map container wrappers as their own section
+  if (isContainerFrame(rawName)) {
+    return { type: null, match_method: null, parts: [] };
+  }
+
   const normalizedStr = rawName
     .replace(/[\/\-\_\>]/g, " ")
     .replace(/\s+/g, " ")
@@ -230,6 +236,33 @@ export function matchSectionType(rawName: string): MatchResult {
 
   if (parts.length === 0 || !parts[0]) {
     return { type: null, match_method: null, parts: [] };
+  }
+
+  // Exact canvas generator frame names win over fuzzy glossary matching
+  const canvas = lookupCanvasFrame(rawName) || lookupCanvasFrame(normalizedStr);
+  if (canvas) {
+    return { type: canvas.sectionType, match_method: "exact", parts };
+  }
+
+  const fullLower = normalizedStr.toLowerCase();
+
+  // Misuse / don't frames must win over generic "Logo" prefix matching.
+  if (
+    /misuse|logo\s*misuse|don'?t|do-not|incorrect|falsch|verboten|wrong|not\s+to\b|bad\s+example/i.test(
+      fullLower
+    )
+  ) {
+    return { type: "misuse_examples", match_method: "substring", parts };
+  }
+
+  // Correct-use logo examples belong in misuse_examples (Do column), not primary_logo.
+  if (
+    /(?:^|[/\-_\s])(?:do|correct\s*use|proper\s*use|good\s+example)(?:$|[/\-_\s])/i.test(
+      fullLower
+    ) &&
+    /logo|mark|wordmark|brandmark/i.test(fullLower)
+  ) {
+    return { type: "misuse_examples", match_method: "substring", parts };
   }
 
   const prefix = parts[0].toLowerCase();

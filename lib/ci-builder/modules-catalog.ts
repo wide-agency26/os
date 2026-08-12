@@ -1081,6 +1081,44 @@ export function submodulesForModule(moduleId: CiModuleId): CiSubModuleDef[] {
   return CI_SUBMODULES.filter((s) => s.moduleId === moduleId);
 }
 
+const CATALOG_ORDER = new Map(
+  CI_SUBMODULES.map((s, index) => [s.sectionType, index])
+);
+
+/** Legacy section types sort after catalog sub-modules. */
+const LEGACY_SECTION_ORDER: Record<string, number> = {
+  overview: 9000,
+  voice_tone: 9010,
+  logo: 9020,
+  colors: 9030,
+  typography: 9040,
+  grid_frames: 9050,
+  buttons: 9060,
+  backgrounds: 9070,
+  imagery: 9080,
+  applications: 9090,
+  dos_donts: 9100,
+};
+
+export function catalogSortIndex(sectionType: string | null | undefined): number {
+  if (!sectionType) return 99999;
+  const catalogIdx = CATALOG_ORDER.get(sectionType as CiSubModuleId);
+  if (catalogIdx !== undefined) return catalogIdx;
+  return LEGACY_SECTION_ORDER[sectionType] ?? 9500;
+}
+
+/** Sort sections in canonical module / sub-module catalog order. */
+export function sortSectionsByCatalog<
+  T extends { section_type?: string | null; position?: number | null },
+>(sections: T[]): T[] {
+  return [...sections].sort((a, b) => {
+    const ai = catalogSortIndex(a.section_type);
+    const bi = catalogSortIndex(b.section_type);
+    if (ai !== bi) return ai - bi;
+    return (a.position ?? 0) - (b.position ?? 0);
+  });
+}
+
 export function defaultDataForSubModule(sectionType: string): Record<string, unknown> {
   const def = getSubModule(sectionType);
   const kind = def?.renderer;

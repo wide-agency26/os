@@ -1,9 +1,14 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { SectionRenderer } from "@/components/ci-builder/sections";
 import { CITheme, CISection, CIAsset, cssFontStack } from "@/lib/ci-builder/types";
-import { CI_MODULES, getSubModule } from "@/lib/ci-builder/modules-catalog";
+import {
+  CI_MODULES,
+  getSubModule,
+  sortSectionsByCatalog,
+} from "@/lib/ci-builder/modules-catalog";
+import { scrollToSectionAnchor } from "@/lib/ci-builder/scroll";
 
 export interface BrandBookPresentationProps {
   brandName: string;
@@ -19,6 +24,17 @@ export interface BrandBookPresentationProps {
 
 function sectionAnchor(sec: Partial<CISection>) {
   return sec.id || sec.section_type || "";
+}
+
+function sectionLabel(sec: Partial<CISection>) {
+  const def = getSubModule(sec.section_type);
+  return (
+    sec.eyebrow_label ||
+    sec.headline ||
+    def?.defaultHeadline ||
+    sec.section_type ||
+    "Section"
+  );
 }
 
 function themeStyle(theme: CITheme | null | undefined): React.CSSProperties {
@@ -53,21 +69,39 @@ export function BrandBookPresentation({
   floatingActions,
   className = "",
 }: BrandBookPresentationProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   const visible = useMemo(
-    () => sections.filter((s) => s.is_visible !== false),
+    () => sortSectionsByCatalog(sections.filter((s) => s.is_visible !== false)),
     [sections]
   );
 
-  const modulesWithContent = useMemo(
-    () =>
-      CI_MODULES.filter((mod) =>
-        visible.some((sec) => getSubModule(sec.section_type)?.moduleId === mod.id)
-      ),
-    [visible]
-  );
+  const navEntries = useMemo(() => {
+    const entries: { id: string; label: string; moduleId: string }[] = [];
+    for (const mod of CI_MODULES) {
+      const modSecs = visible.filter(
+        (sec) => getSubModule(sec.section_type)?.moduleId === mod.id
+      );
+      for (const sec of modSecs) {
+        entries.push({
+          id: sectionAnchor(sec),
+          label: sectionLabel(sec),
+          moduleId: mod.id,
+        });
+      }
+    }
+    for (const sec of visible.filter((s) => !getSubModule(s.section_type))) {
+      entries.push({
+        id: sectionAnchor(sec),
+        label: sectionLabel(sec),
+        moduleId: "other",
+      });
+    }
+    return entries;
+  }, [visible]);
 
-  const [activeModuleId, setActiveModuleId] = useState<string>(
-    modulesWithContent[0]?.id || ""
+  const [activeSectionId, setActiveSectionId] = useState<string>(
+    navEntries[0]?.id || ""
   );
 
   const heroAsset = useMemo(() => {
@@ -85,19 +119,28 @@ export function BrandBookPresentation({
   }, [assets]);
 
   useEffect(() => {
-    if (modulesWithContent.length === 0) return;
+    if (navEntries.length === 0) return;
+    if (!navEntries.some((e) => e.id === activeSectionId)) {
+      setActiveSectionId(navEntries[0].id);
+    }
+  }, [navEntries, activeSectionId]);
 
+  useEffect(() => {
+    if (visible.length === 0) return;
+
+    const root = scrollRef.current;
     const observer = new IntersectionObserver(
       (entries) => {
         const hit = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (!hit?.target?.id) return;
-        const sec = visible.find((s) => sectionAnchor(s) === hit.target.id);
-        const modId = getSubModule(sec?.section_type)?.moduleId;
-        if (modId) setActiveModuleId(modId);
+        if (hit?.target?.id) setActiveSectionId(hit.target.id);
       },
-      { rootMargin: "-25% 0px -55% 0px", threshold: [0.1, 0.25, 0.5] }
+      {
+        root: root || null,
+        rootMargin: "-25% 0px -55% 0px",
+        threshold: [0.1, 0.25, 0.5],
+      }
     );
 
     visible.forEach((sec) => {
@@ -107,16 +150,11 @@ export function BrandBookPresentation({
     });
 
     return () => observer.disconnect();
-  }, [visible, modulesWithContent.length]);
+  }, [visible]);
 
-  const scrollToModule = (moduleId: string) => {
-    const first = visible.find(
-      (sec) => getSubModule(sec.section_type)?.moduleId === moduleId
-    );
-    const id = first ? sectionAnchor(first) : "";
-    if (!id) return;
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setActiveModuleId(moduleId);
+  const scrollToSection = (anchorId: string) => {
+    scrollToSectionAnchor(anchorId, scrollRef.current);
+    setActiveSectionId(anchorId);
   };
 
   return (
@@ -130,14 +168,12 @@ export function BrandBookPresentation({
 
       {/* Brandpad-style sticky chapter nav */}
       <header className="sticky top-0 z-30 shrink-0 no-print border-b border-[var(--ci-border)] bg-[var(--ci-bg)]/90 backdrop-blur-md">
-        <div className="flex items-center gap-6 px-6 lg:px-12 py-3.5 max-w-[1800px] mx-auto">
+        <div className="flex items-center gap-4 px-6 lg:px-12 py-3.5 max-w-[1800px] mx-auto">
           <button
             type="button"
-            onClick={() =>
-              document
-                .getElementById("brand-book-hero")
-                ?.scrollIntoView({ behavior: "smooth" })
-            }
+            onClick={() => {
+              scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+            }}
             className="text-sm font-bold tracking-tight shrink-0 hover:opacity-70 transition-opacity"
             style={{ fontFamily: "var(--ci-font)" }}
           >
@@ -145,21 +181,31 @@ export function BrandBookPresentation({
           </button>
 
           <nav className="flex-1 flex items-center justify-end gap-1 sm:gap-2 overflow-x-auto scrollbar-none">
-            {modulesWithContent.map((mod) => {
-              const active = activeModuleId === mod.id;
+            {navEntries.map((entry, idx) => {
+              const prev = navEntries[idx - 1];
+              const showModuleDivider = prev && prev.moduleId !== entry.moduleId;
+              const active = activeSectionId === entry.id;
               return (
-                <button
-                  key={mod.id}
-                  type="button"
-                  onClick={() => scrollToModule(mod.id)}
-                  className={`px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold tracking-wide whitespace-nowrap transition-colors ${
-                    active
-                      ? "text-[var(--ci-accent)]"
-                      : "text-[var(--ci-text-muted)] hover:text-[var(--ci-text)]"
-                  }`}
-                >
-                  {mod.label}
-                </button>
+                <React.Fragment key={entry.id}>
+                  {showModuleDivider && (
+                    <span
+                      className="hidden sm:block w-px h-4 bg-[var(--ci-border)] shrink-0 mx-0.5"
+                      aria-hidden
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => scrollToSection(entry.id)}
+                    title={entry.label}
+                    className={`px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold tracking-wide whitespace-nowrap transition-colors ${
+                      active
+                        ? "text-[var(--ci-accent)]"
+                        : "text-[var(--ci-text-muted)] hover:text-[var(--ci-text)]"
+                    }`}
+                  >
+                    {entry.label}
+                  </button>
+                </React.Fragment>
               );
             })}
           </nav>
@@ -172,7 +218,10 @@ export function BrandBookPresentation({
         />
       </header>
 
-      <div className="flex-1 overflow-y-auto ci-guideline-print scroll-smooth">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto ci-guideline-print scroll-smooth"
+      >
         {/* Full-bleed hero */}
         <section
           id="brand-book-hero"
@@ -260,11 +309,7 @@ export function BrandBookPresentation({
             </p>
             <button
               type="button"
-              onClick={() =>
-                document
-                  .getElementById("brand-book-hero")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
+              onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
               className="text-xs font-semibold text-[var(--ci-accent)] hover:opacity-70 transition-opacity"
             >
               Back to top

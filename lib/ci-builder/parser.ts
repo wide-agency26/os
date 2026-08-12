@@ -191,6 +191,11 @@ export function flattenNodeTreeToItems(root: any): ManifestItem[] {
     const tag = String(node.tag || '').toLowerCase();
     const nextPath = name ? [...pathNames, name] : pathNames;
 
+    // Canvas generator: *_Container wrappers are never separate ingest targets
+    if (/_Container$/i.test(name)) {
+      return;
+    }
+
     const attr = node.attr || node.attrs || node.attributes || {};
     const file =
       pickFileRef(node, attr) ||
@@ -215,10 +220,12 @@ export function flattenNodeTreeToItems(root: any): ManifestItem[] {
       type === 'DOCUMENT' ||
       type === 'CANVAS' ||
       type === 'PAGE' ||
+      type === 'SECTION' ||
       tag === 'document';
 
+    // Only emit Sub-Module-level nodes (matched names), not every nested child with a file
     const shouldEmit =
-      !skipType && Boolean(name) && (Boolean(match.type) || Boolean(file));
+      !skipType && Boolean(name) && Boolean(match.type);
 
     if (shouldEmit) {
       const pathName = nextPath.join('/');
@@ -260,6 +267,11 @@ export function flattenNodeTreeToItems(root: any): ManifestItem[] {
         };
         items.push(item);
       }
+    }
+
+    // Do not walk into children of a matched Sub-Module frame (parent-frame priority)
+    if (shouldEmit && match.type) {
+      return;
     }
 
     const children = Array.isArray(node.children) ? node.children : [];
@@ -600,30 +612,14 @@ function parseFlatItemsManifest(
     const nameStr = typeof rawName === 'string' ? rawName : '';
     const fileStr = typeof rawFile === 'string' ? rawFile : '';
 
-    if (!fileStr) {
-      report.missingFiles++;
-      report.missingFileRows.push(nameStr || 'Unknown Item');
+    // Skip container wrappers if they appear in flat manifests
+    if (/_Container$/i.test(nameStr)) {
+      return;
     }
 
     const { type: sectionType, match_method, parts } = matchSectionType(nameStr);
-    const tempAssetId = generateUUID();
-    const isMissingFile = !fileStr;
 
-    const baseAsset: Partial<CIAsset> = {
-      id: tempAssetId,
-      kind: sectionType || 'unmatched',
-      storage_path: fileStr || '', // Ensure it's never undefined
-      public_url: '', // To be resolved later
-      label: parts.length > 1 ? parts.slice(1).join(' ') : (nameStr || fileStr || 'Untitled Asset'),
-      metadata: { 
-        width: item.width, 
-        height: item.height,
-        match_method: match_method || null,
-        is_missing_file: isMissingFile
-      }
-    };
-
-    // Color extraction: always run if hex exists, regardless of section match
+    // Color extraction: always run if hex exists (no asset row required)
     const hexMatch = nameStr.match(/#[0-9A-Fa-f]{6}/);
     if (hexMatch) {
       const hex = hexMatch[0];
@@ -631,7 +627,6 @@ function parseFlatItemsManifest(
       if (!colorSec.data.groups) colorSec.data.groups = [];
       let groupLabel = 'Extracted';
       
-      // If it matched colors section specifically, use its grouping logic
       if (sectionType === 'colors') {
          groupLabel = parts[1] || 'Primary';
       }
@@ -647,17 +642,53 @@ function parseFlatItemsManifest(
         hex
       });
       
-      // Theme auto-suggestion
       if (groupLabel.toLowerCase().includes('dark') || groupLabel.toLowerCase().includes('background')) {
         if (!themeSuggested.backgroundColor) themeSuggested.backgroundColor = hex;
       } else if (themeSuggested.accentColors.length < 3) {
         themeSuggested.accentColors.push(hex);
       }
+
+      if (!fileStr) {
+        // Hex-only row: counted as assigned color, not a missing file asset
+        report.assignedCount++;
+        return;
+      }
     }
+
+    // Missing / unmapped filename → flag in report only; never insert a broken ci_assets row
+    if (!fileStr) {
+      report.missingFiles++;
+      report.missingFileRows.push(nameStr || 'Unknown Item');
+      if (sectionType) {
+        // Still ensure the Sub-Module section shell exists (text modules, empty dropzones)
+        getOrCreateSection(sectionType);
+        report.assignedCount++;
+      } else {
+        report.unassignedCount++;
+      }
+      return;
+    }
+
+    const tempAssetId = generateUUID();
+    const isMissingFile = false;
+
+    const baseAsset: Partial<CIAsset> = {
+      id: tempAssetId,
+      kind: sectionType || 'unmatched',
+      storage_path: fileStr,
+      public_url: '',
+      label: parts.length > 1 ? parts.slice(1).join(' ') : (nameStr || fileStr || 'Untitled Asset'),
+      metadata: { 
+        width: item.width, 
+        height: item.height,
+        match_method: match_method || null,
+        is_missing_file: isMissingFile
+      }
+    };
 
     if (!sectionType) {
       report.unassignedCount++;
-      baseAsset.section_id = null; // Explicitly unassigned
+      baseAsset.section_id = null;
       assets.push(baseAsset);
       return;
     }

@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { SectionRenderer } from "@/components/ci-builder/sections";
 import { BrandBookPresentation } from "@/components/ci-builder/BrandBookPresentation";
 import { CITheme, CISection, CIAsset, cssFontStack } from "@/lib/ci-builder/types";
-import { getSubModule, CI_MODULES } from "@/lib/ci-builder/modules-catalog";
+import { getSubModule, CI_MODULES, sortSectionsByCatalog } from "@/lib/ci-builder/modules-catalog";
+import { scrollToSectionAnchor } from "@/lib/ci-builder/scroll";
 import {
   Sparkles,
   Menu,
@@ -39,7 +40,11 @@ export function PublicGuidelineClient({
   mode = "standalone",
 }: PublicGuidelineClientProps) {
   const embedded = mode === "portal";
-  const visibleSections = sections.filter((s) => s.is_visible !== false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const visibleSections = useMemo(
+    () => sortSectionsByCatalog(sections.filter((s) => s.is_visible !== false)),
+    [sections]
+  );
   const [activeSectionId, setActiveSectionId] = useState<string>(
     sectionAnchor(visibleSections[0] || {})
   );
@@ -51,6 +56,7 @@ export function PublicGuidelineClient({
   useEffect(() => {
     if (viewMode !== "elements" || visibleSections.length === 0) return;
 
+    const root = scrollRef.current;
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -59,7 +65,11 @@ export function PublicGuidelineClient({
           }
         });
       },
-      { rootMargin: "-20% 0px -60% 0px", threshold: 0.1 }
+      {
+        root: root || null,
+        rootMargin: "-20% 0px -60% 0px",
+        threshold: 0.1,
+      }
     );
 
     visibleSections.forEach((sec) => {
@@ -137,6 +147,12 @@ export function PublicGuidelineClient({
     </div>
   );
 
+  const scrollToSection = (anchorId: string) => {
+    scrollToSectionAnchor(anchorId, scrollRef.current);
+    setActiveSectionId(anchorId);
+    setMobileNavOpen(false);
+  };
+
   const sectionNav = (
     <nav className="space-y-3">
       {CI_MODULES.map((mod) => {
@@ -161,21 +177,21 @@ export function PublicGuidelineClient({
                   sec.section_type?.replace(/_/g, " ");
 
                 return (
-                  <a
+                  <button
                     key={id}
-                    href={`#${id}`}
-                    onClick={() => setMobileNavOpen(false)}
-                    className={`group flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                    type="button"
+                    onClick={() => scrollToSection(id)}
+                    className={`group flex w-full items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                       isActive
                         ? "bg-blue-50 text-blue-800 border border-blue-200 shadow-sm"
                         : "text-gray-600 border border-transparent hover:text-gray-900 hover:bg-gray-50"
                     }`}
                   >
-                    <span className="truncate normal-case">{label}</span>
+                    <span className="truncate normal-case text-left">{label}</span>
                     {isActive && (
                       <ChevronRight className="w-3.5 h-3.5 shrink-0 text-blue-600" />
                     )}
-                  </a>
+                  </button>
                 );
               })}
             </div>
@@ -194,21 +210,21 @@ export function PublicGuidelineClient({
                 sec.headline ||
                 sec.section_type?.replace(/_/g, " ");
               return (
-                <a
+                <button
                   key={id}
-                  href={`#${id}`}
-                  onClick={() => setMobileNavOpen(false)}
-                  className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                  type="button"
+                  onClick={() => scrollToSection(id)}
+                  className={`group flex w-full items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                     isActive
                       ? "bg-blue-50 text-blue-800 border border-blue-200 shadow-sm"
                       : "text-gray-600 border border-transparent hover:text-gray-900 hover:bg-gray-50"
                   }`}
                 >
-                  <span className="truncate normal-case">{label}</span>
+                  <span className="truncate normal-case text-left">{label}</span>
                   {isActive && (
                     <ChevronRight className="w-3.5 h-3.5 shrink-0 text-blue-600" />
                   )}
-                </a>
+                </button>
               );
             })}
         </div>
@@ -366,7 +382,8 @@ export function PublicGuidelineClient({
       )}
 
       <div
-        className={`flex-1 w-full min-w-0 flex flex-col ${
+        ref={scrollRef}
+        className={`flex-1 w-full min-w-0 flex flex-col scroll-smooth ${
           embedded ? "overflow-y-auto h-full" : "min-h-screen md:ml-64"
         }`}
       >
