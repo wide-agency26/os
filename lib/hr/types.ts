@@ -2,6 +2,8 @@
 
 export type RosterStatus = "active" | "paused" | "offboarded" | "pipeline";
 
+export type PersonKind = "human" | "bot";
+
 export type CompModel =
   | "retainer"
   | "hourly_invoice"
@@ -23,7 +25,12 @@ export type OverheadCostCategory =
   | "software_seat"
   | "insurance"
   | "travel_allowance"
+  | "marketing"
+  | "digital"
+  | "physical"
   | "other";
+
+export type ResourceScope = "person" | "office" | "marketing" | "unassigned" | "project";
 
 export type RaciCode = "responsible" | "accountable" | "consulted" | "informed";
 
@@ -53,6 +60,7 @@ export interface PersonRow {
   phone: string | null;
   engagement_type_id: string | null;
   roster_status: RosterStatus;
+  kind?: PersonKind;
   bio_notes: string | null;
   rate_notes: string | null;
   co_founder_track: boolean;
@@ -60,6 +68,9 @@ export interface PersonRow {
   person_type: string | null;
   expertise_tags: string[] | null;
   hourly_rate_cost: number | null;
+  /** Founder-only target hourly draw for runway simulation. */
+  wishlist_hourly_rate?: number | null;
+  max_weekly_hours?: number | null;
   auth_user_id?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -142,7 +153,18 @@ export const OVERHEAD_CATEGORIES: { value: OverheadCostCategory; label: string }
   { value: "software_seat", label: "Software seat" },
   { value: "insurance", label: "Insurance" },
   { value: "travel_allowance", label: "Travel allowance" },
+  { value: "marketing", label: "Marketing / ads" },
+  { value: "digital", label: "Digital tools" },
+  { value: "physical", label: "Physical / office kit" },
   { value: "other", label: "Other" },
+];
+
+export const RESOURCE_SCOPES: { value: ResourceScope; label: string }[] = [
+  { value: "person", label: "People" },
+  { value: "project", label: "Projects" },
+  { value: "office", label: "Office" },
+  { value: "marketing", label: "Marketing" },
+  { value: "unassigned", label: "Unassigned" },
 ];
 
 export const OVERHEAD_FREQUENCIES: { value: OverheadFrequency; label: string }[] = [
@@ -169,6 +191,27 @@ export function monthlyOverheadAmount(
     default:
       return 0;
   }
+}
+
+/** Amount booked into a covered calendar month. One-offs count in full. */
+export function overheadAmountForCoveredMonth(
+  amount: number | null | undefined,
+  frequency: OverheadFrequency | string
+): number {
+  if (frequency === "one_off" || frequency === "n/a") {
+    return Number(amount || 0);
+  }
+  return monthlyOverheadAmount(amount, frequency);
+}
+
+export function isRecurringOverheadFrequency(
+  frequency: OverheadFrequency | string
+): boolean {
+  return (
+    frequency === "monthly" ||
+    frequency === "quarterly" ||
+    frequency === "yearly"
+  );
 }
 
 export const PIPELINE_STAGES: { value: PipelineStage; label: string }[] = [
@@ -205,6 +248,7 @@ export function legacyPersonType(engagementKey: string | null | undefined): stri
       return "Partner_Contact";
     case "future_employee":
       return "Employee";
+    case "bot":
     case "recurring_freelancer":
     case "project_freelancer":
     default:
@@ -293,6 +337,26 @@ export function formatMoney(amount: number | null | undefined, currency = "EUR")
     currency,
     maximumFractionDigits: 2,
   }).format(Number(amount));
+}
+
+/** Ali / Thomas (and any future core founder). Wishlist rate is founder-only. */
+export function isFounderPerson(p: {
+  co_founder_track?: boolean | null;
+  person_type?: string | null;
+  engagement_types?: { key?: string | null } | null;
+  engagement_type_key?: string | null;
+}): boolean {
+  if (p.co_founder_track) return true;
+  if (p.person_type === "Founder") return true;
+  const key = p.engagement_types?.key || p.engagement_type_key;
+  return key === "core";
+}
+
+/** Rough full-time month from a weekly cap (40h → 160h). */
+export function monthlyHoursFromWeekly(weekly: number | null | undefined): number {
+  const w = Number(weekly);
+  if (!Number.isFinite(w) || w <= 0) return 160;
+  return Math.round(w * 4);
 }
 
 /** Engagement types treated as in-org (no project-comp prompt on task assign). */
