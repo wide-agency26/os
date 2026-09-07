@@ -28,6 +28,8 @@ export type PmTaskRow = {
   description: string | null;
   /** BlockNote document JSON; description stays a plain-text summary. */
   content_blocks?: unknown | null;
+  /** Client-safe BlockNote doc for the client Tasks tab only. */
+  client_content_blocks?: unknown | null;
   assignee_id: string | null;
   /** HR roster people.id — primary assignment key */
   assignee_person_id?: string | null;
@@ -38,12 +40,24 @@ export type PmTaskRow = {
   phase_label: string | null;
   source: "manual" | "template" | "email";
   source_ref: string | null;
+  /** Who holds the ball — orthogonal to status (us | them). */
+  waiting_on?: "us" | "them" | null;
+  /** Short why the latest update is true. */
+  last_evidence?: string | null;
+  /** Retitles under default policy. */
+  retitle_count?: number;
   cycle_key: string | null;
   estimated_duration_hours: number | null;
   started_at: string | null;
   completed_at: string | null;
+  closed_by?: string | null;
+  dam_quadrant?: "Q1" | "Q2" | "Q3" | "Q4" | null;
+  dam_alpha?: 0 | 0.5 | 1 | null;
+  task_kind?: "email_proposal" | "playbook" | "manual" | "other" | null;
   last_activity_at: string;
   sort_order: number;
+  /** Default true — appears on the client kanban unless staff hide it. */
+  client_visible?: boolean;
 };
 
 export function currentCycleKey(date = new Date()): string {

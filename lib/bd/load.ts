@@ -71,7 +71,58 @@ export function mapBdRecord(row: any, staffById?: Map<string, BdStaffOption>): B
     updated_at: row.updated_at,
     owner,
     observers,
+    project_id: row.project_id ?? null,
+    deal_value: row.deal_value != null ? Number(row.deal_value) : null,
+    project_stage: row.project_stage ?? null,
+    project_status: row.project_status ?? null,
+    project_title: row.project_title ?? null,
+    estimate_service: row.estimate_service ?? null,
+    estimate_amount:
+      row.estimate_amount != null ? Number(row.estimate_amount) : null,
+    estimate_frequency:
+      row.estimate_frequency === "monthly" ? "monthly" : "one_off",
+    estimate_start_date: row.estimate_start_date ?? null,
+    estimate_end_date: row.estimate_end_date ?? null,
+    logo_url: row.logo_url ?? null,
+    website: row.website ?? null,
+    offerings: Array.isArray(row.offerings) ? row.offerings : [],
   };
+}
+
+export type BdProjectSnap = {
+  id: string;
+  deal_value: number | null;
+  stage: string | null;
+  status?: string | null;
+  bd_record_id: string | null;
+  client_id: string | null;
+  title?: string | null;
+};
+
+export function indexProjectsForBd(projects: BdProjectSnap[]): {
+  byBd: Map<string, BdProjectSnap>;
+  byCompany: Map<string, BdProjectSnap[]>;
+} {
+  const byBd = new Map<string, BdProjectSnap>();
+  const byCompany = new Map<string, BdProjectSnap[]>();
+  for (const p of projects) {
+    if (p.bd_record_id) byBd.set(p.bd_record_id, p);
+    if (p.client_id) {
+      const list = byCompany.get(p.client_id) ?? [];
+      list.push(p);
+      byCompany.set(p.client_id, list);
+    }
+  }
+  return { byBd, byCompany };
+}
+
+/** Prefer the project directly linked to this BD record. */
+export function pickBdProjectFinance(
+  record: { id: string; company_id: string | null },
+  byBd: Map<string, BdProjectSnap>,
+  _byCompany: Map<string, BdProjectSnap[]>
+): BdProjectSnap | null {
+  return byBd.get(record.id) ?? null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

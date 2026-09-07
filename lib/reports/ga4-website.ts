@@ -35,6 +35,9 @@ export interface DatasetMeta {
   name?: string;
   createdAt?: string | null;
   rowCount?: number;
+  sourceType?: string | null;
+  syncedAt?: string | null;
+  externalAccountLabel?: string | null;
 }
 
 export interface HeadlineMetrics {
@@ -568,4 +571,17 @@ export function isWebsiteDataset(
   const hasSessions = keys.has("sessions");
   const hasUsers = keys.has("totalusers") || keys.has("activeusers");
   return hasSource && hasSessions && hasUsers;
+}
+
+/** Prefer a GA4 session-source file over other Website CSVs (channel group, etc.). */
+export function pickPrimaryWebsiteDataset<
+  T extends {
+    columns?: { key: string; type?: string }[];
+    rows?: Record<string, unknown>[];
+  },
+>(datasets: T[]): T | undefined {
+  if (!datasets.length) return undefined;
+  return (
+    datasets.find((d) => isWebsiteDataset(d.columns, d.rows)) || datasets[0]
+  );
 }

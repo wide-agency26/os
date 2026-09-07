@@ -32,6 +32,19 @@ export function isBlockNoteDocument(value: unknown): value is PartialBlock[] {
   return Array.isArray(value) && (value.length === 0 || typeof value[0] === "object");
 }
 
+/** Prefer stored client blocks; empty doc when none (never fall back to internal body). */
+export function initialClientBlocksForTask(task: {
+  client_content_blocks?: unknown;
+}): PartialBlock[] {
+  if (
+    isBlockNoteDocument(task.client_content_blocks) &&
+    task.client_content_blocks.length > 0
+  ) {
+    return task.client_content_blocks as PartialBlock[];
+  }
+  return [{ type: "paragraph", content: [] }];
+}
+
 /** Prefer stored blocks; otherwise seed from description on first open. */
 export function initialBlocksForTask(task: {
   content_blocks?: unknown;

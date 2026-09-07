@@ -69,23 +69,40 @@ export function sidebarRole(
   return "client";
 }
 
+export function isClientAllowedAppPath(pathname: string): boolean {
+  if (
+    pathname === "/app/home" ||
+    pathname === "/app/client-progress" ||
+    pathname === "/app/client-guidelines" ||
+    pathname === "/app/client-reports" ||
+    pathname === "/app/client-seo" ||
+    pathname === "/app/client-content" ||
+    pathname === "/app/client-blog" ||
+    pathname === "/app/client-tasks" ||
+    pathname === "/app/client-sow" ||
+    pathname === "/app/client-files" ||
+    pathname === "/app/reports/print"
+  ) {
+    return true;
+  }
+  return (
+    pathname.startsWith("/app/client-guidelines/") ||
+    pathname.startsWith("/app/client-sow/") ||
+    pathname.startsWith("/app/client-blog/") ||
+    pathname.startsWith("/app/client-tasks/") ||
+    pathname.startsWith("/app/client-progress/")
+  );
+}
+
 export function assertRouteAllowed(
   pathname: string,
   role: PortalRole | null
 ): { allowed: true } | { allowed: false; redirectTo: string } {
   const r = role;
 
-  // Protect /app/... staff routes — clients may use guidelines + related client surfaces
+  // Protect /app/... staff routes — clients may use the client portal surfaces
   if (pathname.startsWith("/app")) {
-    const isClientAllowedAppRoute =
-      pathname === "/app/client-guidelines" ||
-      pathname === "/app/client-reports" ||
-      pathname === "/app/client-sow" ||
-      pathname === "/app/client-files" ||
-      pathname === "/app/home" ||
-      pathname.startsWith("/app/client-guidelines/") ||
-      pathname.startsWith("/app/client-sow/");
-    if (!isFounder(r) && !isClientAllowedAppRoute) {
+    if (!isFounder(r) && !isClientAllowedAppPath(pathname)) {
       return { allowed: false, redirectTo: "/app/client-guidelines" };
     }
   }
@@ -111,14 +128,7 @@ export function assertRouteAllowed(
   if (
     isClient(r) &&
     (pathname.startsWith("/admin") ||
-      (pathname.startsWith("/app") &&
-        pathname !== "/app/client-guidelines" &&
-        pathname !== "/app/client-reports" &&
-        pathname !== "/app/client-sow" &&
-        pathname !== "/app/client-files" &&
-        pathname !== "/app/home" &&
-        !pathname.startsWith("/app/client-guidelines/") &&
-        !pathname.startsWith("/app/client-sow/")))
+      (pathname.startsWith("/app") && !isClientAllowedAppPath(pathname)))
   ) {
     return { allowed: false, redirectTo: "/app/client-guidelines" };
   }

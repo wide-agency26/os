@@ -13,7 +13,9 @@ import {
   resolveSowTheme,
   resolveSowVat,
 } from "./constants";
+import { mergeSowAssistContext, type SowSectionMergeOrigin } from "./assist";
 import type { SowTheme, SowVat } from "./types";
+import type { SowVersionPeer } from "./version";
 
 function num(v: unknown): number | null {
   if (v == null || v === "") return null;
@@ -22,11 +24,12 @@ function num(v: unknown): number | null {
 }
 
 export async function loadSowDocument(
-  sowId: string
+  sowId: string,
+  supabase?: Awaited<ReturnType<typeof createClient>>
 ): Promise<{ data: SowDocument | null; error?: string }> {
-  const supabase = await createClient();
+  const db = supabase ?? (await createClient());
 
-  const { data: sow, error } = await supabase
+  const { data: sow, error } = await db
     .from("sows")
     .select(
       `
@@ -57,22 +60,22 @@ export async function loadSowDocument(
 
   const [{ data: sections }, { data: items }, { data: groups }, { data: slides }] =
     await Promise.all([
-      supabase
+      db
         .from("sow_sections")
         .select("*")
         .eq("sow_id", sowId)
         .order("sort_order"),
-      supabase
+      db
         .from("sow_line_items")
         .select("*")
         .eq("sow_id", sowId)
         .order("sort_order"),
-      supabase
+      db
         .from("sow_cost_groups")
         .select("*")
         .eq("sow_id", sowId)
         .order("sort_order"),
-      supabase
+      db
         .from("sow_portfolio_slides")
         .select("*")
         .eq("sow_id", sowId)
@@ -120,6 +123,9 @@ export async function loadSowDocument(
     service_short_description_snapshot: s.service_short_description_snapshot,
     sort_order: s.sort_order,
     line_items: bySection.get(s.id) ?? [],
+    merge_origin: Array.isArray((s as unknown as { merge_origin?: unknown }).merge_origin)
+      ? ((s as unknown as { merge_origin: SowSectionMergeOrigin[] }).merge_origin)
+      : null,
   }));
 
   const companyRaw = sow.crm_customers as
@@ -191,6 +197,12 @@ export async function loadSowDocument(
     created_by: sow.created_by,
     created_at: sow.created_at,
     updated_at: sow.updated_at,
+    version_root_id:
+      (sow as { version_root_id?: string | null }).version_root_id ?? null,
+    version_number: (sow as { version_number?: number }).version_number ?? 1,
+    assist_context: mergeSowAssistContext(
+      (sow as { assist_context?: unknown }).assist_context
+    ),
     sections: mappedSections,
     cost_groups: (groups ?? []).map((g) => ({
       id: g.id,
@@ -227,4 +239,30 @@ export async function loadSowDocument(
   };
 
   return { data: document };
+}
+
+export async function loadSowVersionFamily(
+  sowId: string
+): Promise<SowVersionPeer[]> {
+  const supabase = await createClient();
+  const { data: current } = await supabase
+    .from("sows")
+    .select("id, version_root_id")
+    .eq("id", sowId)
+    .maybeSingle();
+  if (!current) return [];
+  const rootId =
+    (current as { version_root_id?: string | null }).version_root_id || current.id;
+  const { data } = await supabase
+    .from("sows")
+    .select("id, title, version_number, status, public_slug")
+    .or(`id.eq.${rootId},version_root_id.eq.${rootId}`)
+    .order("version_number", { ascending: true });
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    version_number: (row as { version_number?: number }).version_number ?? 1,
+    status: row.status,
+    public_slug: (row as { public_slug?: string | null }).public_slug ?? null,
+  }));
 }

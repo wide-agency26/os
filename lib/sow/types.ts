@@ -1,3 +1,5 @@
+import type { SowSectionMergeOrigin, SowAssistContext } from "./assist";
+
 export type SowStatus = "draft" | "published" | "accepted" | "archived";
 export type SowCategory =
   | "strategy"
@@ -106,6 +108,7 @@ export type SowSection = {
   service_short_description_snapshot: string | null;
   sort_order: number;
   line_items: SowLineItem[];
+  merge_origin?: SowSectionMergeOrigin[] | null;
 };
 
 export type SowPortfolioSlide = {
@@ -144,6 +147,9 @@ export type SowRecord = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  assist_context?: SowAssistContext;
+  version_root_id?: string | null;
+  version_number?: number;
 };
 
 export type SowDocument = SowRecord & {

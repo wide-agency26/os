@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { isFounder } from "@/lib/rbac";
 import { BD_STAGE_LABELS, isBdStage } from "@/lib/bd/constants";
-import { mapBdRecord, mapTimelineEntry } from "@/lib/bd/load";
+import { indexProjectsForBd, mapBdRecord, mapTimelineEntry, pickBdProjectFinance } from "@/lib/bd/load";
 import type {
   BdBoardFilters,
   BdDemandSignal,
@@ -16,6 +16,13 @@ import type {
   BdTimelineEntry,
 } from "@/lib/bd/types";
 import type { Json, Database } from "@/types/supabase";
+import { revalidateWork } from "@/lib/work/revalidate";
+import {
+  loadCatalogOfferings,
+  loadOfferingsByBdIds,
+  loadOfferingsByProjectIds,
+  pickDealOfferings,
+} from "@/lib/offerings/load";
 import {
   computeQualificationAdvice,
   type BdQualificationRecommendation,
@@ -43,12 +50,43 @@ async function requireFounder() {
 }
 
 function revalidateBd(id?: string) {
+  revalidateWork({ bdId: id });
   revalidatePath("/app/bd");
   revalidatePath("/app/bd/dashboard");
   revalidatePath("/app/bd/qualification");
   if (id) {
     revalidatePath(`/app/bd/${id}`);
     revalidatePath(`/app/bd/qualification/${id}`);
+  }
+}
+
+async function closeLinkedProjectsOnLose(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  bdRecordId: string
+) {
+  const { expireProjectsForLostDeal } = await import("@/lib/projects/commercial");
+  const { syncProjectLedger } = await import("@/lib/accounting/sync");
+  const expired = await expireProjectsForLostDeal(supabase, { bdRecordId });
+  for (const id of expired.ids) {
+    await syncProjectLedger(id);
+    revalidatePath(`/app/projects/${id}`);
+  }
+  if (expired.companyId) revalidateWork({ companyId: expired.companyId, bdId: bdRecordId });
+  revalidatePath("/app/projects");
+  revalidatePath("/app/accounting");
+  revalidatePath("/app/accounting/identified");
+}
+
+async function reopenLinkedProjectsOnRestore(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  bdRecordId: string
+) {
+  const { reopenExpiredProjectsForBd } = await import("@/lib/projects/commercial");
+  const { syncProjectLedger } = await import("@/lib/accounting/sync");
+  const reopened = await reopenExpiredProjectsForBd(supabase, bdRecordId);
+  for (const id of reopened.ids) {
+    await syncProjectLedger(id);
+    revalidatePath(`/app/projects/${id}`);
   }
 }
 
@@ -82,22 +120,18 @@ export async function listBdStaff(): Promise<{
   if (error) return { ok: false, error, staff: [] };
 
   const { data, error: qErr } = await supabase
-    .from("profiles")
-    .select("id, full_name, role")
-    .in("role", [
-      "superadmin",
-      "admin",
-      "bd_manager",
-      "client_manager",
-      "hr_manager",
-      "accountant",
-    ])
+    .from("people")
+    .select("id, full_name, auth_user_id")
+    .eq("roster_status", "active")
+    .not("auth_user_id", "is", null)
     .order("full_name");
 
   if (qErr) return { ok: false, error: qErr.message, staff: [] };
   return {
     ok: true,
-    staff: (data ?? []).map((p) => ({ id: p.id, full_name: p.full_name })),
+    staff: (data ?? [])
+      .filter((p) => p.auth_user_id)
+      .map((p) => ({ id: p.auth_user_id as string, full_name: p.full_name })),
   };
 }
 
@@ -124,6 +158,8 @@ export async function listBdRecords(filters: BdBoardFilters = {}): Promise<{
       owner_id, observer_ids, legitimacy_status, legitimacy_reason, demand_signals,
       archived_reason, next_action_due, next_action_label, sort_order,
       created_by, created_at, updated_at,
+      estimate_service, estimate_amount, estimate_frequency,
+      estimate_start_date, estimate_end_date,
       owner:profiles!bd_records_owner_id_fkey ( id, full_name )
     `
     )
@@ -147,10 +183,74 @@ export async function listBdRecords(filters: BdBoardFilters = {}): Promise<{
   const { data, error: qErr } = await query;
   if (qErr) return { ok: false, error: qErr.message, records: [], staff };
 
+  const ids = (data ?? []).map((r) => r.id);
+  const companyIds = [
+    ...new Set(
+      (data ?? [])
+        .map((r) => r.company_id)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+  const [{ data: linkedProjects }, { data: companyProjects }] = await Promise.all([
+    ids.length
+      ? supabase
+          .from("projects")
+          .select("id, bd_record_id, deal_value, stage, status, client_id, title")
+          .in("bd_record_id", ids)
+      : Promise.resolve({ data: [] as never[] }),
+    companyIds.length
+      ? supabase
+          .from("projects")
+          .select("id, bd_record_id, deal_value, stage, status, client_id, title")
+          .in("client_id", companyIds)
+      : Promise.resolve({ data: [] as never[] }),
+  ]);
+  const seen = new Set<string>();
+  const projects = [...(linkedProjects || []), ...(companyProjects || [])].filter(
+    (p) => {
+      if (!p?.id || seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    }
+  );
+  const { byBd, byCompany } = indexProjectsForBd(projects);
+  const catalog = await loadCatalogOfferings(supabase);
+  const mapped = (data ?? []).map((row) => {
+    const proj = pickBdProjectFinance(row, byBd, byCompany);
+    const projectNet = Number(proj?.deal_value || 0);
+    return mapBdRecord(
+      {
+        ...row,
+        project_id: proj?.id ?? null,
+        deal_value:
+          projectNet > 0 ? projectNet : row.estimate_amount ?? null,
+        project_stage: proj?.stage ?? null,
+        project_status: proj?.status ?? null,
+        project_title: proj?.title ?? null,
+      },
+      staffById
+    );
+  });
+  const projectIds = [
+    ...new Set(mapped.map((r) => r.project_id).filter((id): id is string => Boolean(id))),
+  ];
+  const [byProjectOfferings, byBdOfferings] = await Promise.all([
+    loadOfferingsByProjectIds(supabase, projectIds, catalog),
+    loadOfferingsByBdIds(supabase, ids, catalog),
+  ]);
+  for (const rec of mapped) {
+    rec.offerings = pickDealOfferings(
+      rec.project_id,
+      rec.id,
+      byProjectOfferings,
+      byBdOfferings
+    );
+  }
+
   return {
     ok: true,
     staff,
-    records: (data ?? []).map((row) => mapBdRecord(row, staffById)),
+    records: mapped,
   };
 }
 
@@ -160,6 +260,16 @@ export async function getBdRecord(id: string): Promise<{
   record?: BdRecord;
   timeline?: BdTimelineEntry[];
   staff?: BdStaffOption[];
+  companyProjects?: {
+    id: string;
+    title: string;
+    stage: string | null;
+    status: string | null;
+    deal_value: number | null;
+    deal_frequency: string | null;
+    bd_record_id: string | null;
+    contract_confirmed_at: string | null;
+  }[];
 }> {
   const { supabase, error } = await requireFounder();
   if (error) return { ok: false, error };
@@ -189,14 +299,97 @@ export async function getBdRecord(id: string): Promise<{
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const record = mapBdRecord(data, staffById);
+  const [{ data: linked }, { data: companyRows }, { data: company }] = await Promise.all([
+    supabase
+      .from("projects")
+      .select(
+        "id, bd_record_id, deal_value, deal_frequency, stage, status, client_id, title, contract_confirmed_at"
+      )
+      .eq("bd_record_id", id)
+      .limit(1),
+    data.company_id
+      ? supabase
+          .from("projects")
+          .select(
+            "id, bd_record_id, deal_value, deal_frequency, stage, status, client_id, title, contract_confirmed_at"
+          )
+          .eq("client_id", data.company_id)
+          .order("updated_at", { ascending: false })
+      : Promise.resolve({ data: [] as never[] }),
+    data.company_id
+      ? supabase
+          .from("crm_customers")
+          .select("logo_url, website")
+          .eq("id", data.company_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null as never }),
+  ]);
+  const { byBd, byCompany } = indexProjectsForBd([
+    ...(linked || []),
+    ...(companyRows || []),
+  ]);
+  const proj = pickBdProjectFinance(
+    { id: data.id, company_id: data.company_id },
+    byBd,
+    byCompany
+  );
+
+  const projectNet = Number(proj?.deal_value || 0);
+  const catalog = await loadCatalogOfferings(supabase);
+  const projectId = proj?.id ?? null;
+  const [byProjectOfferings, byBdOfferings] = await Promise.all([
+    loadOfferingsByProjectIds(supabase, projectId ? [projectId] : [], catalog),
+    loadOfferingsByBdIds(supabase, [id], catalog),
+  ]);
+  const record = mapBdRecord(
+    {
+      ...data,
+      project_id: projectId,
+      deal_value: projectNet > 0 ? projectNet : data.estimate_amount ?? null,
+      project_stage: proj?.stage ?? null,
+      project_status: proj?.status ?? null,
+      project_title: proj?.title ?? null,
+      logo_url: company?.logo_url ?? null,
+      website: company?.website ?? null,
+      offerings: pickDealOfferings(
+        projectId,
+        id,
+        byProjectOfferings,
+        byBdOfferings
+      ),
+    },
+    staffById
+  );
   record.timeline = (timelineRows ?? []).map(mapTimelineEntry);
+
+  const companyProjects = (companyRows || []).map(
+    (p: {
+      id: string;
+      title: string | null;
+      stage: string | null;
+      status: string | null;
+      deal_value: number | null;
+      deal_frequency: string | null;
+      bd_record_id: string | null;
+      contract_confirmed_at: string | null;
+    }) => ({
+      id: p.id,
+      title: p.title || "Untitled project",
+      stage: p.stage,
+      status: p.status,
+      deal_value: p.deal_value,
+      deal_frequency: p.deal_frequency,
+      bd_record_id: p.bd_record_id,
+      contract_confirmed_at: p.contract_confirmed_at,
+    })
+  );
 
   return {
     ok: true,
     record,
     timeline: record.timeline,
     staff,
+    companyProjects,
   };
 }
 
@@ -298,8 +491,101 @@ export async function createBdRecord(input: {
 
   revalidateBd(data.id);
   revalidatePath("/app/crm");
-  revalidatePath("/app/crm/directory");
   return { ok: true, id: data.id };
+}
+
+function crmStatusToBdStage(status: string | null | undefined): BdStage {
+  if (status === "Client") return "client_won";
+  if (status === "Lead") return "qualified_lead";
+  return "prospect";
+}
+
+/** Work list / /app/work/c/:id always land on a pipeline card, even for Prospects. */
+export async function ensureCompanyPipelineCard(companyId: string): Promise<{
+  ok: boolean;
+  id?: string;
+  error?: string;
+}> {
+  const { supabase, user, error } = await requireFounder();
+  if (error || !user) return { ok: false, error: error || "Not authenticated" };
+
+  const { data: company } = await supabase
+    .from("crm_customers")
+    .select("id, name, company, status, email, record_kind")
+    .eq("id", companyId)
+    .maybeSingle();
+  if (!company) return { ok: false, error: "Company not found" };
+  if (company.record_kind && company.record_kind !== "company") {
+    return { ok: false, error: "Pick a company, not a contact" };
+  }
+
+  const { data: existing } = await supabase
+    .from("bd_records")
+    .select("id, stage")
+    .eq("company_id", companyId)
+    .order("updated_at", { ascending: false })
+    .limit(20);
+  const open = (existing || []).find(
+    (r) => r.stage !== "archived" && r.stage !== "declined"
+  );
+  const picked = open || existing?.[0];
+  if (picked?.id) {
+    return { ok: true, id: picked.id };
+  }
+
+  const { data: contact } = await supabase
+    .from("crm_customers")
+    .select("id, name, email, position, linkedin")
+    .eq("record_kind", "contact")
+    .eq("parent_company_id", companyId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const companyName = company.company || company.name || "Company";
+  const stage = crmStatusToBdStage(company.status);
+  const { data: created, error: insErr } = await supabase
+    .from("bd_records")
+    .insert({
+      name: contact?.name || companyName,
+      company_name: companyName,
+      email: contact?.email || company.email || null,
+      position: contact?.position || null,
+      linkedin_url: contact?.linkedin || null,
+      owner_id: user.id,
+      created_by: user.id,
+      source: "manual",
+      stage,
+      stage_entered_at: new Date().toISOString(),
+      company_id: companyId,
+      contact_id: contact?.id || null,
+    })
+    .select("id")
+    .single();
+  if (insErr || !created) {
+    return { ok: false, error: insErr?.message || "Could not open a pipeline card" };
+  }
+
+  await appendTimeline(supabase, {
+    recordId: created.id,
+    actorId: user.id,
+    action: "created",
+    note: `Pipeline card opened from Work · ${BD_STAGE_LABELS[stage]}`,
+    meta: { company_id: companyId, contact_id: contact?.id || null },
+  });
+
+  if (stage === "client_won") {
+    const { ensureWonProjectForBd } = await import("@/lib/projects/commercial");
+    await ensureWonProjectForBd(supabase, {
+      bdRecordId: created.id,
+      companyId,
+      companyName,
+      contactId: contact?.id || null,
+    });
+  }
+
+  revalidateBd(created.id);
+  return { ok: true, id: created.id };
 }
 
 export async function updateBdRecord(input: {
@@ -317,6 +603,11 @@ export async function updateBdRecord(input: {
   legitimacy_status?: BdLegitimacyStatus | null;
   legitimacy_reason?: string | null;
   demand_signals?: BdDemandSignal[];
+  estimate_service?: string | null;
+  estimate_amount?: number | null;
+  estimate_frequency?: "one_off" | "monthly";
+  estimate_start_date?: string | null;
+  estimate_end_date?: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   const { supabase, user, error } = await requireFounder();
   if (error || !user) return { ok: false, error: error || "Not authenticated" };
@@ -369,6 +660,24 @@ export async function updateBdRecord(input: {
   }
   if (input.demand_signals !== undefined) {
     patch.demand_signals = input.demand_signals as unknown as Json;
+  }
+  if (input.estimate_service !== undefined) {
+    patch.estimate_service = input.estimate_service?.trim() || null;
+  }
+  if (input.estimate_amount !== undefined) {
+    const n = input.estimate_amount;
+    patch.estimate_amount =
+      n == null || Number.isNaN(Number(n)) || Number(n) <= 0 ? null : Number(n);
+  }
+  if (input.estimate_frequency !== undefined) {
+    patch.estimate_frequency =
+      input.estimate_frequency === "monthly" ? "monthly" : "one_off";
+  }
+  if (input.estimate_start_date !== undefined) {
+    patch.estimate_start_date = input.estimate_start_date || null;
+  }
+  if (input.estimate_end_date !== undefined) {
+    patch.estimate_end_date = input.estimate_end_date || null;
   }
 
   if (Object.keys(patch).length === 0) return { ok: true };
@@ -436,6 +745,13 @@ export async function updateBdRecord(input: {
     notes.push("Next action updated");
   }
   if (missingCrm || identityDiffers) notes.push("CRM company/contact synced");
+  if (
+    patch.estimate_amount !== undefined ||
+    patch.estimate_service !== undefined ||
+    patch.estimate_frequency !== undefined
+  ) {
+    notes.push("Pipeline estimate updated");
+  }
 
   await appendTimeline(supabase, {
     recordId: input.id,
@@ -447,7 +763,18 @@ export async function updateBdRecord(input: {
 
   revalidateBd(input.id);
   revalidatePath("/app/crm");
-  revalidatePath("/app/crm/directory");
+  if (
+    patch.estimate_amount !== undefined ||
+    patch.estimate_service !== undefined ||
+    patch.estimate_frequency !== undefined ||
+    patch.estimate_start_date !== undefined ||
+    patch.estimate_end_date !== undefined
+  ) {
+    const { syncCrmUnidentifiedLedger } = await import("@/lib/accounting/sync-crm");
+    await syncCrmUnidentifiedLedger();
+    revalidatePath("/app/accounting");
+    revalidatePath("/app/accounting/unidentified");
+  }
   return { ok: true };
 }
 
@@ -470,7 +797,12 @@ export async function moveBdRecordStage(input: {
     .eq("id", input.id)
     .maybeSingle();
   if (!existing) return { ok: false, error: "Record not found" };
-  if (existing.stage === input.stage) return { ok: true };
+  if (existing.stage === input.stage) {
+    if (["archived", "declined"].includes(input.stage)) {
+      await closeLinkedProjectsOnLose(supabase, existing.id);
+    }
+    return { ok: true };
+  }
 
   const sideWithReason = ["archived", "declined"].includes(input.stage);
   const reason =
@@ -531,6 +863,25 @@ export async function moveBdRecordStage(input: {
           companyId: linked.link.companyId,
           contactId: linked.link.contactId,
         });
+        const { ensureWonProjectForBd } = await import("@/lib/projects/commercial");
+        const won = await ensureWonProjectForBd(supabase, {
+          bdRecordId: existing.id,
+          companyId: linked.link.companyId,
+          companyName: existing.company_name,
+          title: existing.company_name,
+          contactId: linked.link.contactId,
+        });
+        if (won.projectId) {
+          await appendTimeline(supabase, {
+            recordId: existing.id,
+            actorId: user.id,
+            action: won.created ? "project_opened" : "project_linked",
+            note: won.created
+              ? "Opened a delivery project for this win"
+              : "Linked the existing delivery project",
+            meta: { project_id: won.projectId },
+          });
+        }
       }
     }
   }
@@ -549,9 +900,23 @@ export async function moveBdRecordStage(input: {
     },
   });
 
+  if (["archived", "declined"].includes(input.stage)) {
+    await closeLinkedProjectsOnLose(supabase, input.id);
+  } else if (
+    ["archived", "declined", "on_hold"].includes(existing.stage) &&
+    !["archived", "declined", "on_hold"].includes(input.stage)
+  ) {
+    await reopenLinkedProjectsOnRestore(supabase, input.id);
+  }
+
   revalidateBd(input.id);
   revalidatePath("/app/crm");
-  revalidatePath("/app/crm/directory");
+  {
+    const { syncCrmUnidentifiedLedger } = await import("@/lib/accounting/sync-crm");
+    await syncCrmUnidentifiedLedger();
+    revalidatePath("/app/accounting");
+    revalidatePath("/app/accounting/unidentified");
+  }
   return { ok: true };
 }
 
@@ -904,6 +1269,7 @@ export async function linkBdProposal(input: {
 
   revalidateBd(input.bdRecordId);
   revalidatePath("/app/bd/proposal");
+  revalidateWork();
   return { ok: true };
 }
 
@@ -1001,6 +1367,7 @@ export async function createBdSlideDeck(input: {
   }
 
   revalidatePath("/app/bd/proposal");
+  revalidateWork();
   revalidatePath(`/app/bd/proposal/slides/${deck.id}`);
   return { ok: true, deckId: deck.id };
 }
@@ -1063,6 +1430,7 @@ export async function saveBdSlideDeck(input: {
 
   revalidatePath(`/app/bd/proposal/slides/${input.id}`);
   revalidatePath("/app/bd/proposal");
+  revalidateWork();
   return { ok: true, publicSlug };
 }
 
@@ -1098,6 +1466,8 @@ export async function getBdSlideDeck(id: string): Promise<{
 
 export async function generateBdContract(input: {
   bdRecordId: string;
+  pricedLines?: { title: string; description?: string; price: number }[];
+  proposalTitle?: string | null;
 }): Promise<{ ok: boolean; error?: string; contract?: Record<string, unknown> }> {
   const { supabase, user, error } = await requireFounder();
   if (error || !user) return { ok: false, error: error || "Not authenticated" };
@@ -1105,7 +1475,7 @@ export async function generateBdContract(input: {
   const { data: rec } = await supabase
     .from("bd_records")
     .select(
-      "id, name, company_name, email, discovery_call, proposal, contract"
+      "id, name, company_name, email, company_id, contact_id, discovery_call, proposal, contract"
     )
     .eq("id", input.bdRecordId)
     .maybeSingle();
@@ -1114,6 +1484,7 @@ export async function generateBdContract(input: {
   const discovery = (rec.discovery_call as Record<string, unknown>) || {};
   const proposal = (rec.proposal as Record<string, unknown>) || {};
   let serviceNames: string[] = [];
+  let pricedLines = input.pricedLines;
 
   if (proposal.type === "slides" && typeof proposal.linked_id === "string") {
     const { data: deck } = await supabase
@@ -1137,24 +1508,64 @@ export async function generateBdContract(input: {
     serviceNames = (sections ?? [])
       .map((s) => s.service_name_snapshot || s.title)
       .filter(Boolean) as string[];
+    if (!pricedLines) {
+      const { loadSowPricedLines } = await import("@/lib/accounting/deal-value");
+      pricedLines = await loadSowPricedLines(supabase, proposal.linked_id);
+    }
   }
 
-  const { generateContractDraft } = await import("@/lib/bd/contract");
+  let companyName = rec.company_name || "";
+  let contactName = rec.name || "";
+  let email = rec.email as string | null;
+  if (rec.company_id) {
+    const { data: company } = await supabase
+      .from("crm_customers")
+      .select("id, name, company, email")
+      .eq("id", rec.company_id)
+      .maybeSingle();
+    if (company) {
+      companyName = company.company || company.name || companyName;
+      if (!email && company.email) email = company.email;
+    }
+  }
+  if (rec.contact_id) {
+    const { data: contact } = await supabase
+      .from("crm_customers")
+      .select("id, name, email")
+      .eq("id", rec.contact_id)
+      .maybeSingle();
+    if (contact) {
+      contactName = contact.name || contactName;
+      if (contact.email) email = contact.email;
+    }
+  }
+
+  const { generateContractDraft, mergeGeneratedContract } = await import(
+    "@/lib/bd/contract"
+  );
   const draft = generateContractDraft({
-    companyName: rec.company_name,
-    contactName: rec.name,
-    email: rec.email,
+    companyName,
+    contactName,
+    email,
     discoveryNeeds:
       typeof discovery.needs === "string" ? discovery.needs : null,
     discoveryBudget:
       typeof discovery.budget === "string" ? discovery.budget : null,
-    proposalTitle: typeof proposal.title === "string" ? proposal.title : null,
+    proposalTitle:
+      input.proposalTitle ||
+      (typeof proposal.title === "string" ? proposal.title : null),
     serviceNames,
+    pricedLines,
   });
+
+  const merged = mergeGeneratedContract(
+    (rec.contract as Record<string, unknown>) || null,
+    draft
+  );
 
   const { error: updErr } = await supabase
     .from("bd_records")
-    .update({ contract: draft as unknown as Json })
+    .update({ contract: merged as unknown as Json })
     .eq("id", input.bdRecordId);
   if (updErr) return { ok: false, error: updErr.message };
 
@@ -1162,14 +1573,25 @@ export async function generateBdContract(input: {
     recordId: input.bdRecordId,
     actorId: user.id,
     action: "contract_generated",
-    note: "Contract draft generated from proposal + discovery context.",
-    meta: { line_items: draft.line_items.length },
+    note: "Contract draft generated from proposal + discovery context (merged into existing).",
+    meta: { line_items: merged.line_items.length },
   });
 
   revalidateBd(input.bdRecordId);
   revalidatePath("/app/bd/contract");
+  revalidateWork();
   revalidatePath(`/app/bd/contract/${input.bdRecordId}`);
-  return { ok: true, contract: draft as unknown as Record<string, unknown> };
+  const { data: proj } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("bd_record_id", input.bdRecordId)
+    .maybeSingle();
+  if (proj?.id) {
+    const { applyProjectDealValue } = await import("@/lib/accounting/deal-value");
+    await applyProjectDealValue(proj.id);
+    revalidatePath(`/app/projects/${proj.id}/contract`);
+  }
+  return { ok: true, contract: merged as unknown as Record<string, unknown> };
 }
 
 export async function saveBdContract(input: {
@@ -1200,6 +1622,15 @@ export async function saveBdContract(input: {
 
   revalidateBd(input.bdRecordId);
   revalidatePath(`/app/bd/contract/${input.bdRecordId}`);
+  const { data: proj } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("bd_record_id", input.bdRecordId)
+    .maybeSingle();
+  if (proj?.id) {
+    const { applyProjectDealValue } = await import("@/lib/accounting/deal-value");
+    await applyProjectDealValue(proj.id);
+  }
   return { ok: true };
 }
 export async function finalizeBdContract(input: {
@@ -1286,6 +1717,7 @@ export async function finalizeBdContract(input: {
   revalidateBd(input.bdRecordId);
   revalidatePath(`/app/bd/contract/${input.bdRecordId}`);
   revalidatePath("/app/bd/contract");
+  revalidateWork();
   revalidatePath("/app/crm");
   return { ok: true, stage: "quotation" };
 }
@@ -1349,7 +1781,7 @@ export async function backfillBdCrmLinks(): Promise<{
 
   revalidateBd();
   revalidatePath("/app/crm");
-  revalidatePath("/app/crm/directory");
+  revalidatePath("/app/crm");
   return {
     ok: true,
     processed: (rows ?? []).length,

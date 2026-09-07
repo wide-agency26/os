@@ -1,6 +1,8 @@
 import type { BdStage } from "@/lib/bd/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { workPaths } from "@/lib/work/paths";
+import { companyEmailOrNull } from "@/lib/crm/public-email";
 
 type Sb = SupabaseClient<Database>;
 
@@ -11,7 +13,7 @@ export type CrmProspectLink = {
   contactCreated: boolean;
 };
 
-/** Map BD pipeline stage → CRM company/contact status. */
+/** Map BD pipeline stage → CRM status used only when creating new CRM rows. */
 export function crmStatusFromBdStage(
   stage: BdStage | string | null | undefined
 ): "Prospect" | "Lead" | "Client" {
@@ -84,7 +86,7 @@ export async function ensureBdCrmCompanyAndContact(
   const status = crmStatusFromBdStage(input.stage);
   const leadStatus = crmLeadStatusFromBdStage(input.stage);
   const notesTail = input.bdRecordId
-    ? `Linked BD record: /app/bd/${input.bdRecordId}`
+    ? `Linked BD record: ${workPaths.pipelineId(input.bdRecordId)}`
     : null;
 
   let companyId = input.existingCompanyId || null;
@@ -123,7 +125,7 @@ export async function ensureBdCrmCompanyAndContact(
           role: "Decision Maker",
           source_category: "Activation",
           source: input.sourceHint || "BD",
-          email: input.email || null,
+          email: companyEmailOrNull(input.email),
           notes: notesTail,
         })
         .select("id")
@@ -154,11 +156,14 @@ export async function ensureBdCrmCompanyAndContact(
       patch.company = companyName;
       patch.name = companyName;
     }
-    if (co?.status !== "Client") {
+    // Commercial Prospect/Lead/Client lives on projects. On existing companies
+    // only promote to Client when a deal is won — never rewrite Lead/Prospect.
+    if (status === "Client") {
+      if (co?.status !== "Client") patch.status = "Client";
+      patch.lead_status = "Won";
+    } else if (companyCreated) {
       patch.status = status;
       if (leadStatus) patch.lead_status = leadStatus;
-    } else if (status === "Client") {
-      patch.lead_status = "Won";
     }
     if (notesTail && !(co?.notes || "").includes(notesTail)) {
       patch.notes = [co?.notes, notesTail].filter(Boolean).join("\n");
@@ -251,10 +256,8 @@ export async function ensureBdCrmCompanyAndContact(
       parent_company_id: companyId,
       updated_at: new Date().toISOString(),
     };
-    if (ct?.status !== "Client") {
-      patch.status = status;
-      if (leadStatus) patch.lead_status = leadStatus;
-    } else if (status === "Client") {
+    if (status === "Client") {
+      if (ct?.status !== "Client") patch.status = "Client";
       patch.lead_status = "Won";
     }
     if (input.email) patch.email = input.email;

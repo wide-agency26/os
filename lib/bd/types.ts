@@ -1,3 +1,5 @@
+import type { OfferingChip } from "@/lib/offerings/types";
+
 export type BdSource = "manual" | "auto_discovered";
 
 export type BdStage =
@@ -77,6 +79,19 @@ export type BdRecord = {
   owner?: BdStaffOption | null;
   observers?: BdStaffOption[];
   timeline?: BdTimelineEntry[];
+  project_id?: string | null;
+  deal_value?: number | null;
+  project_stage?: string | null;
+  project_status?: string | null;
+  project_title?: string | null;
+  estimate_service?: string | null;
+  estimate_amount?: number | null;
+  estimate_frequency?: "one_off" | "monthly";
+  estimate_start_date?: string | null;
+  estimate_end_date?: string | null;
+  logo_url?: string | null;
+  website?: string | null;
+  offerings?: OfferingChip[];
 };
 
 export type BdBoardFilters = {
