@@ -1,11 +1,13 @@
 /**
  * Full Figma → Brand Guideline normalize pipeline (P2–P5).
- * Hierarchy: Section=Module → Frame=Sub-Module → *_Container=data shell.
+ * Hierarchy: Section=Module → Frame=Sub-Module → *_Container=visual export.
  */
 
 import {
   getFigmaFile,
-  getLocalVariables,
+  getPublishedVariables,
+  getVariablesWithReason,
+  readVariablesMeta,
   type FigmaFileResponse,
   type FigmaVariablesResponse,
 } from "@/lib/ci-builder/figma/client";
@@ -13,7 +15,7 @@ import type { CISection, CIAsset, SectionType } from "@/lib/ci-builder/types";
 import { generateUUID } from "@/lib/ci-builder/types";
 import type { ParseResult } from "@/lib/ci-builder/parser";
 import { extractFigmaSummary, type FigmaExtractSummary } from "@/lib/ci-builder/figma/extract";
-import { normalizeColors } from "./normalize/colors";
+import { normalizeColors, type ColorVariablesDump } from "./normalize/colors";
 import { normalizeTypography } from "./normalize/typography";
 import {
   normalizeButtons,
@@ -21,6 +23,7 @@ import {
   pendingsToAssets,
 } from "./normalize/visuals";
 import { ensureSection, wireVisualAsset } from "./normalize/helpers";
+import { fillImportedDescriptions } from "./normalize/section-descriptions";
 import { getSubModule } from "@/lib/ci-builder/modules-catalog";
 import { exportAndUploadAssets } from "./normalize/upload-assets";
 import { suggestSectionsForUnmapped } from "@/lib/ci-builder/figma/classify/ai-suggest";
@@ -30,6 +33,7 @@ export type FigmaPipelineResult = {
   parsed: ParseResult;
   file: FigmaFileResponse;
   variablesAvailable: boolean;
+  variablesUnavailableReason: string | null;
   stats: {
     colors: number;
     typographyRows: number;
@@ -39,6 +43,7 @@ export type FigmaPipelineResult = {
     aiSuggestions: number;
     skippedEmptyUi: number;
     subModules: number;
+    colorsFromDump: number;
   };
 };
 
@@ -51,6 +56,7 @@ export async function runFigmaImportPipeline(opts: {
   previewOnly?: boolean;
   skipAssetUpload?: boolean;
   runAiSuggest?: boolean;
+  variablesDump?: ColorVariablesDump | null;
 }): Promise<FigmaPipelineResult> {
   const {
     accessToken,
@@ -60,17 +66,36 @@ export async function runFigmaImportPipeline(opts: {
     supabase,
     previewOnly = false,
     skipAssetUpload = false,
-    runAiSuggest = false, // off by default — hierarchy map is authoritative
+    runAiSuggest = true, // classify leftover unmapped frames when AI credentials exist
+    variablesDump = null,
   } = opts;
 
   const file = await getFigmaFile(accessToken, fileKey);
   const summary = extractFigmaSummary(file);
 
   let variables: FigmaVariablesResponse | null = null;
+  let variablesUnavailableReason: string | null = null;
   try {
-    variables = await getLocalVariables(accessToken, fileKey);
+    const local = await getVariablesWithReason(accessToken, fileKey, "local");
+    variables = local.data;
+    variablesUnavailableReason = local.unavailableReason;
   } catch {
     variables = null;
+    variablesUnavailableReason =
+      "Could not read Figma variables. On Pro, copy Brand Colors with the WIDE OS plugin and paste them here.";
+  }
+  if (!readVariablesMeta(variables)) {
+    try {
+      const published = await getPublishedVariables(accessToken, fileKey);
+      if (readVariablesMeta(published)) {
+        variables = published;
+        variablesUnavailableReason = null;
+      }
+    } catch {
+      /* published vars are optional */
+    }
+  } else {
+    variablesUnavailableReason = null;
   }
 
   if (previewOnly) {
@@ -87,14 +112,15 @@ export async function runFigmaImportPipeline(opts: {
         detectedNameKeys: ["name"],
         detectedFileKeys: [],
         missingFileRows: [],
-        message: `Preview: ${summary.pageCount} pages · ${summary.frameCount} sub-module frames · ${summary.componentCount} components · ${summary.styleCount} styles · variables ${variables?.meta ? "available" : "n/a"}`,
+        message: `Preview: ${summary.pageCount} pages · ${summary.frameCount} sub-module frames · ${summary.componentCount} components · ${summary.styleCount} styles · variables ${readVariablesMeta(variables) ? "available" : "n/a"}${variablesDump ? ` · Brand Colors dump ${variablesDump.collections.reduce((n, c) => n + c.variables.length, 0)}` : ""}`,
       },
     };
     return {
       summary,
       parsed: empty,
       file,
-      variablesAvailable: Boolean(variables?.meta),
+      variablesAvailable: Boolean(readVariablesMeta(variables)),
+      variablesUnavailableReason,
       stats: {
         colors: 0,
         typographyRows: 0,
@@ -104,6 +130,7 @@ export async function runFigmaImportPipeline(opts: {
         aiSuggestions: 0,
         skippedEmptyUi: 0,
         subModules: 0,
+        colorsFromDump: 0,
       },
     };
   }
@@ -114,7 +141,13 @@ export async function runFigmaImportPipeline(opts: {
   }));
   const themeSuggested: Record<string, any> = { accentColors: [] };
 
-  const colorStats = normalizeColors({ file, variables, sections, themeSuggested });
+  const colorStats = normalizeColors({
+    file,
+    variables,
+    sections,
+    themeSuggested,
+    dump: variablesDump,
+  });
   const typeStats = normalizeTypography({
     file,
     sections,
@@ -167,6 +200,12 @@ export async function runFigmaImportPipeline(opts: {
     .map((a) => a.label || "")
     .slice(0, 40);
 
+  const described = await fillImportedDescriptions(sections, {
+    guidelineId,
+    brandName: file.name,
+  });
+  sections.splice(0, sections.length, ...described);
+
   const assignedCount =
     visual.assigned +
     (colorStats.swatchCount > 0 ? 1 : 0) +
@@ -189,16 +228,21 @@ export async function runFigmaImportPipeline(opts: {
       message: [
         `Figma import complete for “${summary.fileName}”.`,
         `Sub-modules: ${visual.subModules} (1 section each).`,
-        `Assets exported: ${uploaded} parent frames.`,
+        `Assets exported: ${uploaded} container frames.`,
         visual.skippedEmptyUi
           ? `Skipped empty UI frames: ${visual.skippedEmptyUi}.`
           : "",
-        `Colors: ${colorStats.swatchCount} (${colorStats.fromVariables} vars / ${colorStats.fromStyles} styles).`,
+        `Colors: ${colorStats.swatchCount} (${colorStats.fromVariables} vars / ${colorStats.fromDump} dump / ${colorStats.fromCanvas} canvas / ${colorStats.fromStyles} styles).`,
         `Typography: ${typeStats.familyCount} families · ${typeStats.scaleCount} scale steps.`,
         buttonStats.sampleCount ? `Button samples: ${buttonStats.sampleCount}.` : "",
         failed ? `Upload failures: ${failed}.` : "",
         aiSuggestions ? `AI suggestions applied: ${aiSuggestions}.` : "",
-        variables?.meta ? "" : "Variables API unavailable (non-Enterprise or missing scope).",
+        readVariablesMeta(variables)
+          ? ""
+          : colorStats.fromDump > 0
+            ? ""
+            : variablesUnavailableReason ||
+              "Figma Variables REST is Enterprise-only. On Pro, copy Brand Colors with the WIDE OS plugin and paste them here.",
       ]
         .filter(Boolean)
         .join(" "),
@@ -209,7 +253,10 @@ export async function runFigmaImportPipeline(opts: {
     summary,
     parsed,
     file,
-    variablesAvailable: Boolean(variables?.meta),
+    variablesAvailable: Boolean(readVariablesMeta(variables)),
+    variablesUnavailableReason: readVariablesMeta(variables)
+      ? null
+      : variablesUnavailableReason,
     stats: {
       colors: colorStats.swatchCount,
       typographyRows: typeStats.rowCount,
@@ -219,6 +266,7 @@ export async function runFigmaImportPipeline(opts: {
       aiSuggestions,
       skippedEmptyUi: visual.skippedEmptyUi,
       subModules: visual.subModules,
+      colorsFromDump: colorStats.fromDump,
     },
   };
 }

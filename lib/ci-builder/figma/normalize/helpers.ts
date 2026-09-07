@@ -5,6 +5,7 @@ import {
   defaultDataForSubModule,
   getSubModule,
 } from "@/lib/ci-builder/modules-catalog";
+import { defaultClientDescription } from "@/lib/ci-builder/section-copy";
 
 export function defaultDataFor(type: SectionType): Record<string, unknown> {
   if (getSubModule(type)) {
@@ -56,9 +57,7 @@ export function ensureSection(
     eyebrow_label: glossary?.eyebrow_label || type,
     headline: glossary?.default_headline || type,
     headline_emphasis: null,
-    description: fileName
-      ? `Imported from Figma file “${fileName}”. Review before publishing.`
-      : "Imported from Figma. Review before publishing.",
+    description: defaultClientDescription(type),
     is_visible: true,
     data: defaultDataFor(type),
   };
@@ -102,6 +101,12 @@ export type PendingExport = {
 
 export function classifyDoDont(label: string): "do" | "dont" {
   if (
+    /correct\s*use|correct\s*usage|proper\s*use|good\s+example/i.test(label) &&
+    !/don'?t|do-not|misuse|incorrect/i.test(label)
+  ) {
+    return "do";
+  }
+  if (
     /dont|don't|do-not|incorrect|falsch|verboten|wrong|misuse|not\s+to\b|bad\s+example/i.test(
       label
     )
@@ -122,6 +127,8 @@ export function wireVisualAsset(
     doDont?: "do" | "dont";
     groupLabel?: string;
     aspectRatio?: string;
+    caption?: string;
+    isMain?: boolean;
   }
 ): void {
   if (!sec.data) sec.data = defaultDataFor(sectionType);
@@ -129,11 +136,99 @@ export function wireVisualAsset(
   const renderer = def?.renderer;
   const shortLabel = label.split("/").pop()?.trim() || label;
 
+  if (renderer === "logo_mark_list") {
+    const marks = Array.isArray(sec.data.marks) ? [...sec.data.marks] : [];
+    const name = opts?.groupLabel || shortLabel;
+    const existing = marks.find((m: any) => String(m.name).toLowerCase() === name.toLowerCase());
+    if (existing) {
+      if (opts?.stage === "dark") existing.darkAssetId = assetId;
+      else existing.lightAssetId = assetId;
+      if (opts?.isMain) {
+        for (const m of marks) m.isMain = m === existing;
+      }
+    } else {
+      marks.push({
+        id: generateUUID(),
+        name,
+        isMain: Boolean(opts?.isMain) || /primary/i.test(name),
+        lightAssetId: opts?.stage === "dark" ? undefined : assetId,
+        darkAssetId: opts?.stage === "dark" ? assetId : undefined,
+        sortOrder: marks.length,
+      });
+    }
+    sec.data.marks = marks;
+    return;
+  }
+
+  if (sectionType === "social_4x5" || sectionType === "social_9x16") {
+    if (!Array.isArray(sec.data.items)) sec.data.items = [];
+    sec.data.items.push({
+      id: generateUUID(),
+      label: shortLabel,
+      dims: sectionType === "social_4x5" ? "1080×1350" : "1080×1920",
+      assetId,
+    });
+    return;
+  }
+
+  if (renderer === "ui_buttons") {
+    if (!Array.isArray(sec.data.variants)) sec.data.variants = [];
+    sec.data.variants.push({
+      id: generateUUID(),
+      label: shortLabel,
+      assetId,
+    });
+    return;
+  }
+
+  if (renderer === "ui_form_controls") {
+    if (!Array.isArray(sec.data.controls)) sec.data.controls = [];
+    sec.data.controls.push({
+      id: generateUUID(),
+      label: shortLabel,
+      assetId,
+    });
+    return;
+  }
+
+  if (renderer === "ui_states") {
+    const lower = shortLabel.toLowerCase();
+    if (/error/.test(lower)) {
+      sec.data.errorAssetId = assetId;
+      if (!sec.data.errorTitle) sec.data.errorTitle = shortLabel;
+    } else {
+      sec.data.emptyAssetId = assetId;
+      if (!sec.data.emptyTitle) sec.data.emptyTitle = shortLabel;
+    }
+    return;
+  }
+
+  if (renderer === "email_sig") {
+    if (!Array.isArray(sec.data.signatures)) sec.data.signatures = [];
+    sec.data.signatures.push({
+      id: generateUUID(),
+      name: shortLabel,
+      title: "",
+      assetId,
+    });
+    if (!sec.data.assetId) sec.data.assetId = assetId;
+    return;
+  }
+
+  if (sectionType === "brand_photography") {
+    if (!Array.isArray(sec.data.items)) sec.data.items = [];
+    sec.data.items.push({
+      id: generateUUID(),
+      caption: opts?.caption || shortLabel,
+      assetId,
+    });
+    return;
+  }
+
   if (
     renderer === "image_slot" ||
     renderer === "clearspace" ||
     renderer === "ui_button" ||
-    renderer === "email_sig" ||
     renderer === "container_spec"
   ) {
     if (!sec.data.assetId) {
@@ -158,12 +253,19 @@ export function wireVisualAsset(
 
   if (renderer === "image_dual") {
     if (!sec.data.items) sec.data.items = [];
+    const inferred = opts?.doDont || classifyDoDont(label);
+    const caption =
+      opts?.caption ||
+      label
+        .replace(/_Container$/i, "")
+        .replace(/^(do|dont|don't|misuse|correct\s*use)[/\-_\s]*/i, "")
+        .trim() ||
+      label;
     sec.data.items.push({
       id: generateUUID(),
-      type: opts?.doDont || classifyDoDont(label),
+      type: inferred,
       assetId,
-      caption:
-        label.replace(/^(do|dont|don't|misuse)[/\-_\s]*/i, "").trim() || label,
+      caption,
     });
     return;
   }

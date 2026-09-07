@@ -14,6 +14,8 @@ export interface IgPost {
   createdLabel: string;
   thumbnailUrl: string;
   postUrl: string;
+  permalinkValid: boolean;
+  format: string;
   accountsReached: number;
   impressions: number;
   profileVisits: number;
@@ -27,6 +29,8 @@ export interface IgPost {
 
 export interface IgBundle {
   period: string;
+  handle: string | null;
+  profileUrl: string | null;
   accountsReached: number;
   impressions: number;
   profileVisits: number;
@@ -58,6 +62,54 @@ export interface DatasetPayload {
   subcategory: string | null;
   columns?: { key: string }[];
   rows: Record<string, unknown>[];
+  externalAccountLabel?: string | null;
+}
+
+/** Real IG permalinks use a shortcode, never a GDPR/Graph numeric file id. */
+export function isValidIgPermalink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)instagram\.com$/i.test(u.hostname)) return false;
+    const path = u.pathname.replace(/\/+$/, "");
+    const post = path.match(/^\/(p|reel|reels|tv)\/([A-Za-z0-9_-]{5,})$/);
+    if (post && !/^\d+$/.test(post[2])) return true;
+    if (/^\/stories\/[^/]+\/\d+$/.test(path)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function igHandleFromLabel(label?: string | null): string | null {
+  if (!label) return null;
+  const raw = label.trim();
+  const tagged = raw.match(/instagram[-_ ]+([a-z0-9._]+)/i);
+  if (tagged?.[1]) return tagged[1].replace(/^www\./i, "");
+  const at = raw.match(/@([a-z0-9._]+)/i);
+  if (at?.[1]) return at[1];
+  if (/^[a-z0-9._]+$/i.test(raw) && raw.includes(".")) return raw;
+  return null;
+}
+
+export function igProfileUrl(handle: string): string {
+  return `https://www.instagram.com/${handle.replace(/^@/, "")}/`;
+}
+
+export function usableIgThumbnail(url: string | null | undefined): string {
+  const u = (url || "").trim();
+  if (!/^https?:\/\//i.test(u)) return "";
+  if (u.startsWith("blob:") || u.startsWith("data:")) return "";
+  return u;
+}
+
+export function resolveIgPostUrl(
+  postUrl: string,
+  handle?: string | null
+): string {
+  if (isValidIgPermalink(postUrl)) return postUrl;
+  if (handle) return igProfileUrl(handle);
+  return "";
 }
 
 function num(row: Record<string, unknown>, ...keys: string[]): number {
@@ -89,19 +141,23 @@ function str(row: Record<string, unknown>, ...keys: string[]): string {
   return "";
 }
 
-function parsePostRow(row: Record<string, unknown>): IgPost {
+function parsePostRow(row: Record<string, unknown>, handle: string | null): IgPost {
   const createdRaw = str(row, "created_at", "created_label", "createdat");
   let createdAt: Date | null = null;
   if (createdRaw) {
     const d = new Date(createdRaw);
     if (!Number.isNaN(d.getTime())) createdAt = d;
   }
+  const rawUrl = str(row, "post_url", "posturl", "permalink", "url");
+  const permalinkValid = isValidIgPermalink(rawUrl);
   return {
     caption: str(row, "caption"),
     createdAt,
     createdLabel: str(row, "created_label", "created_at") || (createdAt ? createdAt.toLocaleString() : ""),
-    thumbnailUrl: str(row, "thumbnail_url", "thumbnailurl"),
-    postUrl: str(row, "post_url", "posturl", "url"),
+    thumbnailUrl: usableIgThumbnail(str(row, "thumbnail_url", "thumbnailurl", "media_url")),
+    postUrl: resolveIgPostUrl(rawUrl, handle),
+    permalinkValid,
+    format: str(row, "format", "media_type") || "post",
     accountsReached: num(row, "accounts_reached", "accountsreached"),
     impressions: num(row, "impressions"),
     profileVisits: num(row, "profile_visits", "profilevisits"),
@@ -117,6 +173,8 @@ function parsePostRow(row: Record<string, unknown>): IgPost {
 function emptyBundle(): IgBundle {
   return {
     period: "",
+    handle: null,
+    profileUrl: null,
     accountsReached: 0,
     impressions: 0,
     profileVisits: 0,
@@ -172,7 +230,13 @@ function applySummaryRow(bundle: IgBundle, row: Record<string, unknown>) {
 
 export function buildInstagramBundle(datasets: DatasetPayload[]): IgBundle {
   const bundle = emptyBundle();
-
+  for (const ds of datasets) {
+    const fromLabel = igHandleFromLabel(ds.externalAccountLabel || ds.name);
+    if (fromLabel && !bundle.handle) {
+      bundle.handle = fromLabel;
+      bundle.profileUrl = igProfileUrl(fromLabel);
+    }
+  }
   for (const ds of datasets) {
     const sub = (ds.subcategory || "unknown") as DatasetSubcategory;
     if (!isInstagramOrganicSub(sub) && sub !== "unknown") continue;
@@ -199,7 +263,7 @@ export function buildInstagramBundle(datasets: DatasetPayload[]): IgBundle {
       const kind = str(row, "_ig_kind");
       if (kind === "post" || sub === "instagram_posts" || sub === "instagram_live") {
         if (kind === "post" || str(row, "caption") || str(row, "thumbnail_url")) {
-          bundle.posts.push(parsePostRow(row));
+          bundle.posts.push(parsePostRow(row, bundle.handle));
           continue;
         }
       }
@@ -348,4 +412,54 @@ export function igCaptionKeywords(posts: IgPost[], limit = 40) {
     }))
     .sort((a, b) => b.impact - a.impact)
     .slice(0, limit);
+}
+
+export type IgCalendarLink = {
+  scheduled_date: string;
+  published_permalink: string;
+  visual_asset_url?: string | null;
+  hook_angle?: string | null;
+};
+
+/** Overlay real Instagram permalinks / thumbs from Live calendar posts onto report rows. */
+export function enrichIgBundleWithCalendarLinks(
+  bundle: IgBundle,
+  links: IgCalendarLink[]
+): IgBundle {
+  const usable = links.filter((l) => isValidIgPermalink(l.published_permalink));
+  if (!usable.length || !bundle.posts.length) return bundle;
+
+  const posts = bundle.posts.map((p) => {
+    if (p.permalinkValid) return p;
+    const day = p.createdAt
+      ? p.createdAt.toISOString().slice(0, 10)
+      : p.createdLabel.match(/\d{4}-\d{2}-\d{2}/)?.[0] || null;
+    let best: IgCalendarLink | null = null;
+    let bestScore = 0;
+    for (const l of usable) {
+      if (day) {
+        const da = Date.parse(`${day}T12:00:00Z`);
+        const db = Date.parse(`${l.scheduled_date}T12:00:00Z`);
+        if (!Number.isFinite(da) || !Number.isFinite(db)) continue;
+        if (Math.abs(da - db) > 86400000) continue;
+      } else continue;
+      const hook = (l.hook_angle || "").toLowerCase();
+      const cap = p.caption.toLowerCase();
+      let score = 0.3;
+      if (hook && cap.includes(hook.slice(0, Math.min(24, hook.length)))) score += 0.4;
+      if (score > bestScore) {
+        bestScore = score;
+        best = l;
+      }
+    }
+    if (!best || bestScore < 0.3) return p;
+    return {
+      ...p,
+      postUrl: best.published_permalink,
+      permalinkValid: true,
+      thumbnailUrl: usableIgThumbnail(best.visual_asset_url) || p.thumbnailUrl,
+    };
+  });
+
+  return { ...bundle, posts };
 }

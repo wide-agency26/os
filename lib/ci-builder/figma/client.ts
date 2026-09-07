@@ -11,41 +11,63 @@ export class FigmaApiError extends Error {
   }
 }
 
+type FigmaFetchInit = RequestInit & { preferPat?: boolean };
+
+function extraHeaders(init?: RequestInit): Record<string, string> {
+  const extra: Record<string, string> = {};
+  if (!init?.headers) return extra;
+  new Headers(init.headers).forEach((value, key) => {
+    extra[key] = value;
+  });
+  return extra;
+}
+
+function looksLikeFigmaPat(token: string): boolean {
+  return token.startsWith("figd_") || token.startsWith("figd-");
+}
+
 async function figmaFetch<T>(
   path: string,
   accessToken: string,
-  init?: RequestInit
+  init?: FigmaFetchInit
 ): Promise<T> {
-  // Personal access tokens (figd_…) must use X-Figma-Token.
-  // OAuth access tokens use Authorization: Bearer.
-  const headers: Record<string, string> = accessToken.startsWith("figd_")
-    ? { "X-Figma-Token": accessToken }
-    : { Authorization: `Bearer ${accessToken}` };
+  // PATs must use X-Figma-Token. OAuth uses Authorization: Bearer.
+  // Newer Figma PATs are not always figd_-prefixed, so retry the other
+  // scheme on 401/403 instead of failing the first guess.
+  const { preferPat, ...fetchInit } = init || {};
+  const token = accessToken.trim();
+  const extra = extraHeaders(fetchInit);
+  const patHeaders = { "X-Figma-Token": token, ...extra };
+  const oauthHeaders = { Authorization: `Bearer ${token}`, ...extra };
+  const attempts =
+    preferPat || looksLikeFigmaPat(token)
+      ? [patHeaders, oauthHeaders]
+      : [oauthHeaders, patHeaders];
 
-  if (init?.headers) {
-    const extra = new Headers(init.headers);
-    extra.forEach((value, key) => {
-      headers[key] = value;
+  let lastStatus = 500;
+  let lastDetail = "Unknown Figma error";
+
+  for (let i = 0; i < attempts.length; i++) {
+    const res = await fetch(`https://api.figma.com/v1${path}`, {
+      ...fetchInit,
+      headers: attempts[i],
     });
-  }
+    if (res.ok) return res.json() as Promise<T>;
 
-  const res = await fetch(`https://api.figma.com/v1${path}`, {
-    ...init,
-    headers,
-  });
-
-  if (!res.ok) {
-    let detail = res.statusText;
+    lastStatus = res.status;
+    lastDetail = res.statusText;
     try {
       const body = await res.json();
-      detail = body?.err || body?.message || JSON.stringify(body);
+      lastDetail = body?.err || body?.message || JSON.stringify(body);
     } catch {
       /* ignore */
     }
-    throw new FigmaApiError(`Figma API ${path}: ${detail}`, res.status);
+
+    const tryOtherAuth = i === 0 && (res.status === 401 || res.status === 403);
+    if (!tryOtherAuth) break;
   }
 
-  return res.json() as Promise<T>;
+  throw new FigmaApiError(`Figma API ${path}: ${lastDetail}`, lastStatus);
 }
 
 export type FigmaProject = { id: number | string; name: string };
@@ -56,11 +78,14 @@ export type FigmaProjectFile = {
   last_modified?: string;
 };
 
+export type FigmaBoundVar = { type?: string; id?: string };
+
 export type FigmaPaint = {
   type?: string;
   visible?: boolean;
   opacity?: number;
   color?: { r: number; g: number; b: number; a?: number };
+  boundVariables?: { color?: FigmaBoundVar };
 };
 
 export type FigmaTypeStyle = {
@@ -68,6 +93,8 @@ export type FigmaTypeStyle = {
   fontPostScriptName?: string;
   fontWeight?: number;
   fontSize?: number;
+  italic?: boolean;
+  fontStyle?: string;
   lineHeightPx?: number;
   lineHeightPercentFontSize?: number;
   letterSpacing?: number;
@@ -83,6 +110,10 @@ export type FigmaFileNode = {
   strokes?: FigmaPaint[];
   style?: FigmaTypeStyle;
   styles?: { fill?: string; text?: string; stroke?: string; effect?: string };
+  boundVariables?: {
+    fills?: FigmaBoundVar | FigmaBoundVar[];
+    strokes?: FigmaBoundVar | FigmaBoundVar[];
+  };
   absoluteBoundingBox?: { x: number; y: number; width: number; height: number };
   characters?: string;
   componentId?: string;
@@ -139,12 +170,28 @@ export type FigmaVariablesResponse = {
     variables: Record<string, FigmaVariable>;
     variableCollections: Record<string, FigmaVariableCollection>;
   };
+  /** Some Figma payloads hoist collections to the root. */
+  variables?: Record<string, FigmaVariable>;
+  variableCollections?: Record<string, FigmaVariableCollection>;
 };
 
-export async function getFigmaMe(accessToken: string) {
+export function readVariablesMeta(variables: FigmaVariablesResponse | null): {
+  variables: Record<string, FigmaVariable>;
+  variableCollections: Record<string, FigmaVariableCollection>;
+} | null {
+  if (!variables) return null;
+  const vars = variables.meta?.variables || variables.variables;
+  const colls =
+    variables.meta?.variableCollections || variables.variableCollections;
+  if (!vars) return null;
+  return { variables: vars, variableCollections: colls || {} };
+}
+
+export async function getFigmaMe(accessToken: string, preferPat = false) {
   return figmaFetch<{ id: string | number; email?: string; handle?: string }>(
     "/me",
-    accessToken
+    accessToken,
+    preferPat ? { preferPat: true } : undefined
   );
 }
 
@@ -185,22 +232,59 @@ export async function getFigmaFileMeta(accessToken: string, fileKey: string) {
   }>(`/files/${encodeURIComponent(fileKey)}/meta`, accessToken);
 }
 
+async function getVariablesEndpoint(
+  accessToken: string,
+  fileKey: string,
+  kind: "local" | "published"
+): Promise<FigmaVariablesResponse | null> {
+  const result = await getVariablesWithReason(accessToken, fileKey, kind);
+  return result.data;
+}
+
+export async function getVariablesWithReason(
+  accessToken: string,
+  fileKey: string,
+  kind: "local" | "published" = "local"
+): Promise<{
+  data: FigmaVariablesResponse | null;
+  unavailableReason: string | null;
+}> {
+  try {
+    const data = await figmaFetch<FigmaVariablesResponse>(
+      `/files/${encodeURIComponent(fileKey)}/variables/${kind}`,
+      accessToken
+    );
+    return { data, unavailableReason: null };
+  } catch (err) {
+    if (err instanceof FigmaApiError && (err.status === 403 || err.status === 404)) {
+      const planBlocked =
+        err.status === 403 ||
+        /plan|enterprise|limited|scope/i.test(err.message || "");
+      return {
+        data: null,
+        unavailableReason: planBlocked
+          ? "Figma Variables REST is Enterprise-only. On Pro, copy Brand Colors with the WIDE OS plugin and paste them here."
+          : "Variables endpoint not found for this file.",
+      };
+    }
+    throw err;
+  }
+}
+
 /** Enterprise / org — may 403 on free plans. */
 export async function getLocalVariables(
   accessToken: string,
   fileKey: string
 ): Promise<FigmaVariablesResponse | null> {
-  try {
-    return await figmaFetch<FigmaVariablesResponse>(
-      `/files/${encodeURIComponent(fileKey)}/variables/local`,
-      accessToken
-    );
-  } catch (err) {
-    if (err instanceof FigmaApiError && (err.status === 403 || err.status === 404)) {
-      return null;
-    }
-    throw err;
-  }
+  return getVariablesEndpoint(accessToken, fileKey, "local");
+}
+
+/** Published library variables for the file — fallback when local vars are empty. */
+export async function getPublishedVariables(
+  accessToken: string,
+  fileKey: string
+): Promise<FigmaVariablesResponse | null> {
+  return getVariablesEndpoint(accessToken, fileKey, "published");
 }
 
 export async function renderFigmaImages(

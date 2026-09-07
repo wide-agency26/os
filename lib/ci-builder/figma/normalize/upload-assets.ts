@@ -1,5 +1,6 @@
 /**
  * Download Figma-rendered images and upload into brand-guidelines storage.
+ * Logo frames keep SVG for display and also store a PNG @2x sibling for downloads.
  */
 
 import {
@@ -24,6 +25,31 @@ type SupabaseLike = {
   };
 };
 
+async function uploadBuffer(
+  supabase: SupabaseLike,
+  guidelineId: string,
+  label: string,
+  ext: "svg" | "png",
+  buf: ArrayBuffer,
+  contentType: string
+): Promise<{ storagePath: string; publicUrl: string } | null> {
+  const safe = sanitizeStorageFileName(
+    `${label || "asset"}.${ext}`.replace(/\s+/g, "_")
+  );
+  const storagePath = `${guidelineId}/figma/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safe}`;
+  const { error: uploadErr } = await supabase.storage
+    .from(BRAND_GUIDELINES_BUCKET)
+    .upload(storagePath, buf, { contentType, upsert: true });
+  if (uploadErr) {
+    console.error("Storage upload error:", uploadErr);
+    return null;
+  }
+  const { data } = supabase.storage
+    .from(BRAND_GUIDELINES_BUCKET)
+    .getPublicUrl(storagePath);
+  return { storagePath, publicUrl: data.publicUrl };
+}
+
 export async function exportAndUploadAssets(opts: {
   accessToken: string;
   fileKey: string;
@@ -40,7 +66,6 @@ export async function exportAndUploadAssets(opts: {
   );
   if (!pending.length) return { uploaded: 0, failed: 0 };
 
-  // Prefer section-assigned first, limit total
   const ordered = [
     ...pending.filter((a) => a.section_id),
     ...pending.filter((a) => !a.section_id),
@@ -49,29 +74,25 @@ export async function exportAndUploadAssets(opts: {
   const svgIds = ordered
     .filter((a) => a.metadata?.prefer_svg)
     .map((a) => String(a.metadata!.figma_node_id));
-  const pngIds = ordered
+  const pngOnlyIds = ordered
     .filter((a) => !a.metadata?.prefer_svg)
     .map((a) => String(a.metadata!.figma_node_id));
+  const pngIds = [...new Set([...pngOnlyIds, ...svgIds])];
 
-  let imageMap: Record<string, string | null> = {};
+  let pngMap: Record<string, string | null> = {};
+  let svgMap: Record<string, string | null> = {};
   try {
     if (pngIds.length) {
-      imageMap = {
-        ...imageMap,
-        ...(await renderFigmaImages(accessToken, fileKey, pngIds, {
-          format: "png",
-          scale: 2,
-        })),
-      };
+      pngMap = await renderFigmaImages(accessToken, fileKey, pngIds, {
+        format: "png",
+        scale: 2,
+      });
     }
     if (svgIds.length) {
-      imageMap = {
-        ...imageMap,
-        ...(await renderFigmaImages(accessToken, fileKey, svgIds, {
-          format: "svg",
-          scale: 1,
-        })),
-      };
+      svgMap = await renderFigmaImages(accessToken, fileKey, svgIds, {
+        format: "svg",
+        scale: 1,
+      });
     }
   } catch (err) {
     console.error("Figma image render failed:", err);
@@ -83,49 +104,72 @@ export async function exportAndUploadAssets(opts: {
 
   for (const asset of ordered) {
     const nodeId = String(asset.metadata!.figma_node_id);
-    const url = imageMap[nodeId];
-    if (!url) {
+    const isSvg = Boolean(asset.metadata?.prefer_svg);
+    const displayUrl = isSvg ? svgMap[nodeId] : pngMap[nodeId];
+    if (!displayUrl) {
       failed++;
       continue;
     }
 
     try {
-      const res = await fetch(url);
+      const res = await fetch(displayUrl);
       if (!res.ok) {
         failed++;
         continue;
       }
       const buf = await res.arrayBuffer();
-      const isSvg = asset.metadata?.prefer_svg;
       const ext = isSvg ? "svg" : "png";
       const contentType = isSvg ? "image/svg+xml" : "image/png";
-      const safe = sanitizeStorageFileName(
-        `${asset.label || nodeId}.${ext}`.replace(/\s+/g, "_")
+      const put = await uploadBuffer(
+        supabase,
+        guidelineId,
+        String(asset.label || nodeId),
+        ext,
+        buf,
+        contentType
       );
-      const storagePath = `${guidelineId}/figma/${Date.now()}_${safe}`;
-
-      const { error: uploadErr } = await supabase.storage
-        .from(BRAND_GUIDELINES_BUCKET)
-        .upload(storagePath, buf, { contentType, upsert: true });
-
-      if (uploadErr) {
-        console.error("Storage upload error:", uploadErr);
+      if (!put) {
         failed++;
         continue;
       }
 
-      const { data } = supabase.storage
-        .from(BRAND_GUIDELINES_BUCKET)
-        .getPublicUrl(storagePath);
-
-      asset.storage_path = storagePath;
-      asset.public_url = data.publicUrl;
-      asset.metadata = {
+      asset.storage_path = put.storagePath;
+      asset.public_url = put.publicUrl;
+      const meta: Record<string, unknown> = {
         ...(asset.metadata || {}),
         pending_export: false,
         figma_export_url_expired: true,
         uploaded_at: new Date().toISOString(),
       };
+
+      const pngRemote = pngMap[nodeId];
+      if (isSvg && pngRemote) {
+        try {
+          const pngRes = await fetch(pngRemote);
+          if (pngRes.ok) {
+            const pngBuf = await pngRes.arrayBuffer();
+            const pngPut = await uploadBuffer(
+              supabase,
+              guidelineId,
+              String(asset.label || nodeId),
+              "png",
+              pngBuf,
+              "image/png"
+            );
+            if (pngPut) {
+              meta.png_url = pngPut.publicUrl;
+              meta.png_storage_path = pngPut.storagePath;
+            }
+          }
+        } catch (err) {
+          console.error("PNG sibling upload failed:", err);
+        }
+      } else if (!isSvg) {
+        meta.png_url = put.publicUrl;
+        meta.png_storage_path = put.storagePath;
+      }
+
+      asset.metadata = meta;
       uploaded++;
     } catch (err) {
       console.error("Asset export/upload failed:", err);

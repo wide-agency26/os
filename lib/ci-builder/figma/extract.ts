@@ -9,6 +9,7 @@ import type { SectionType, CISection, CIAsset } from "@/lib/ci-builder/types";
 import { generateUUID } from "@/lib/ci-builder/types";
 import type { ParseResult } from "@/lib/ci-builder/parser";
 import { defaultDataFor } from "@/lib/ci-builder/figma/normalize/helpers";
+import { defaultClientDescription } from "@/lib/ci-builder/section-copy";
 import {
   isContainerFrame,
   lookupCanvasFrame,
@@ -42,7 +43,10 @@ export type FigmaExtractSummary = {
   }[];
 };
 
-function classifyName(name: string): {
+function classifyName(
+  name: string,
+  moduleId?: string | null
+): {
   section: SectionType | null;
   confidence: "mapped" | "suggested" | "unmapped";
   reason?: string;
@@ -50,7 +54,7 @@ function classifyName(name: string): {
   if (isContainerFrame(name)) {
     return { section: null, confidence: "unmapped", reason: "Container wrapper (skipped)" };
   }
-  const canvas = lookupCanvasFrame(name);
+  const canvas = lookupCanvasFrame(name, moduleId);
   if (canvas) {
     return {
       section: canvas.sectionType,
@@ -72,11 +76,15 @@ function classifyName(name: string): {
   return { section: null, confidence: "unmapped", reason: "No glossary match" };
 }
 
-function collectSubModuleFrames(doc: FigmaFileNode): FigmaFileNode[] {
-  const out: FigmaFileNode[] = [];
+function collectSubModuleFrames(doc: FigmaFileNode): {
+  node: FigmaFileNode;
+  moduleId: string | null;
+}[] {
+  const out: { node: FigmaFileNode; moduleId: string | null }[] = [];
 
   const walkSections = (n: FigmaFileNode) => {
-    if (n.type === "SECTION" && matchCanvasModule(n.name)) {
+    const mod = n.type === "SECTION" ? matchCanvasModule(n.name) : null;
+    if (mod) {
       for (const child of n.children || []) {
         if (
           (child.type === "FRAME" ||
@@ -84,7 +92,7 @@ function collectSubModuleFrames(doc: FigmaFileNode): FigmaFileNode[] {
             child.type === "COMPONENT_SET") &&
           !isContainerFrame(child.name)
         ) {
-          out.push(child);
+          out.push({ node: child, moduleId: mod.moduleId });
         }
       }
       return;
@@ -105,7 +113,7 @@ function collectSubModuleFrames(doc: FigmaFileNode): FigmaFileNode[] {
           !isContainerFrame(child.name) &&
           lookupCanvasFrame(child.name)
         ) {
-          out.push(child);
+          out.push({ node: child, moduleId: null });
         }
       }
     }
@@ -145,8 +153,8 @@ export function extractFigmaSummary(file: FigmaFileResponse): FigmaExtractSummar
     .filter((c) => c.type === "PAGE")
     .map((p) => toTree(p, 2));
 
-  const items = subFrames.map((n) => {
-    const c = classifyName(n.name);
+  const items = subFrames.map(({ node: n, moduleId }) => {
+    const c = classifyName(n.name, moduleId);
     return {
       sourceId: n.id,
       sourceName: n.name,
@@ -191,7 +199,7 @@ export function figmaSummaryToParseResult(
       eyebrow_label: glossary?.eyebrow_label || type,
       headline: glossary?.default_headline || type,
       headline_emphasis: null,
-      description: `Imported structure from Figma file “${summary.fileName}”. Review and fill content.`,
+      description: defaultClientDescription(type),
       is_visible: true,
       data: defaultDataFor(type),
     };

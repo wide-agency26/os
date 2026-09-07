@@ -3,13 +3,16 @@
  *
  * Section  → Module
  * Frame    → Sub-Module  (exactly one ci_sections row)
- * *_Container → data/asset shell only — never its own asset/section
+ * *_Container → the visual export target (never the parent frame).
+ *   Multiple containers on one frame become variants / do-dont items.
  */
 
 import type { FigmaFileNode, FigmaFileResponse } from "@/lib/ci-builder/figma/client";
+import { figmaColorToHex } from "@/lib/ci-builder/figma/client";
 import type { CISection, SectionType } from "@/lib/ci-builder/types";
 import { generateUUID } from "@/lib/ci-builder/types";
 import { getSubModule } from "@/lib/ci-builder/modules-catalog";
+import { appearanceFromBackground } from "@/lib/ci-builder/theme-css";
 import {
   isContainerFrame,
   lookupCanvasFrame,
@@ -37,12 +40,95 @@ function collectText(node: FigmaFileNode): string {
   return parts.join("\n");
 }
 
-function findContainer(frame: FigmaFileNode): FigmaFileNode | null {
-  const kids = frame.children || [];
-  const exact = kids.find(
-    (c) => c.name === `${frame.name}_Container` || isContainerFrame(c.name)
+function solidFillHex(node: FigmaFileNode): string | undefined {
+  const fill = (node.fills || []).find(
+    (f) => f?.type === "SOLID" && f.visible !== false && f.color
   );
-  return exact || null;
+  return fill?.color ? figmaColorToHex(fill.color) : undefined;
+}
+
+function inferStageFromNodes(
+  ...nodes: Array<FigmaFileNode | undefined>
+): "dark" | "light" | undefined {
+  for (const n of nodes) {
+    if (!n) continue;
+    const hex = solidFillHex(n);
+    if (hex) return appearanceFromBackground(hex);
+  }
+  return undefined;
+}
+
+function findContainers(frame: FigmaFileNode): FigmaFileNode[] {
+  const wanted = `${frame.name}_Container`;
+  const wantedLower = wanted.toLowerCase();
+  const found: FigmaFileNode[] = [];
+
+  const walk = (n: FigmaFileNode, depth: number) => {
+    if (depth > 0) {
+      if (isContainerFrame(n.name)) {
+        found.push(n);
+        return;
+      }
+      // Nested mapped sub-module frames are their own ingest targets.
+      if (lookupCanvasFrame(n.name)) return;
+    }
+    for (const c of n.children || []) walk(c, depth + 1);
+  };
+  walk(frame, 0);
+
+  const exact = found.filter(
+    (n) => n.name === wanted || n.name.toLowerCase() === wantedLower
+  );
+  return exact.length ? exact : found;
+}
+
+function containerCaption(
+  containerName: string,
+  frameName: string,
+  index: number,
+  total: number
+): string {
+  const stripped = containerName.replace(/_Container$/i, "").trim();
+  if (stripped && stripped.toLowerCase() !== frameName.toLowerCase()) {
+    return stripped;
+  }
+  if (total > 1) return `${frameName} ${index + 1}`;
+  return frameName;
+}
+
+/** YES / NO + instruction living inside each do/dont container. */
+function captionFromContainer(
+  container: FigmaFileNode,
+  frameName: string,
+  index: number,
+  total: number
+): string {
+  const lines = collectText(container)
+    .split(/\n+/)
+    .map((t) => t.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .filter((t) => !/^(yes|no|do|don't|dont)$/i.test(t));
+  const instruction = lines.find((t) => t.length >= 12) || lines[0];
+  if (instruction) return instruction;
+  return containerCaption(container.name || "", frameName, index, total);
+}
+
+function inferDoDont(
+  def: CanvasFrameDef,
+  frameName: string
+): "do" | "dont" | undefined {
+  if (def.doDont) return def.doDont;
+  if (def.sectionType !== "misuse_examples") return undefined;
+  if (
+    /correct\s*use|correct\s*usage|proper\s*use|good\s+example/i.test(frameName) &&
+    !/don'?t|misuse|incorrect/i.test(frameName)
+  ) {
+    return "do";
+  }
+  if (/misuse|don'?t|incorrect|wrong|bad\s+example/i.test(frameName)) {
+    return "dont";
+  }
+  return undefined;
 }
 
 /** True when a dropzone/container has real nested content (not an empty shell). */
@@ -63,12 +149,33 @@ export function containerHasContent(container: FigmaFileNode | null): boolean {
   });
 }
 
-function applyTextData(sec: Partial<CISection>, sectionType: SectionType, text: string) {
+function collapseClearspaceNodes(nodes: FigmaFileNode[]): FigmaFileNode[] {
+  if (nodes.length <= 1) return nodes;
+  const generic = nodes.every((n) => /clear\s*space/i.test(n.name || ""));
+  if (!generic) return nodes;
+  return [
+    nodes.reduce((best, n) => {
+      const ba =
+        (best.absoluteBoundingBox?.width || 0) *
+        (best.absoluteBoundingBox?.height || 0);
+      const na =
+        (n.absoluteBoundingBox?.width || 0) * (n.absoluteBoundingBox?.height || 0);
+      return na > ba ? n : best;
+    }),
+  ];
+}
+
+function applyTextData(
+  sec: Partial<CISection>,
+  sectionType: SectionType,
+  text: string,
+  columns?: { left?: string; right?: string }
+) {
   if (!sec.data) sec.data = {};
   const def = getSubModule(sectionType);
   const renderer = def?.renderer;
   const trimmed = text.trim();
-  if (!trimmed) return;
+  if (!trimmed && !columns) return;
 
   switch (renderer) {
     case "text":
@@ -85,44 +192,78 @@ function applyTextData(sec: Partial<CISection>, sectionType: SectionType, text: 
         .split(/\n+/)
         .map((l) => l.replace(/^\d+\.\s*/, "").replace(/^[-•*]\s*/, "").trim())
         .filter(Boolean)
-        .map((label) => ({ id: generateUUID(), label }));
+        .map((title) => ({ id: generateUUID(), title, description: "" }));
       break;
     case "archetype": {
       const lines = trimmed.split(/\n+/).map((l) => l.trim()).filter(Boolean);
       sec.data.archetype = lines[0] || trimmed;
-      sec.data.traits = lines.slice(1);
+      sec.data.traits = lines.slice(1).map((word) => ({
+        id: generateUUID(),
+        word,
+      }));
       break;
     }
     case "dual_list": {
-      const dos: string[] = [];
-      const donts: string[] = [];
+      const dos: { id: string; text: string }[] = [];
+      const donts: { id: string; text: string }[] = [];
+      const isDosHeader = (t: string) =>
+        /^do['’]?s?\b/i.test(t) && !/^don/i.test(t);
+      const isDontsHeader = (t: string) =>
+        /^(don['’]?t?s?|never|avoid)\b/i.test(t);
+      const stripHeader = (t: string) =>
+        t
+          .replace(/^(do['’]?s?|don['’]?t?s?|never|avoid)\b\s*:?\s*/i, "")
+          .replace(/^[-•*]\s*/, "")
+          .trim();
+      const pushLine = (
+        bucket: { id: string; text: string }[],
+        t: string
+      ) => {
+        const cleaned = stripHeader(t) || t.replace(/^[-•*]\s*/, "").trim();
+        if (cleaned) bucket.push({ id: generateUUID(), text: cleaned });
+      };
+      if (columns) {
+        for (const line of (columns.left || "").split(/\n+/)) {
+          const t = line.trim();
+          if (t) pushLine(dos, t);
+        }
+        for (const line of (columns.right || "").split(/\n+/)) {
+          const t = line.trim();
+          if (t) pushLine(donts, t);
+        }
+        sec.data.dos = dos;
+        sec.data.donts = donts;
+        break;
+      }
       let mode: "dos" | "donts" | null = null;
       for (const line of trimmed.split(/\n+/)) {
         const t = line.trim();
-        if (/^dos?:/i.test(t)) {
+        if (!t) continue;
+        if (isDosHeader(t)) {
           mode = "dos";
-          const rest = t.replace(/^dos?:/i, "").trim();
-          if (rest) dos.push(rest.replace(/^[-•*]\s*/, ""));
+          const rest = stripHeader(t);
+          if (rest) dos.push({ id: generateUUID(), text: rest });
           continue;
         }
-        if (/^don'?ts?:/i.test(t)) {
+        if (isDontsHeader(t)) {
           mode = "donts";
-          const rest = t.replace(/^don'?ts?:/i, "").trim();
-          if (rest) donts.push(rest.replace(/^[-•*]\s*/, ""));
+          const rest = stripHeader(t);
+          if (rest) donts.push({ id: generateUUID(), text: rest });
           continue;
         }
         const cleaned = t.replace(/^[-•*]\s*/, "");
         if (!cleaned) continue;
-        if (mode === "donts") donts.push(cleaned);
-        else dos.push(cleaned);
+        if (mode === "donts") donts.push({ id: generateUUID(), text: cleaned });
+        else if (mode === "dos") dos.push({ id: generateUUID(), text: cleaned });
+        else if (donts.length === 0) dos.push({ id: generateUUID(), text: cleaned });
       }
       sec.data.dos = dos;
       sec.data.donts = donts;
       break;
     }
     case "copy_examples": {
-      const approved: string[] = [];
-      const forbidden: string[] = [];
+      const approved: { id: string; text: string }[] = [];
+      const forbidden: { id: string; text: string }[] = [];
       let mode: "approved" | "forbidden" | null = null;
       for (const line of trimmed.split(/\n+/)) {
         const t = line.trim();
@@ -136,8 +277,8 @@ function applyTextData(sec: Partial<CISection>, sectionType: SectionType, text: 
         }
         const cleaned = t.replace(/^[-•*]\s*/, "");
         if (!cleaned) continue;
-        if (mode === "forbidden") forbidden.push(cleaned);
-        else approved.push(cleaned);
+        if (mode === "forbidden") forbidden.push({ id: generateUUID(), text: cleaned });
+        else approved.push({ id: generateUUID(), text: cleaned });
       }
       sec.data.approved = approved;
       sec.data.forbidden = forbidden;
@@ -194,8 +335,11 @@ function findLooseSubModuleFrames(doc: FigmaFileNode): {
   return out;
 }
 
-function resolveFrameDef(name: string): CanvasFrameDef | null {
-  const exact = lookupCanvasFrame(name);
+function resolveFrameDef(
+  name: string,
+  moduleId?: string | null
+): CanvasFrameDef | null {
+  const exact = lookupCanvasFrame(name, moduleId);
   if (exact) return exact;
   // Glossary fallback for renamed frames — only accept catalog sub-modules
   const match = matchSectionType(name);
@@ -216,7 +360,14 @@ function resolveFrameDef(name: string): CanvasFrameDef | null {
           ? "typography_families"
           : st === "typography_scale"
             ? "typography_scale"
-            : st.startsWith("ui_") ||
+            : st.startsWith("color_") ||
+                st === "hex" ||
+                st === "rgb" ||
+                st === "cmyk" ||
+                st === "functional" ||
+                st === "wcag_contrast"
+              ? "color"
+              : st.startsWith("ui_") ||
                 st === "interactive_states" ||
                 st === "form_controls" ||
                 st === "status_badges" ||
@@ -248,22 +399,46 @@ export function ingestCanvasHierarchy(opts: {
 
   const processFrame = (
     frame: FigmaFileNode,
-    ctx: { uiModule: boolean }
+    ctx: { uiModule: boolean; moduleId: string | null }
   ) => {
     if (isContainerFrame(frame.name)) return;
 
-    const def = resolveFrameDef(frame.name);
+    const def = resolveFrameDef(frame.name, ctx.moduleId);
     if (!def) {
-      // Unmapped top-level frame — do NOT descend into children (avoids fractured assets)
       unassigned++;
+      if (containerHasContent(frame)) {
+        pendings.push({
+          nodeId: frame.id,
+          label: frame.name,
+          sectionType: "unmatched",
+          kind: "unmatched",
+          assetId: generateUUID(),
+        });
+      }
       return;
     }
 
     subModules++;
-    const container = findContainer(frame);
-    const hasContent = containerHasContent(container);
+    const containers = findContainers(frame);
+    const hasContent =
+      containers.some((c) => containerHasContent(c)) ||
+      (containers.length === 0 && containerHasContent(frame));
 
-    // Empty UI Element frames: skip entirely
+    if (def.kind === "skip") {
+      unassigned++;
+      if (hasContent) {
+        const node = containers[0] || frame;
+        pendings.push({
+          nodeId: node.id,
+          label: frame.name,
+          sectionType: "unmatched",
+          kind: "unmatched",
+          assetId: generateUUID(),
+        });
+      }
+      return;
+    }
+
     if ((def.kind === "ui" || ctx.uiModule) && def.kind !== "text") {
       if (!hasContent) {
         skippedEmptyUi++;
@@ -271,55 +446,95 @@ export function ingestCanvasHierarchy(opts: {
       }
     }
 
-    // Visual / logo dropzones that are still empty: create section shell only, no broken asset
     const sec = ensureSection(sections, def.sectionType, file.name);
 
     if (def.kind === "text") {
-      const text = collectText(container || frame);
-      applyTextData(sec, def.sectionType, text);
+      const renderer = getSubModule(def.sectionType)?.renderer;
+      if (renderer === "dual_list" && containers.length === 2) {
+        applyTextData(sec, def.sectionType, "", {
+          left: collectText(containers[0]),
+          right: collectText(containers[1]),
+        });
+      } else {
+        const text = containers.length
+          ? containers.map(collectText).filter(Boolean).join("\n")
+          : collectText(frame);
+        applyTextData(sec, def.sectionType, text);
+      }
       assigned++;
       seenSectionTypes.add(def.sectionType);
       return;
     }
 
-    if (def.kind === "typography_families" || def.kind === "typography_scale") {
-      // Typography data is filled by normalizeTypography from styles/variables.
-      // Still ensure the section exists so the hierarchy is complete.
+    if (def.kind === "typography_families" || def.kind === "typography_scale" || def.kind === "color") {
+      // Color hexes / type tokens are filled by normalizeColors / normalizeTypography
+      // from fills, styles, and variables — not by exporting the frame as an image.
       assigned++;
       seenSectionTypes.add(def.sectionType);
       return;
     }
 
-    // Visual + UI: one asset = parent Sub-Module frame (never container / children)
-    if (!hasContent && def.kind === "visual") {
-      // Empty logo/imagery dropzone — section shell only, no phantom asset
+    if (def.kind === "visual" && containers.length === 0 && !hasContent) {
       assigned++;
       seenSectionTypes.add(def.sectionType);
       return;
     }
 
-    // Deduplicate: one asset per section type unless multi-variant imagery
+    // Multiple top-level frames may feed the same section (Correct Use + Misuse,
+    // several Clear Space_Container variants, photography ratios, two Image Marks).
     const allowMulti =
       def.sectionType === "photography_style" ||
+      def.sectionType === "brand_photography" ||
       def.sectionType === "misuse_examples" ||
-      def.sectionType === "presentation_deck";
+      def.sectionType === "presentation_deck" ||
+      def.sectionType === "logo_marks" ||
+      def.sectionType === "image_mark" ||
+      def.sectionType === "social_4x5" ||
+      def.sectionType === "social_9x16" ||
+      def.sectionType === "email_signatures" ||
+      def.sectionType === "ui_primary" ||
+      def.sectionType === "form_controls";
 
     if (seenSectionTypes.has(def.sectionType) && !allowMulti) {
       return;
     }
     seenSectionTypes.add(def.sectionType);
 
-    const assetId = generateUUID();
-    pendings.push({
-      nodeId: frame.id,
-      label: frame.name,
-      sectionType: def.sectionType,
-      kind: def.sectionType,
-      assetId,
-      preferSvg: def.preferSvg,
-    });
-    wireVisualAsset(sec, def.sectionType, assetId, frame.name);
-    assigned++;
+    // Never fall back to the parent while any *_Container exists — even if
+    // REST omitted nested children and the content heuristic looks empty.
+    let exportNodes = containers.length > 0 ? containers : [frame];
+    if (def.sectionType === "clear_space") {
+      exportNodes = collapseClearspaceNodes(exportNodes);
+    }
+    const doDont = inferDoDont(def, frame.name);
+
+    for (let i = 0; i < exportNodes.length; i++) {
+      const node = exportNodes[i];
+      const assetId = generateUUID();
+      const label = node.name || frame.name;
+      const caption =
+        def.sectionType === "misuse_examples"
+          ? captionFromContainer(node, frame.name, i, exportNodes.length)
+          : containerCaption(label, frame.name, i, exportNodes.length);
+      pendings.push({
+        nodeId: node.id,
+        label,
+        sectionType: def.sectionType,
+        kind: def.sectionType,
+        assetId,
+        preferSvg: def.preferSvg,
+        doDont,
+        caption,
+      });
+      wireVisualAsset(sec, def.sectionType, assetId, label, {
+        doDont,
+        caption,
+        stage: inferStageFromNodes(node, frame),
+        groupLabel: def.logoMarkName,
+        isMain: def.logoIsMain,
+      });
+      assigned++;
+    }
   };
 
   const moduleSections = findModuleSections(file.document);
@@ -332,12 +547,18 @@ export function ingestCanvasHierarchy(opts: {
         if (child.type !== "FRAME" && child.type !== "COMPONENT" && child.type !== "COMPONENT_SET") {
           continue;
         }
-        processFrame(child, { uiModule });
+        processFrame(child, {
+          uiModule,
+          moduleId: modMeta?.moduleId || null,
+        });
       }
     }
   } else {
     for (const loose of findLooseSubModuleFrames(file.document)) {
-      processFrame(loose.frame, { uiModule: loose.uiModule });
+      processFrame(loose.frame, {
+        uiModule: loose.uiModule,
+        moduleId: loose.moduleId,
+      });
     }
   }
 
