@@ -8,6 +8,11 @@ import {
   type CiSubModuleId,
 } from "./modules-catalog";
 import { generateUUID, type CIAsset, type CISection, type LegacySectionType } from "./types";
+import {
+  isFormatColorSection,
+  needsColorCatalogCleanup,
+  pruneColorCatalogNoise,
+} from "./color-cleanup";
 
 export const LEGACY_SECTION_TYPES: ReadonlySet<string> = new Set([
   "overview",
@@ -26,8 +31,10 @@ export const LEGACY_SECTION_TYPES: ReadonlySet<string> = new Set([
 export function needsLegacyMigration(
   sections: Partial<CISection>[]
 ): boolean {
-  return sections.some(
-    (s) => s.section_type && LEGACY_SECTION_TYPES.has(s.section_type)
+  return (
+    sections.some(
+      (s) => s.section_type && LEGACY_SECTION_TYPES.has(s.section_type)
+    ) || needsColorCatalogCleanup(sections)
   );
 }
 
@@ -135,10 +142,18 @@ export function migrateLegacySections(
   );
 
   if (legacy.length === 0) {
+    const pruned = pruneColorCatalogNoise(sections);
+    if (!pruned.changed) {
+      return {
+        sections,
+        assetSectionMap: {},
+        deletedSectionIds: [],
+      };
+    }
     return {
-      sections,
+      sections: pruned.sections.map((s, i) => ({ ...s, position: i })),
       assetSectionMap: {},
-      deletedSectionIds: [],
+      deletedSectionIds: pruned.deletedSectionIds,
     };
   }
 
@@ -278,8 +293,9 @@ export function migrateLegacySections(
         used.add(type);
       }
 
-      // Skip completely empty duplicate groups if we already have that type with data
-      const existing = out.find((s) => s.section_type === type);
+      const existing =
+        out.find((s) => s.section_type === type) ||
+        keep.find((s) => s.section_type === type);
       if (existing) {
         const prev = (existing.data?.swatches as any[]) || [];
         existing.data = { swatches: [...prev, ...swatches] };
@@ -608,14 +624,169 @@ export function migrateLegacySections(
     }
   }
 
-  // Keep existing non-legacy sections
+  // Keep existing non-legacy sections. Color roles already created from legacy
+  // `colors` merge instead of duplicating Primary (1)/(2).
   for (const sec of keep) {
+    if (isFormatColorSection(sec.section_type)) continue;
+    const existing =
+      sec.section_type &&
+      ["color_primary", "color_secondary", "color_accent", "functional"].includes(
+        sec.section_type
+      )
+        ? out.find((s) => s.section_type === sec.section_type)
+        : undefined;
+    if (existing) {
+      const prev = (existing.data?.swatches as any[]) || [];
+      const extra = (sec.data?.swatches as any[]) || [];
+      if (extra.length) {
+        existing.data = {
+          ...(existing.data || {}),
+          swatches: [...prev, ...extra],
+        };
+      }
+      continue;
+    }
     push({ ...sec, position });
   }
 
-  const deletedSectionIds = legacy
-    .map((s) => s.id)
-    .filter((id): id is string => Boolean(id));
+  const pruned = pruneColorCatalogNoise(out);
+  const deletedSectionIds = [
+    ...legacy.map((s) => s.id).filter((id): id is string => Boolean(id)),
+    ...pruned.deletedSectionIds,
+  ];
 
-  return { sections: out, assetSectionMap, deletedSectionIds };
+  return {
+    sections: pruned.sections.map((s, i) => ({ ...s, position: i })),
+    assetSectionMap,
+    deletedSectionIds,
+  };
 }
+
+const LOGO_SLOT_TYPES = new Set([
+  "primary_logo",
+  "secondary_logo",
+  "tertiary_logo",
+  "wordmark",
+  "image_mark",
+  "misc_logo",
+  "favicon",
+]);
+
+/** Schema v2: collapse 7 logo slots into unified `logo_marks` list. */
+export function needsLogoMarksMigration(
+  sections: Partial<CISection>[]
+): boolean {
+  if (sections.some((s) => s.section_type === "logo_marks")) return false;
+  return sections.some(
+    (s) => s.section_type && LOGO_SLOT_TYPES.has(s.section_type)
+  );
+}
+
+export function needsSchemaV2Migration(
+  sections: Partial<CISection>[],
+  themeSchemaVersion?: number | null
+): boolean {
+  if ((themeSchemaVersion ?? 0) >= 2) {
+    return needsLogoMarksMigration(sections);
+  }
+  return (
+    needsLegacyMigration(sections) || needsLogoMarksMigration(sections)
+  );
+}
+
+export function migrateLogoSlotsToMarks(
+  sections: Partial<CISection>[],
+  guidelineId: string
+): MigratedGuideline {
+  if (sections.some((s) => s.section_type === "logo_marks")) {
+    return { sections, assetSectionMap: {}, deletedSectionIds: [] };
+  }
+
+  const NAME: Record<string, string> = {
+    primary_logo: "Primary",
+    secondary_logo: "Secondary",
+    tertiary_logo: "Tertiary",
+    wordmark: "Wordmark",
+    image_mark: "Image Mark",
+    misc_logo: "Misc",
+    favicon: "Favicon",
+  };
+
+  const marks: Array<{
+    id: string;
+    name: string;
+    isMain?: boolean;
+    lightAssetId?: string;
+    darkAssetId?: string;
+    sortOrder?: number;
+  }> = [];
+  const deletedSectionIds: string[] = [];
+  const assetSectionMap: Record<string, string> = {};
+  const logoMarksId = generateUUID();
+
+  let sort = 0;
+  for (const type of [
+    "primary_logo",
+    "secondary_logo",
+    "wordmark",
+    "image_mark",
+    "favicon",
+    "misc_logo",
+    "tertiary_logo",
+  ]) {
+    const sec = sections.find((s) => s.section_type === type);
+    if (!sec) continue;
+    const data = (sec.data || {}) as {
+      assetId?: string;
+      variants?: { assetId?: string; stageColor?: string; label?: string }[];
+      stage?: string;
+      label?: string;
+    };
+    const light =
+      data.variants?.find((v) =>
+        /light|#fff|#ffffff/i.test(String(v.stageColor || v.label || ""))
+      )?.assetId ||
+      (data.stage !== "dark" ? data.assetId : undefined) ||
+      data.assetId;
+    const dark =
+      data.variants?.find((v) =>
+        /dark|#000|#111/i.test(String(v.stageColor || v.label || ""))
+      )?.assetId || (data.stage === "dark" ? data.assetId : undefined);
+    marks.push({
+      id: generateUUID(),
+      name: data.label || NAME[type] || type,
+      isMain: type === "primary_logo",
+      lightAssetId: light || undefined,
+      darkAssetId: dark || undefined,
+      sortOrder: sort++,
+    });
+    if (sec.id) deletedSectionIds.push(sec.id);
+    if (light) assetSectionMap[light] = logoMarksId;
+    if (dark) assetSectionMap[dark] = logoMarksId;
+  }
+
+  if (!marks.length) {
+    return { sections, assetSectionMap: {}, deletedSectionIds: [] };
+  }
+
+  const kept = sections.filter(
+    (s) => !s.section_type || !LOGO_SLOT_TYPES.has(s.section_type)
+  );
+  const logoMarksSection: Partial<CISection> = {
+    id: logoMarksId,
+    guideline_id: guidelineId,
+    section_type: "logo_marks",
+    position: 0,
+    is_visible: true,
+    eyebrow_label: "03.01 · Logo Marks",
+    headline: "Logo Marks",
+    data: { marks },
+  };
+
+  return {
+    sections: [logoMarksSection, ...kept].map((s, i) => ({ ...s, position: i })),
+    assetSectionMap,
+    deletedSectionIds,
+  };
+}
+
