@@ -70,6 +70,9 @@ export interface DatasetMeta {
   name?: string;
   createdAt?: string | null;
   rowCount?: number;
+  sourceType?: string | null;
+  syncedAt?: string | null;
+  externalAccountLabel?: string | null;
 }
 
 function canon(k: string): string {

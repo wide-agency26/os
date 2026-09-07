@@ -35,5 +35,7 @@ export async function notifyBdStakeholders(input: {
     title: input.title,
     message: input.message,
     severity_level: input.severity ?? "Info",
+    link: input.link ?? null,
+    meta: (input.meta ?? {}) as Json,
   });
 }

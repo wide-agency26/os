@@ -17,6 +17,7 @@ import {
   resolveSowTheme,
   resolveSowVat,
 } from "./constants";
+import { mergeSowAssistContext } from "./assist";
 
 export type PublicSowPayload =
   | { state: "not_found" }
@@ -54,8 +55,11 @@ export async function loadPublishedSowBySlug(
     .maybeSingle();
 
   if (error || !row) return { state: "not_found" };
-  if (row.status !== "published") {
+  if (row.status === "draft") {
     return { state: "draft", title: row.title };
+  }
+  if (row.status !== "published" && row.status !== "accepted") {
+    return { state: "not_found" };
   }
 
   const { data: full } = await mapSowDocument(supabase, row.id);
@@ -162,6 +166,7 @@ async function mapSowDocument(supabase: any, sowId: string) {
     created_by: sow.created_by,
     created_at: sow.created_at,
     updated_at: sow.updated_at,
+    assist_context: mergeSowAssistContext(sow.assist_context),
     sections: mappedSections,
     cost_groups: (groups ?? []).map((g: Record<string, unknown>) => ({
       id: g.id as string,

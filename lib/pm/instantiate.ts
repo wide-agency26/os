@@ -118,10 +118,26 @@ export async function instantiatePackagePlaybook(
     .update({
       package_playbook_id: packagePlaybookId,
       pm_cycle_key: pkg.cadence_type === "recurring" ? cycleKey : null,
+      deal_frequency: pkg.cadence_type === "recurring" ? "monthly" : "one_off",
     })
     .eq("id", projectId);
 
   return { created: rows.length };
+}
+
+/** Resolve the package playbook from a pm_packages id and instantiate onto the project. */
+export async function instantiatePlaybookForPackage(
+  supabase: Sb,
+  projectId: string,
+  packageId: string
+): Promise<{ created: number; error?: string }> {
+  const { data: pb } = await supabase
+    .from("package_playbooks")
+    .select("id")
+    .eq("package_id", packageId)
+    .maybeSingle();
+  if (!pb?.id) return { created: 0, error: "No playbook for that package" };
+  return instantiatePackagePlaybook(supabase, projectId, pb.id);
 }
 
 /**

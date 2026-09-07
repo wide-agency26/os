@@ -10,6 +10,7 @@ import {
   customDateRange as metaCustomRange,
   isMetaAdsDataset,
   looksLikeGoogleAdsRows,
+  pickPrimaryMetaDatasets,
   type MetaAdsRow,
 } from "@/lib/reports/meta-ads";
 import {
@@ -69,6 +70,7 @@ import {
   filterByMonths,
   filterByRange,
   customDateRange,
+  isWebsiteDataset,
 } from "@/lib/reports/ga4-website";
 import {
   buildGscBundle,
@@ -98,6 +100,9 @@ export interface LoadedDataset {
   category: string;
   subcategory: string | null;
   createdAt?: string | null;
+  sourceType?: string | null;
+  syncedAt?: string | null;
+  externalAccountLabel?: string | null;
   rowCount: number;
   columns: { key: string }[];
   rows: Record<string, unknown>[];
@@ -300,9 +305,9 @@ export function computeAdsOverall(
   opts: PeriodOpts
 ): AdsOverallResult {
   const channels: ActiveChannelTag[] = [];
-  const allMetaRows: MetaAdsRow[] = [];
   const allGoogleRows: GoogleAdsRow[] = [];
   const allLiAdsRows: LinkedInAdsRow[] = [];
+  const metaCandidates: LoadedDataset[] = [];
 
   for (const d of datasets) {
     const sub = d.subcategory || detectSubcategory(d.name, d.columns);
@@ -341,13 +346,18 @@ export function computeAdsOverall(
     }
 
     if (isMeta) {
-      const rows = normalizeMetaRows(d.rows);
-      if (!rows.length) continue;
-      if (!channels.some((c) => c.id === "meta")) {
-        channels.push(tagChannel("meta", "Meta Ads", d.name));
-      }
-      allMetaRows.push(...rows);
+      metaCandidates.push(d);
     }
+  }
+
+  const allMetaRows: MetaAdsRow[] = [];
+  for (const d of pickPrimaryMetaDatasets(metaCandidates)) {
+    const rows = normalizeMetaRows(d.rows);
+    if (!rows.length) continue;
+    if (!channels.some((c) => c.id === "meta")) {
+      channels.push(tagChannel("meta", "Meta Ads", d.name));
+    }
+    allMetaRows.push(...rows);
   }
 
   if (!channels.length) {
@@ -533,6 +543,7 @@ export function pickInstagramPayloads(datasets: LoadedDataset[]): IgDatasetPaylo
       subcategory: d.subcategory || detectSubcategory(d.name, d.columns),
       columns: d.columns,
       rows: d.rows,
+      externalAccountLabel: d.externalAccountLabel,
     }));
 }
 
@@ -716,10 +727,7 @@ export function computeGeneralFunnel(
   const ads = computeAdsOverall(datasets, opts);
   const social = computeSocialOverall(datasets, opts);
 
-  const webDs = datasets.filter((d) => {
-    const sub = d.subcategory || detectSubcategory(d.name, d.columns);
-    return d.category === "Website" || sub === "ga4";
-  });
+  const webDs = datasets.filter((d) => isWebsiteDataset(d.columns, d.rows));
 
   let webSessions = 0;
   for (const d of webDs) {
@@ -782,12 +790,18 @@ export function computeGeneralFunnel(
   const adConversions = ads.totals?.conversions || 0;
   const webConversions = 0;
 
-  // Meta reach from Meta datasets only
+  // Meta reach from the finest Meta grain only (ads > ad sets > campaigns)
   let metaReach = 0;
-  for (const d of datasets) {
-    const sub = d.subcategory || detectSubcategory(d.name, d.columns);
-    if (isGoogleAdsSub(sub) || isLinkedInAdsSub(sub) || looksLikeGoogleAdsRows(d.rows)) continue;
-    if (!(isMetaAdsSub(sub) || isMetaAdsDataset(d.columns, d.rows))) continue;
+  const metaForReach = pickPrimaryMetaDatasets(
+    datasets.filter((d) => {
+      const sub = d.subcategory || detectSubcategory(d.name, d.columns);
+      if (isGoogleAdsSub(sub) || isLinkedInAdsSub(sub) || looksLikeGoogleAdsRows(d.rows)) {
+        return false;
+      }
+      return isMetaAdsSub(sub) || isMetaAdsDataset(d.columns, d.rows);
+    })
+  );
+  for (const d of metaForReach) {
     const rows = normalizeMetaRows(d.rows);
     const filtered = filterMetaRows(rows, opts);
     for (const r of filtered) metaReach += r.reach || 0;

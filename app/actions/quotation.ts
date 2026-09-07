@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { isFounder } from "@/lib/rbac";
+import { workPaths } from "@/lib/work/paths";
+import { revalidateWork } from "@/lib/work/revalidate";
 import { notifyBdStakeholders } from "@/lib/bd/notify";
 import {
   createLexwareContact,
@@ -146,8 +148,7 @@ export async function syncBdLexwareQuotation(input: {
       note: "Lexware not configured — quotation marked coming soon.",
       meta: {},
     });
-    revalidatePath(`/app/bd/quotation/${rec.id}`);
-    revalidatePath(`/app/bd/${rec.id}`);
+    revalidateWork({ bdId: rec.id });
     return { ok: true, quotation };
   }
 
@@ -263,13 +264,12 @@ export async function syncBdLexwareQuotation(input: {
       observerIds: (rec.observer_ids as string[]) || [],
       title: `Quotation sent — ${rec.company_name}`,
       message: `Lexware quotation is open. Track status or open the deeplink.`,
-      link: `/app/bd/quotation/${rec.id}`,
+      link: workPaths.quoteId(rec.id),
       severity: "Info",
     });
   }
 
-  revalidatePath(`/app/bd/quotation/${rec.id}`);
-  revalidatePath(`/app/bd/${rec.id}`);
+  revalidateWork({ bdId: rec.id });
   return { ok: true, quotation };
 }
 
@@ -341,7 +341,7 @@ export async function refreshBdLexwareQuotationStatus(input: {
     await persistQuotation(supabase, rec.id, quotation);
   }
 
-  revalidatePath(`/app/bd/quotation/${rec.id}`);
+  revalidateWork({ bdId: rec.id });
   return { ok: true, quotation };
 }
 
@@ -376,9 +376,8 @@ export async function confirmBdQuotationAccepted(input: {
   });
   if (!handoff.ok) return { ok: false, error: handoff.error };
 
-  revalidatePath(`/app/bd/quotation/${rec.id}`);
-  revalidatePath(`/app/bd/${rec.id}`);
-  revalidatePath("/app/projects/project");
+  revalidateWork({ bdId: rec.id });
+  revalidatePath("/app/projects");
   return { ok: true, projectId: handoff.projectId };
 }
 
@@ -420,7 +419,7 @@ export async function runQuotationNoEngagementAlerts(): Promise<{
       observerIds: (row.observer_ids as string[]) || [],
       title: `Quotation no engagement — ${row.company_name}`,
       message: `${row.name} / ${row.company_name}: quotation has not moved after ~${days} business days.`,
-      link: `/app/bd/quotation/${row.id}`,
+      link: workPaths.quoteId(row.id),
       severity: "Warning",
       meta: { kind: "quotation_no_engagement", bd_record_id: row.id },
     });

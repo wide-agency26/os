@@ -6,6 +6,7 @@ import {
   promoteBdCrmToClient,
 } from "@/lib/bd/crm-link";
 import type { Json } from "@/types/supabase";
+import { workPaths } from "@/lib/work/paths";
 
 /**
  * On Lexware quotation acceptance (or manual confirm), promote CRM company +
@@ -78,30 +79,66 @@ export async function runBdClientHandoff(input: {
     `Source: ${rec.source}${rec.discovery_method ? ` (${rec.discovery_method})` : ""}`,
     needs ? `Needs: ${needs}` : null,
     timelineHint ? `Timeline signal: ${timelineHint}` : null,
-    `Open full BD history: /app/bd/${rec.id}`,
+    `Open full BD history: ${workPaths.pipelineId(rec.id)}`,
   ]
     .filter(Boolean)
     .join("\n");
 
-  const { data: project, error: projErr } = await admin
+  const { data: existingProj } = await admin
     .from("projects")
-    .insert({
-      title: `${rec.company_name} — Engagement`,
-      client_id: companyId,
-      company: rec.company_name,
-      status: "running",
-      stage: "client",
-      priority: "Medium",
-      notes: historyNote,
-      scope: needs,
-      expected_start_date: null,
-    })
     .select("id")
-    .single();
+    .eq("bd_record_id", rec.id)
+    .maybeSingle();
 
-  if (projErr || !project) {
-    return { ok: false, error: projErr?.message || "Failed to create project" };
+  let projectId = existingProj?.id as string | undefined;
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (!projectId) {
+    const { data: project, error: projErr } = await admin
+      .from("projects")
+      .insert({
+        title: `${rec.company_name} — Engagement`,
+        client_id: companyId,
+        company: rec.company_name,
+        status: "running",
+        stage: "client",
+        priority: "Medium",
+        notes: historyNote,
+        scope: needs,
+        expected_start_date: today,
+        start_date: today,
+        contract_confirmed_at: new Date().toISOString(),
+        bd_record_id: rec.id,
+      })
+      .select("id")
+      .single();
+
+    if (projErr || !project) {
+      return { ok: false, error: projErr?.message || "Failed to create project" };
+    }
+    projectId = project.id;
+  } else {
+    await admin
+      .from("projects")
+      .update({
+        status: "running",
+        stage: "client",
+        start_date: today,
+        expected_start_date: today,
+        contract_confirmed_at: new Date().toISOString(),
+        notes: historyNote,
+        client_id: companyId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", projectId);
   }
+
+  if (!projectId) {
+    return { ok: false, error: "Failed to create or upgrade project" };
+  }
+
+  const { applyProjectDealValue } = await import("@/lib/accounting/deal-value");
+  await applyProjectDealValue(projectId);
 
   const nextQuotation = {
     ...quotation,
@@ -109,7 +146,7 @@ export async function runBdClientHandoff(input: {
     accepted_at: quotation.accepted_at || new Date().toISOString(),
     handoff: {
       company_id: companyId,
-      project_id: project.id,
+      project_id: projectId,
       completed_at: new Date().toISOString(),
     },
     updated_at: new Date().toISOString(),
@@ -132,11 +169,11 @@ export async function runBdClientHandoff(input: {
     actor_type: input.actorId ? "user" : "system",
     actor_id: input.actorId ?? null,
     action: "client_project_handoff",
-    note: `Created/promoted CRM Client + Project. Company ${companyId}, contact ${contactId}, project ${project.id}.`,
+    note: `Created/promoted CRM Client + Project. Company ${companyId}, contact ${contactId}, project ${projectId}.`,
     meta: {
       company_id: companyId,
       contact_id: contactId,
-      project_id: project.id,
+      project_id: projectId,
     },
   });
 
@@ -144,12 +181,12 @@ export async function runBdClientHandoff(input: {
     ownerId: rec.owner_id,
     observerIds: (rec.observer_ids as string[]) || [],
     title: `New client — needs project setup · ${rec.company_name}`,
-    message: `${rec.company_name} won via BD. Project created at /app/projects/project/${project.id}. Review scope and kickoff.${timelineHint ? ` Timeline signal: ${timelineHint}` : ""}`,
-    link: `/app/projects/project/${project.id}`,
+    message: `${rec.company_name} won via BD. Project created at /app/projects/${projectId}. Review scope and kickoff.${timelineHint ? ` Timeline signal: ${timelineHint}` : ""}`,
+    link: `/app/projects/${projectId}`,
     severity: "Success",
     meta: {
       bd_record_id: rec.id,
-      project_id: project.id,
+      project_id: projectId,
       company_id: companyId,
       contact_id: contactId,
     },
@@ -159,6 +196,6 @@ export async function runBdClientHandoff(input: {
     ok: true,
     companyId,
     contactId,
-    projectId: project.id,
+    projectId,
   };
 }

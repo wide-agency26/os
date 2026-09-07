@@ -11,6 +11,11 @@ export interface DatasetMeta {
   columns: ColumnSchema[];
   row_count: number;
   created_at?: string | null;
+  source_type?: string | null;
+  synced_at?: string | null;
+  external_account_label?: string | null;
+  is_current?: boolean | null;
+  supersedes_id?: string | null;
 }
 
 export async function fetchRowsForDataset(
@@ -73,6 +78,9 @@ export async function hydrateLoadedDatasets(
       category: d.category,
       subcategory: d.subcategory || detectSubcategory(d.name, d.columns) || null,
       createdAt: d.created_at,
+      sourceType: d.source_type,
+      syncedAt: d.synced_at,
+      externalAccountLabel: d.external_account_label,
       rowCount: d.row_count,
       columns: d.columns || [],
       rows,

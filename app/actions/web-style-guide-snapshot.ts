@@ -6,7 +6,7 @@ import { requireAgencyStaff } from "@/lib/auth-guards";
 import { looksLikeHtmlMarkup } from "@/lib/web-style-guide/process-html";
 import { buildStyleGuideDocumentFromHtml } from "@/lib/web-style-guide/html-to-document";
 import { buildStyleGuideDocumentFromAi, WSG_AI_SYSTEM } from "@/lib/web-style-guide/ai-to-document";
-import { generateJsonFromGateway, hasGatewayCredentials } from "@/lib/ai/gateway-json";
+import { generateJsonFromGateway, GATEWAY_CREDENTIALS_HINT, hasGatewayCredentials } from "@/lib/ai/gateway-json";
 import { createClient } from "@/utils/supabase/server";
 
 const MAX_INLINE_STYLES = 400_000;
@@ -171,7 +171,7 @@ export async function generateWebStyleGuideFromDocument(
   if (!clientId) return { error: "Client is required." };
   if (!hasGatewayCredentials()) {
     return {
-      error: "AI generation is off — set AI_GATEWAY_API_KEY (automatic on Vercel) to enable this.",
+      error: GATEWAY_CREDENTIALS_HINT,
     };
   }
 

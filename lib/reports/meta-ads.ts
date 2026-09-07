@@ -109,6 +109,9 @@ export interface DatasetMeta {
   name?: string;
   createdAt?: string | null;
   rowCount?: number;
+  sourceType?: string | null;
+  syncedAt?: string | null;
+  externalAccountLabel?: string | null;
 }
 
 /** Strip punctuation + currency codes so "Amount spent (EUR)" → "amountspent" */
@@ -776,6 +779,46 @@ export function formatUploadedAt(iso?: string | null): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+export type MetaGrain = "ad" | "adset" | "campaign" | "unknown";
+
+function headerCanonSet(
+  columns?: { key: string }[],
+  rows?: Record<string, unknown>[]
+): Set<string> {
+  return new Set(
+    (columns || [])
+      .map((c) => canonicalizeHeader(c.key))
+      .concat(rows?.[0] ? Object.keys(rows[0]).map(canonicalizeHeader) : [])
+  );
+}
+
+/** Grain of a Meta Ads Manager export: ads > ad sets > campaigns. */
+export function metaExportGrain(
+  columns?: { key: string }[],
+  rows?: Record<string, unknown>[]
+): MetaGrain {
+  const keys = headerCanonSet(columns, rows);
+  if (keys.has("adname")) return "ad";
+  if (keys.has("adsetname")) return "adset";
+  if (keys.has("campaignname") || keys.has("campaign")) return "campaign";
+  return "unknown";
+}
+
+/**
+ * When campaigns, ad sets, and ads were all uploaded, use the finest grain
+ * so spend / reach / clicks are not triple-counted.
+ */
+export function pickPrimaryMetaDatasets<
+  T extends { columns?: { key: string }[]; rows?: Record<string, unknown>[] },
+>(datasets: T[]): T[] {
+  if (datasets.length <= 1) return datasets;
+  const ads = datasets.filter((d) => metaExportGrain(d.columns, d.rows) === "ad");
+  if (ads.length) return ads;
+  const sets = datasets.filter((d) => metaExportGrain(d.columns, d.rows) === "adset");
+  if (sets.length) return sets;
+  return datasets;
 }
 
 export function isMetaAdsDataset(

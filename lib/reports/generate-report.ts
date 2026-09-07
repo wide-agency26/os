@@ -7,7 +7,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { generateJsonFromGateway } from "@/lib/ai/gateway-json";
+import { generateJsonFromGateway, GATEWAY_CREDENTIALS_HINT } from "@/lib/ai/gateway-json";
 import { buildReportSystemPrompt } from "./report-prompt";
 import { parsePeriodLabel } from "./report-helpers";
 import type {
@@ -95,7 +95,7 @@ ${JSON.stringify(inputPayload, null, 2)}`;
       return {
         ok: false,
         error:
-          "No AI gateway credentials configured. Set AI_GATEWAY_API_KEY or deploy to Vercel.",
+          GATEWAY_CREDENTIALS_HINT,
       };
     }
 

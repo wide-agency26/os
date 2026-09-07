@@ -9,7 +9,12 @@ import {
 } from "@/lib/pm/instantiate";
 import { nextCycleKey, currentCycleKey, type PmTaskStatus } from "@/lib/pm/types";
 
-export type PmActionResult = { ok: boolean; error?: string; created?: number };
+export type PmActionResult = {
+  ok: boolean;
+  error?: string;
+  created?: number;
+  refreshTasks?: boolean;
+};
 
 export async function assignPlaybookToProject(
   projectId: string,
@@ -28,8 +33,7 @@ export async function assignPlaybookToProject(
   if (result.error) return { ok: false, error: result.error, created: result.created };
 
   revalidatePath(`/app/projects/${projectId}`);
-  revalidatePath("/app/home");
-  revalidatePath("/app/company-overview");
+      revalidatePath("/app/home");
   return { ok: true, created: result.created };
 }
 
@@ -37,57 +41,59 @@ export async function updatePmTaskStatus(
   taskId: string,
   status: PmTaskStatus
 ): Promise<PmActionResult> {
-  const gate = await requireAgencyStaff();
-  if (!gate.ok) return { ok: false, error: "Staff only." };
+  try {
+    const gate = await requireAgencyStaff();
+    if (!gate.ok) return { ok: false, error: "Staff only." };
 
-  const supabase = await createClient();
-  const now = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    status,
-    last_activity_at: now,
-    updated_at: now,
-  };
-
-  if (status === "in_progress") {
-    const { data: existing } = await (supabase as any)
+    const supabase = await createClient();
+    const { data: task, error: fetchErr } = await (supabase as any)
       .from("pm_tasks")
-      .select("started_at, project_id")
+      .select("id, project_id, is_gate, task_template_id, status, started_at")
       .eq("id", taskId)
       .single();
-    if (existing && !existing.started_at) patch.started_at = now;
 
-    const { error } = await (supabase as any)
-      .from("pm_tasks")
-      .update(patch)
-      .eq("id", taskId);
+    if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Task not found" };
+
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = {
+      status,
+      last_activity_at: now,
+      updated_at: now,
+    };
+
+    if (!task.started_at && status !== "todo" && status !== "cancelled") {
+      patch.started_at = now;
+    }
+    if (status === "done") {
+      patch.completed_at = now;
+      patch.closed_by = gate.user!.id;
+    } else if (task.status === "done") {
+      patch.completed_at = null;
+      patch.closed_by = null;
+    }
+
+    const { error } = await (supabase as any).from("pm_tasks").update(patch).eq("id", taskId);
     if (error) return { ok: false, error: error.message };
-    if (existing?.project_id) revalidatePath(`/app/projects/${existing.project_id}`);
-    return { ok: true };
+
+    let refreshTasks = false;
+    if (status === "done" && task.is_gate && task.project_id) {
+      try {
+        await unblockAfterGate(supabase as any, task.project_id, task.task_template_id);
+        refreshTasks = true;
+      } catch (err: any) {
+        console.error("unblockAfterGate failed", err);
+        return {
+          ok: false,
+          error: err?.message || "Task marked done, but gate unblock failed.",
+        };
+      }
+    }
+
+    return { ok: true, refreshTasks };
+  } catch (err: any) {
+    console.error("updatePmTaskStatus failed", err);
+    return { ok: false, error: err?.message || "Could not update task status" };
   }
-
-  if (status === "done") {
-    patch.completed_at = now;
-  }
-
-  const { data: task, error: fetchErr } = await (supabase as any)
-    .from("pm_tasks")
-    .select("id, project_id, is_gate, task_template_id")
-    .eq("id", taskId)
-    .single();
-
-  if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Task not found" };
-
-  const { error } = await (supabase as any).from("pm_tasks").update(patch).eq("id", taskId);
-  if (error) return { ok: false, error: error.message };
-
-  // Clearing a gate: unblock tasks that were waiting
-  if (status === "done" && task.is_gate && task.project_id) {
-    await unblockAfterGate(supabase as any, task.project_id, task.task_template_id);
-  }
-
-  revalidatePath(`/app/projects/${task.project_id}`);
-  revalidatePath("/app/home");
-  return { ok: true };
 }
 
 async function unblockAfterGate(
@@ -314,18 +320,16 @@ export async function updatePmTaskContent(
 
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/app/projects/${task.project_id}/tasks`);
+  revalidatePath("/app/client-tasks");
   return { ok: true };
 }
 
-export async function updatePmTaskTitle(
+export async function updatePmTaskClientContent(
   taskId: string,
-  title: string
+  clientContentBlocks: unknown
 ): Promise<PmActionResult> {
   const gate = await requireAgencyStaff();
   if (!gate.ok) return { ok: false, error: "Staff only." };
-
-  const trimmed = title.trim();
-  if (!trimmed) return { ok: false, error: "Title required." };
 
   const supabase = await createClient();
   const { data: task, error: fetchErr } = await (supabase as any)
@@ -338,7 +342,66 @@ export async function updatePmTaskTitle(
   const { error } = await (supabase as any)
     .from("pm_tasks")
     .update({
+      client_content_blocks: clientContentBlocks ?? null,
+      last_activity_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", taskId);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${task.project_id}/tasks`);
+  revalidatePath("/app/client-tasks");
+  return { ok: true };
+}
+
+export async function updatePmTaskTitle(
+  taskId: string,
+  title: string,
+  opts?: { materialChange?: boolean }
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+
+  const trimmed = title.trim();
+  if (!trimmed) return { ok: false, error: "Title required." };
+
+  const supabase = await createClient();
+  const { data: task, error: fetchErr } = await (supabase as any)
+    .from("pm_tasks")
+    .select("id, title, project_id, retitle_count")
+    .eq("id", taskId)
+    .single();
+  if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Not found" };
+
+  const { data: project } = await (supabase as any)
+    .from("projects")
+    .select("task_policy")
+    .eq("id", task.project_id)
+    .maybeSingle();
+
+  const {
+    assertRetitleAllowed,
+    loadGlobalTaskPolicy,
+    parseProjectTaskPolicy,
+  } = await import("@/lib/pm/task-policy");
+  const global = await loadGlobalTaskPolicy();
+  const gateTitle = assertRetitleAllowed({
+    currentTitle: task.title || "",
+    nextTitle: trimmed,
+    retitleCount: Number(task.retitle_count) || 0,
+    projectPolicy: parseProjectTaskPolicy(project?.task_policy),
+    global,
+    materialChange: opts?.materialChange === true,
+  });
+  if (!gateTitle.allowed) {
+    return { ok: false, error: gateTitle.error || "Retitle not allowed." };
+  }
+
+  const { error } = await (supabase as any)
+    .from("pm_tasks")
+    .update({
       title: trimmed,
+      retitle_count: gateTitle.nextRetitleCount ?? task.retitle_count ?? 0,
       last_activity_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -365,6 +428,35 @@ export async function deletePmTask(taskId: string): Promise<PmActionResult> {
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/app/projects/${task.project_id}/tasks`);
   revalidatePath("/app/home");
+  return { ok: true };
+}
+
+export async function setPmTaskClientVisible(
+  taskId: string,
+  visible: boolean
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+
+  const supabase = await createClient();
+  const { data: task, error: fetchErr } = await (supabase as any)
+    .from("pm_tasks")
+    .select("project_id")
+    .eq("id", taskId)
+    .single();
+  if (fetchErr || !task) return { ok: false, error: fetchErr?.message ?? "Not found" };
+
+  const { error } = await (supabase as any)
+    .from("pm_tasks")
+    .update({
+      client_visible: visible,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", taskId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/app/projects/${task.project_id}/tasks`);
+  revalidatePath("/app/client-tasks");
   return { ok: true };
 }
 
@@ -484,4 +576,103 @@ export async function rollProjectCycle(projectId: string): Promise<PmActionResul
   if (result.error) return { ok: false, error: result.error, created: result.created };
   revalidatePath(`/app/projects/${projectId}`);
   return { ok: true, created: result.created };
+}
+
+export async function createPmTasksBulk(
+  projectId: string,
+  titles: string[]
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+  const cleaned = titles.map((t) => t.trim()).filter(Boolean);
+  if (!cleaned.length) return { ok: false, error: "Add at least one task title." };
+
+  const supabase = await createClient();
+  const { data: maxRow } = await (supabase as any)
+    .from("pm_tasks")
+    .select("sort_order")
+    .eq("project_id", projectId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const base = (maxRow?.sort_order ?? 0) + 1;
+  const now = new Date().toISOString();
+  const rows = cleaned.map((title, i) => ({
+    project_id: projectId,
+    title,
+    status: "todo",
+    source: "manual",
+    sort_order: base + i,
+    last_activity_at: now,
+  }));
+  const { error } = await (supabase as any).from("pm_tasks").insert(rows);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${projectId}/tasks`);
+  return { ok: true, created: rows.length };
+}
+
+export async function deletePmTasksBulk(
+  projectId: string,
+  taskIds: string[]
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+  if (!taskIds.length) return { ok: true };
+  const supabase = await createClient();
+  const { error } = await (supabase as any)
+    .from("pm_tasks")
+    .delete()
+    .eq("project_id", projectId)
+    .in("id", taskIds);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${projectId}/tasks`);
+  return { ok: true };
+}
+
+export async function getGlobalTaskPolicyAction(): Promise<
+  | { ok: true; policy: import("@/lib/pm/task-policy").GlobalTaskPolicy }
+  | { ok: false; error: string }
+> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+  const { loadGlobalTaskPolicy } = await import("@/lib/pm/task-policy");
+  return { ok: true, policy: await loadGlobalTaskPolicy() };
+}
+
+export async function saveGlobalTaskPolicyAction(
+  patch: Partial<import("@/lib/pm/task-policy").GlobalTaskPolicy>
+): Promise<
+  | { ok: true; policy: import("@/lib/pm/task-policy").GlobalTaskPolicy }
+  | { ok: false; error: string }
+> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+  try {
+    const { saveGlobalTaskPolicy } = await import("@/lib/pm/task-policy");
+    const policy = await saveGlobalTaskPolicy(patch);
+    revalidatePath("/app/settings/pm");
+    return { ok: true, policy };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
+export async function setProjectTaskPolicy(
+  projectId: string,
+  taskPolicy: "locked" | "default" | "free"
+): Promise<PmActionResult> {
+  const gate = await requireAgencyStaff();
+  if (!gate.ok) return { ok: false, error: "Staff only." };
+  if (taskPolicy !== "locked" && taskPolicy !== "default" && taskPolicy !== "free") {
+    return { ok: false, error: "Invalid task policy." };
+  }
+  const supabase = await createClient();
+  const { error } = await (supabase as any)
+    .from("projects")
+    .update({ task_policy: taskPolicy, updated_at: new Date().toISOString() })
+    .eq("id", projectId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/app/projects/${projectId}/tasks`);
+  revalidatePath(`/app/projects/${projectId}/portal`);
+  return { ok: true };
 }

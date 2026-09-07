@@ -119,10 +119,9 @@ export async function runSeoAudit(input: {
       });
     }
 
-    revalidatePath("/app/seo-audit");
-    revalidatePath(`/app/seo-audit/${stub.id}`);
+    revalidatePath("/app/seo");
     revalidatePath(`/a/${slug}`);
-    if (input.bdRecordId) revalidatePath(`/app/bd/${input.bdRecordId}`);
+    if (input.bdRecordId) revalidatePath(`/app/work/pipeline/${input.bdRecordId}`);
 
     return { ok: true, id: stub.id, slug };
   } catch (e) {

@@ -6,6 +6,8 @@ import { isFounder } from "@/lib/rbac";
 import { runSentimentAnalysis, slugifySentimentPart } from "@/lib/sentiment/analyze";
 import type { SentimentReportPayload, SentimentReportRow } from "@/lib/sentiment/types";
 import type { Json } from "@/types/supabase";
+import { revalidateWork } from "@/lib/work/revalidate";
+import { workPaths } from "@/lib/work/paths";
 
 async function requireFounder() {
   const supabase = await createClient();
@@ -45,6 +47,7 @@ export async function runSentimentReport(input: {
   brandName: string;
   websiteUrl?: string | null;
   bdRecordId?: string | null;
+  projectId?: string | null;
 }): Promise<{ ok: boolean; error?: string; id?: string; slug?: string }> {
   const { supabase, user, error } = await requireFounder();
   if (error || !user) return { ok: false, error: error || "Not authenticated" };
@@ -70,6 +73,8 @@ export async function runSentimentReport(input: {
 
   if (insErr || !stub) return { ok: false, error: insErr?.message ?? "Insert failed" };
 
+  await mirrorReportOntoProjects(supabase, stub.id, input);
+
   try {
     const report = await runSentimentAnalysis({
       brandName: brand,
@@ -87,6 +92,8 @@ export async function runSentimentReport(input: {
       })
       .eq("id", stub.id);
     if (updErr) return { ok: false, error: updErr.message };
+
+    await mirrorReportOntoProjects(supabase, stub.id, input);
 
     if (input.bdRecordId) {
       const { data: rec } = await supabase
@@ -127,7 +134,7 @@ export async function runSentimentReport(input: {
           note: `Sentiment report linked (score ${report.score}) → /n/${slug}`,
           meta: entry,
         });
-        revalidatePath(`/app/bd/${input.bdRecordId}`);
+        revalidateWork({ bdId: input.bdRecordId });
       }
     }
 
@@ -145,7 +152,32 @@ export async function runSentimentReport(input: {
         updated_at: new Date().toISOString(),
       })
       .eq("id", stub.id);
+    await mirrorReportOntoProjects(supabase, stub.id, input);
     return { ok: false, error: msg, id: stub.id, slug };
+  }
+}
+
+async function mirrorReportOntoProjects(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  reportId: string,
+  input: { projectId?: string | null; bdRecordId?: string | null }
+) {
+  const projectIds = new Set<string>();
+  if (input.projectId) projectIds.add(input.projectId);
+  if (input.bdRecordId) {
+    const { data: linkedProjects } = await supabase
+      .from("projects")
+      .select("id")
+      .eq("bd_record_id", input.bdRecordId);
+    for (const p of linkedProjects ?? []) projectIds.add(p.id);
+  }
+  if (!projectIds.size) return;
+  const { linkSentimentReportToProject } = await import("@/lib/sentiment/load-project");
+  const { syncSentimentModuleStatus } = await import("@/lib/sentiment/sync");
+  for (const pid of projectIds) {
+    await linkSentimentReportToProject(supabase, pid, reportId);
+    await syncSentimentModuleStatus(supabase, pid);
+    revalidatePath(workPaths.proposeProject(pid), "layout");
   }
 }
 

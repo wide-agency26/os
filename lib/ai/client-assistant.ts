@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { GATEWAY_JSON_MODEL } from "@/lib/ai/gateway-json";
 
 /**
  * Per-client founder assistant. Tools are bound to a single client_id so the
@@ -8,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * right tables (profile, brand hub, project) that power the client portal.
  */
 
-export const CLIENT_ASSISTANT_MODEL = "anthropic/claude-sonnet-4.6";
+export const CLIENT_ASSISTANT_MODEL = GATEWAY_JSON_MODEL;
 
 export function clientAssistantSystemPrompt(clientLabel: string): string {
   return [

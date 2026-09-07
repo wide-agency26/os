@@ -260,3 +260,33 @@ export function funnelMetricSubtitles(config: ProjectFunnelConfig): {
     cpa: "Total spend ÷ verified conversions",
   };
 }
+
+/** Plain-language funnel copy for the client report (not stream names). */
+export function funnelClientCopy(config: ProjectFunnelConfig): {
+  awareness: string;
+  awarenessDetail: string;
+  consideration: string;
+  considerationDetail: string;
+  conversion: string;
+  conversionDetail: string;
+  spend: string;
+  cpa: string;
+} {
+  const awareness =
+    config.awarenessMode === "reach"
+      ? "Unique people who saw the brand"
+      : "Times the brand showed up (ads + search + social)";
+  return {
+    awareness,
+    awarenessDetail:
+      "How often the brand appeared in paid ads, Google search, and organic social.",
+    consideration: "People who came to the website",
+    considerationDetail:
+      "Website sessions. If site data is missing, this falls back to clicks and profile visits.",
+    conversion: "People who subscribed, messaged, or reached a thank-you page",
+    conversionDetail:
+      "A conversion is someone who took a real next step — newsletter subscribe, a message, or a thank-you / confirmation page.",
+    spend: "What was spent on ads in this period",
+    cpa: "Ad spend divided by those conversions",
+  };
+}

@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requireAgencyStaff } from "@/lib/auth-guards";
 import { createClient } from "@/utils/supabase/server";
 import { parseInboundToProposals } from "@/lib/pm/email-parse";
+import {
+  classifyReviewOutcome,
+  isOverrideTrigger,
+  reviewLatencySeconds,
+  type OverrideTrigger,
+} from "@/lib/pm/instrument";
 
 export type ReviewActionResult = { ok: boolean; error?: string; created?: number };
 
@@ -102,7 +108,8 @@ export async function ingestNoteForReview(
 
 export async function approveReviewItem(
   itemId: string,
-  edits?: { title?: string; description?: string }
+  edits?: { title?: string; description?: string },
+  trigger?: OverrideTrigger | null
 ): Promise<ReviewActionResult> {
   const gate = await requireAgencyStaff();
   if (!gate.ok) return { ok: false, error: "Staff only." };
@@ -119,26 +126,44 @@ export async function approveReviewItem(
 
   const title = (edits?.title ?? item.proposed_title).trim();
   const description = edits?.description ?? item.proposed_description;
-
-  const { error: insErr } = await (supabase as any).from("pm_tasks").insert({
-    project_id: item.project_id,
-    title,
-    description,
-    status: "todo",
-    source: "email",
-    source_ref: item.source_ref,
-    last_activity_at: new Date().toISOString(),
+  const outcome = classifyReviewOutcome({
+    originalTitle: item.proposed_title,
+    originalDescription: item.proposed_description,
+    nextTitle: title,
+    nextDescription: description,
   });
+  if (outcome === "edit" && !isOverrideTrigger(trigger)) {
+    return { ok: false, error: "Pick why you changed the proposal." };
+  }
+
+  const now = new Date();
+  const { data: created, error: insErr } = await (supabase as any)
+    .from("pm_tasks")
+    .insert({
+      project_id: item.project_id,
+      title,
+      description,
+      status: "todo",
+      source: "email",
+      source_ref: item.source_ref,
+      last_activity_at: now.toISOString(),
+    })
+    .select("id")
+    .single();
   if (insErr) return { ok: false, error: insErr.message };
 
   const { error: updErr } = await (supabase as any)
     .from("task_review_queue")
     .update({
-      status: edits ? "edited" : "approved",
+      status: outcome === "edit" ? "edited" : "approved",
       proposed_title: title,
       proposed_description: description,
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: now.toISOString(),
       reviewed_by: gate.user!.id,
+      created_task_id: created?.id ?? null,
+      override_outcome: outcome,
+      override_trigger: outcome === "edit" ? trigger : trigger || null,
+      latency_s: reviewLatencySeconds(item.created_at, now),
     })
     .eq("id", itemId);
 
@@ -166,26 +191,36 @@ export async function approveAllPending(projectId: string): Promise<ReviewAction
   return { ok: true, created };
 }
 
-export async function discardReviewItem(itemId: string): Promise<ReviewActionResult> {
+export async function discardReviewItem(
+  itemId: string,
+  trigger?: OverrideTrigger | null
+): Promise<ReviewActionResult> {
   const gate = await requireAgencyStaff();
   if (!gate.ok) return { ok: false, error: "Staff only." };
+  if (!isOverrideTrigger(trigger)) {
+    return { ok: false, error: "Pick why you discarded the proposal." };
+  }
 
   const supabase = await createClient();
   const { data: item } = await (supabase as any)
     .from("task_review_queue")
-    .select("project_id, status")
+    .select("project_id, status, created_at")
     .eq("id", itemId)
     .single();
 
   if (!item) return { ok: false, error: "Not found" };
   if (item.status !== "pending") return { ok: false, error: "Already reviewed." };
 
+  const now = new Date();
   const { error } = await (supabase as any)
     .from("task_review_queue")
     .update({
       status: "discarded",
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: now.toISOString(),
       reviewed_by: gate.user!.id,
+      override_outcome: "block",
+      override_trigger: trigger,
+      latency_s: reviewLatencySeconds(item.created_at, now),
     })
     .eq("id", itemId);
 
@@ -242,13 +277,16 @@ export async function mergeReviewIntoTask(
 
   if (taskErr) return { ok: false, error: taskErr.message };
 
+  const now = new Date();
   const { error } = await (supabase as any)
     .from("task_review_queue")
     .update({
       status: "merged",
       suggested_match_task_id: targetTaskId,
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: now.toISOString(),
       reviewed_by: gate.user!.id,
+      override_outcome: "augment",
+      latency_s: reviewLatencySeconds(item.created_at, now),
     })
     .eq("id", itemId);
 

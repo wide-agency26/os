@@ -10,9 +10,9 @@ type Sb = any;
 const LEDGER_SELECT = `
   id, pillar, type, amount, entry_date, company_id, client_id, project_id, person_id,
   category, source, sync_key, moved_from_pillar, moved_at, confidence, created_at, updated_at,
-  projects:project_id ( id, title, stage ),
-  people:person_id ( id, full_name ),
-  company:company_id ( id, name, company )
+  projects:projects!project_id ( id, title, stage ),
+  people:people!person_id ( id, full_name ),
+  company:crm_customers!company_id ( id, name, company )
 `;
 
 export type LedgerFilter = {
@@ -32,11 +32,46 @@ export async function fetchLedgerEntries(
     .gte("entry_date", filter.startDate)
     .lte("entry_date", filter.endDate)
     .order("entry_date", { ascending: true });
-  if (error) {
-    console.error("fetchLedgerEntries", error.message);
+  if (!error) return (data || []) as LedgerEntry[];
+
+  console.error("fetchLedgerEntries", error.message, error);
+  const { data: plain, error: plainErr } = await supabase
+    .from("ledger_entries")
+    .select(
+      "id, pillar, type, amount, entry_date, company_id, client_id, project_id, person_id, category, source, sync_key, moved_from_pillar, moved_at, confidence, created_at, updated_at"
+    )
+    .eq("pillar", filter.pillar)
+    .gte("entry_date", filter.startDate)
+    .lte("entry_date", filter.endDate)
+    .order("entry_date", { ascending: true });
+  if (plainErr) {
+    console.error("fetchLedgerEntries plain", plainErr.message);
     return [];
   }
-  return (data || []) as LedgerEntry[];
+  return (plain || []) as LedgerEntry[];
+}
+
+export function entryDealLabel(e: LedgerEntry): string {
+  const project = Array.isArray(e.projects) ? e.projects[0] : e.projects;
+  if (project?.title) return project.title;
+  const company = Array.isArray(e.company) ? e.company[0] : e.company;
+  const companyName = company?.company || company?.name;
+  if (companyName) return companyName;
+  return e.category || "Untitled";
+}
+
+export function entryCompanyName(e: LedgerEntry): string | null {
+  const company = Array.isArray(e.company) ? e.company[0] : e.company;
+  return company?.company || company?.name || null;
+}
+
+export function entryProject(
+  e: LedgerEntry
+): { id: string; title: string | null; stage?: string | null } | null {
+  const project = Array.isArray(e.projects) ? e.projects[0] : e.projects;
+  if (project?.id) return project;
+  if (e.project_id) return { id: e.project_id, title: null };
+  return null;
 }
 
 export function totals(entries: LedgerEntry[]): {
@@ -136,10 +171,11 @@ export function groupByProjectOrSource(entries: LedgerEntry[]): LedgerGroup[] {
   const map = new Map<string, LedgerGroup>();
   for (const e of entries) {
     if (e.project_id) {
+      const project = entryProject(e);
       pushToGroup(
         map,
         `project:${e.project_id}`,
-        e.projects?.title || "Untitled project",
+        project?.title || e.projects?.title || "Untitled project",
         "Project",
         e
       );
@@ -147,6 +183,18 @@ export function groupByProjectOrSource(entries: LedgerEntry[]): LedgerGroup[] {
       pushToGroup(map, "hr", "HR / Payroll", "HR", e);
     } else if (e.source === "auto_overhead") {
       pushToGroup(map, "overhead", "Overhead", "Overhead", e);
+    } else if (e.source === "auto_pipeline") {
+      pushToGroup(map, "pipeline", "People pipeline", "HR", e);
+    } else if (e.source === "auto_projection") {
+      pushToGroup(map, "projection", "Projections", "Projection", e);
+    } else if (e.source === "auto_crm") {
+      pushToGroup(
+        map,
+        `crm:${e.company_id || e.category}`,
+        entryCompanyName(e) || e.category || "Prospect",
+        "Prospect",
+        e
+      );
     } else {
       pushToGroup(map, `other:${e.category}`, e.category || "Other", "Other", e);
     }
@@ -248,7 +296,7 @@ export async function fetchActivity(supabase: Sb, limit = 20) {
     .limit(limit);
   if (error) {
     console.error("fetchActivity", error.message);
-    return [];
+    throw new Error(error.message);
   }
   return data || [];
 }
