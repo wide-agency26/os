@@ -3,18 +3,20 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import {
+  getDealFinderQueue,
   getDiscoveryConfig,
-  logDiscoveredProspect,
   runOpportunityDiscovery,
   saveDiscoveryConfig,
-  type DiscoveryRunHit,
+  type DiscoveredDealRow,
 } from "@/app/actions/opportunity-finder";
 import {
   DEFAULT_DISCOVERY_CONFIG,
   type DiscoveryConfig,
   type DiscoverySignalSource,
 } from "@/lib/bd/opportunity-finder";
-import { Loader2, Search, UserPlus } from "lucide-react";
+import { DealReviewCard } from "@/components/bd/DealReviewCard";
+import { Button, PageHeader, Panel } from "@/components/frappe-ui/primitives";
+import { workPaths } from "@/lib/work/paths";
 
 const ALL_SOURCES: DiscoverySignalSource[] = [
   "funding",
@@ -24,18 +26,68 @@ const ALL_SOURCES: DiscoverySignalSource[] = [
   "rfp",
 ];
 
+function formatRun(iso: string | null) {
+  if (!iso) return "Never";
+  try {
+    return new Date(iso).toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export function OpportunityFinderClient() {
   const [config, setConfig] = useState<DiscoveryConfig>(DEFAULT_DISCOVERY_CONFIG);
-  const [hits, setHits] = useState<DiscoveryRunHit[]>([]);
+  const [pendingDeals, setPendingDeals] = useState<DiscoveredDealRow[]>([]);
+  const [history, setHistory] = useState<DiscoveredDealRow[]>([]);
+  const [lastRunAt, setLastRunAt] = useState<string | null>(null);
+  const [lastSummary, setLastSummary] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  async function refreshQueue() {
+    const last = await getDealFinderQueue();
+    if (!last.ok) {
+      setLoadError(last.error || "Deal Finder queue failed to load");
+      return;
+    }
+    setLoadError(null);
+    setPendingDeals(last.pending);
+    setHistory(last.deals.filter((d) => d.status !== "pending"));
+    setLastRunAt(last.lastRunAt);
+    setLastSummary(last.lastSummary);
+  }
 
   useEffect(() => {
     void (async () => {
-      const res = await getDiscoveryConfig();
-      if (res.ok) setConfig(res.config);
-      setLoaded(true);
+      try {
+        const [cfg, last] = await Promise.all([
+          getDiscoveryConfig(),
+          getDealFinderQueue(),
+        ]);
+        if (cfg.ok) setConfig(cfg.config);
+        if (last.ok) {
+          setPendingDeals(last.pending);
+          setHistory(last.deals.filter((d) => d.status !== "pending"));
+          setLastRunAt(last.lastRunAt);
+          setLastSummary(last.lastSummary);
+        } else {
+          setLoadError(last.error || cfg.error || "Deal Finder failed to load");
+        }
+        if (!cfg.ok && cfg.error) {
+          setLoadError((prev) => prev || cfg.error || null);
+        }
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : "Deal Finder failed to load");
+      } finally {
+        setLoaded(true);
+      }
     })();
   }, []);
 
@@ -55,62 +107,86 @@ export function OpportunityFinderClient() {
         setMessage(res.error || "Run failed");
         return;
       }
-      setHits(res.hits);
-      setMessage(`Found ${res.hits.length} signal(s).`);
-    });
-  }
-
-  function logHit(hit: DiscoveryRunHit) {
-    startTransition(async () => {
-      const res = await logDiscoveredProspect({
-        signal: hit,
-        warmIntros: hit.warm_intros,
-      });
-      if (!res.ok) {
-        setMessage(res.error || "Log failed");
-        return;
-      }
-      setMessage(`Logged prospect ${res.recordId?.slice(0, 8)}…`);
-      setHits((prev) =>
-        prev.map((h) =>
-          h.id === hit.id ? { ...h, already_logged: true } : h
-        )
+      await refreshQueue();
+      setMessage(
+        res.newCount
+          ? `${res.newCount} new prospect${res.newCount === 1 ? "" : "s"} to review.`
+          : `No new prospects (${res.feedCount} feeds, ${res.skippedCount} already known).`
       );
     });
   }
 
   if (!loaded) {
-    return (
-      <div className="flex justify-center py-20">
-        <Loader2 className="animate-spin text-blue-500" />
-      </div>
-    );
+    return <p className="text-[13px] text-text-secondary py-12">Loading Deal Finder…</p>;
   }
 
-  return (
-    <div className="space-y-8 py-2 max-w-4xl">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-          Opportunity Finder
-        </p>
-        <h1 className="text-2xl font-semibold text-gray-950">
-          Warm-intro discovery
-        </h1>
-        <p className="mt-1 text-sm text-gray-600 max-w-2xl">
-          Surfaces Munich/DACH prospects from signals, then matches WIDE&apos;s
-          CRM network for warm introductions. Cold outreach is never offered
-          from this flow.
-        </p>
-      </div>
+  const reviewed = history.slice(0, 12);
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">
-          Config
+  return (
+    <div className="space-y-8 max-w-3xl">
+      <PageHeader
+        title="Deal Finder"
+        subtitle="Runs every morning. Review here or on Home — Approve (after edits) sends the company into Qualify as a prospect. Nothing is logged until you approve."
+      />
+
+      <Panel className="p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[12px] text-text-muted">Last run {formatRun(lastRunAt)}</p>
+          <p className="text-[13px] text-text-secondary mt-0.5">
+            {lastSummary || "Waiting for the first daily run."}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href={workPaths.hub + "?filter=qualify"}
+            className="text-[13px] font-medium text-blue-700"
+          >
+            Qualify →
+          </Link>
+          <Button disabled={pending} onClick={run}>
+            {pending ? "Running…" : "Run now"}
+          </Button>
+        </div>
+      </Panel>
+
+      {loadError ? (
+        <p className="text-[13px] text-red-600">{loadError}</p>
+      ) : null}
+
+      {message ? (
+        <p className="text-[13px] text-text-secondary">{message}</p>
+      ) : null}
+
+      <section id="deal-finder">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-3">
+          Waiting for review
+          {pendingDeals.length ? ` · ${pendingDeals.length}` : ""}
         </h2>
-        <label className="block text-xs font-medium text-gray-700 space-y-1">
-          Keywords (comma-separated)
+        {pendingDeals.length === 0 ? (
+          <Panel className="px-4 py-6">
+            <p className="text-[13px] text-text-secondary">
+              Nothing waiting. The morning run will post new names here and on Home.
+            </p>
+          </Panel>
+        ) : (
+          <Panel className="overflow-hidden">
+            {pendingDeals.map((deal, i) => (
+              <div key={deal.id} className={i === 0 ? "" : "border-t border-border"}>
+                <DealReviewCard deal={deal} onDone={() => void refreshQueue()} />
+              </div>
+            ))}
+          </Panel>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-border bg-surface p-4 space-y-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+          What to look for
+        </h2>
+        <label className="block text-[12px] text-text-secondary">
+          Keywords
           <input
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-text-primary"
             value={config.keywords.join(", ")}
             onChange={(e) =>
               setConfig({
@@ -123,10 +199,10 @@ export function OpportunityFinderClient() {
             }
           />
         </label>
-        <label className="block text-xs font-medium text-gray-700 space-y-1">
+        <label className="block text-[12px] text-text-secondary">
           Industries
           <input
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-text-primary"
             value={config.industries.join(", ")}
             onChange={(e) =>
               setConfig({
@@ -139,10 +215,10 @@ export function OpportunityFinderClient() {
             }
           />
         </label>
-        <label className="block text-xs font-medium text-gray-700 space-y-1">
+        <label className="block text-[12px] text-text-secondary">
           Geographies
           <input
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-text-primary"
             value={config.geographies.join(", ")}
             onChange={(e) =>
               setConfig({
@@ -170,130 +246,49 @@ export function OpportunityFinderClient() {
                       : [...config.sources, s],
                   })
                 }
-                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                className={`rounded-md border px-3 py-1.5 text-[12px] font-medium ${
                   on
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : "border-gray-200 text-gray-700"
+                    ? "border-text-primary bg-text-primary text-white"
+                    : "border-border text-text-secondary"
                 }`}
               >
-                {s}
+                {s.replaceAll("_", " ")}
               </button>
             );
           })}
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={saveCfg}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-          >
-            Save config
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={run}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 text-white px-3 py-2 text-xs font-semibold disabled:opacity-50"
-          >
-            {pending ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Search size={14} />
-            )}
-            Run discovery
-          </button>
-        </div>
+        <Button variant="secondary" disabled={pending} onClick={saveCfg}>
+          Save filters
+        </Button>
       </section>
 
-      {message && (
-        <p className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          {message}
-        </p>
-      )}
-
-      <section className="space-y-3">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">
-          Results
-        </h2>
-        {hits.length === 0 && (
-          <p className="text-sm text-gray-500">
-            Run discovery to load curated DACH signals (live scrapers can plug
-            into the same pipeline later).
-          </p>
-        )}
-        {hits.map((hit) => (
-          <article
-            key={hit.id}
-            className="rounded-xl border border-gray-200 bg-white p-4 space-y-3"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold text-gray-950">
-                  {hit.company_name}
-                  {hit.contact_name ? ` · ${hit.contact_name}` : ""}
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {hit.source}
-                  {hit.role ? ` · ${hit.role}` : ""}
-                  {hit.geography ? ` · ${hit.geography}` : ""}
-                  {hit.industry ? ` · ${hit.industry}` : ""}
-                </p>
-                <p className="text-sm text-gray-700 mt-2">{hit.signal_summary}</p>
-              </div>
-              {hit.already_logged ? (
-                <span className="text-[11px] font-semibold uppercase text-gray-500">
-                  Already logged
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => logHit(hit)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-                >
-                  <UserPlus size={14} /> Log as prospect
-                </button>
-              )}
-            </div>
-
-            <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 space-y-1">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-                Warm intro paths
-              </p>
-              {hit.warm_intros.length === 0 ? (
-                <p className="text-xs text-gray-600">
-                  No warm path found in CRM. You can still log as{" "}
-                  <code className="text-[10px]">auto_discovered</code> — outreach
-                  stays manual (no cold-send action here).
-                </p>
-              ) : (
-                <ul className="space-y-1">
-                  {hit.warm_intros.map((w) => (
-                    <li key={w.contact_id} className="text-xs text-gray-800">
-                      <Link
-                        href={`/app/crm/${w.contact_id}`}
-                        className="text-blue-700 font-medium"
-                      >
-                        {w.contact_name}
-                      </Link>
-                      {w.company_name ? ` · ${w.company_name}` : ""} —{" "}
-                      <span className="text-gray-600">
-                        {w.strength}: {w.reason}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Explicitly no cold outreach CTA */}
-            <p className="text-[11px] text-gray-500">
-              Direct outreach from this screen is disabled by design.
-            </p>
-          </article>
-        ))}
-      </section>
+      {reviewed.length ? (
+        <section>
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-3">
+            Recently reviewed
+          </h2>
+          <ul className="space-y-1">
+            {reviewed.map((d) => (
+              <li key={d.id} className="text-[13px] text-text-secondary">
+                <span className="font-medium text-text-primary">{d.companyName}</span>
+                {" · "}
+                {d.status}
+                {d.bdRecordId ? (
+                  <>
+                    {" · "}
+                    <Link
+                      href={workPaths.qualifyId(d.bdRecordId)}
+                      className="font-medium text-blue-700"
+                    >
+                      Open in Qualify
+                    </Link>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }
