@@ -1,7 +1,7 @@
 import { PDFParse } from "pdf-parse";
 import { mergeWithDefaults } from "./defaults";
 import type { BrandGuidelineDocument } from "./types";
-import { generateJsonFromGateway, hasGatewayCredentials } from "@/lib/ai/gateway-json";
+import { generateJsonFromGateway, GATEWAY_CREDENTIALS_HINT, hasGatewayCredentials } from "@/lib/ai/gateway-json";
 
 const MAX_CHARS = 14_000;
 
@@ -122,7 +122,7 @@ ${notes ? `--- Additional notes ---\n${notes.slice(0, 4000)}` : ""}`;
       document: mergeWithDefaults(null, brand),
       usedAi: false,
       message:
-        "AI extraction is off — set AI_GATEWAY_API_KEY (automatic on Vercel). Loaded the editable template — refine blocks below.",
+        `${GATEWAY_CREDENTIALS_HINT} Loaded the editable template — refine blocks below.`,
     };
   }
 

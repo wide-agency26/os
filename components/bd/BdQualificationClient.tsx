@@ -15,6 +15,7 @@ import {
   confirmBdQualification,
   saveBdQualification,
 } from "@/app/actions/bd";
+import { workPaths } from "@/lib/work/paths";
 import {
   BD_LEGITIMACY_LABELS,
   BD_STAGE_LABELS,
@@ -149,7 +150,7 @@ export function BdQualificationClient({
         `Confirmed — stage is now ${res.stage ? BD_STAGE_LABELS[res.stage] : "updated"}.`
       );
       router.refresh();
-      router.push(`/app/bd/${record.id}`);
+      router.push(workPaths.pipelineId(record.id));
     });
   }
 
@@ -158,7 +159,7 @@ export function BdQualificationClient({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Link
-            href={`/app/bd/${record.id}`}
+            href={workPaths.pipelineId(record.id)}
             className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900"
           >
             <ArrowLeft size={14} /> Record
@@ -401,14 +402,14 @@ export function BdQualificationClient({
       </section>
 
       {confirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <button
             type="button"
             className="absolute inset-0 bg-black/40"
             aria-label="Close"
             onClick={() => !pending && setConfirmOpen(false)}
           />
-          <div className="relative w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-5 space-y-4">
+          <div className="relative w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-white border border-gray-200 shadow-xl p-5 space-y-4 max-h-[100dvh] overflow-y-auto">
             <h3 className="text-base font-semibold text-gray-900">
               Confirm recommendation?
             </h3>

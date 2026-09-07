@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { workPaths } from "@/lib/work/paths";
 import {
   ArrowDown,
   ArrowUp,
@@ -162,7 +163,7 @@ export function SlideBuilder({
             {bdRecordId && (
               <>
                 {" · "}
-                <Link className="text-blue-700" href={`/app/bd/${bdRecordId}`}>
+                <Link className="text-blue-700" href={workPaths.pipelineId(bdRecordId)}>
                   BD record
                 </Link>
               </>
@@ -184,7 +185,7 @@ export function SlideBuilder({
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/app/bd/proposal"
+            href={workPaths.propose}
             className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold"
           >
             Hub

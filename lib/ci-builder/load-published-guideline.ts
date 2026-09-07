@@ -41,8 +41,11 @@ export async function loadPublishedGuidelineBySlug(
   const project = Array.isArray(guideline.projects)
     ? guideline.projects[0]
     : guideline.projects;
+  const liveTheme = (guideline.theme || {}) as { coverTitle?: string };
   const brandName =
-    (project as { title?: string } | null)?.title || "Brand System";
+    liveTheme.coverTitle ||
+    (project as { title?: string } | null)?.title ||
+    "Brand System";
 
   if (guideline.status !== "published") {
     return { state: "draft", brandName };
@@ -66,10 +69,11 @@ export async function loadPublishedGuidelineBySlug(
     sections?: unknown[];
     assets?: unknown[];
   };
+  const snapTheme = (content.theme || liveTheme) as { coverTitle?: string };
 
   return {
     state: "success",
-    brandName,
+    brandName: snapTheme.coverTitle || brandName,
     theme: content.theme || (guideline.theme as Record<string, unknown>) || {},
     sections: content.sections || [],
     assets: content.assets || [],

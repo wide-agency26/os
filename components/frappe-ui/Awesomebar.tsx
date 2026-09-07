@@ -1,36 +1,38 @@
 "use client";
 
-import { Search, Bell, HelpCircle } from "lucide-react";
+import { Menu } from "lucide-react";
+import { useMobileNav } from "@/components/frappe-ui/MobileNav";
+import { NotificationCenter } from "@/components/notifications/NotificationCenter";
 
 interface AwesomebarProps {
   title: string;
+  showNotifications?: boolean;
 }
 
-export function Awesomebar({ title }: AwesomebarProps) {
-  return (
-    <header className="h-14 flex items-center justify-between px-6 border-b border-[#E5E7EB] bg-white shrink-0">
-      <div className="flex items-center gap-4 flex-1">
-        <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
-      </div>
+export function Awesomebar({ title, showNotifications = false }: AwesomebarProps) {
+  const { toggle, open } = useMobileNav();
 
-      <div className="flex items-center gap-4 flex-1 justify-end">
-        <div className="relative w-64 hidden sm:block">
-          <Search className="absolute left-2.5 top-1.5 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search or type a command (Ctrl+G)"
-            className="w-full h-8 pl-8 pr-3 bg-gray-100 border-transparent rounded text-xs focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all outline-none"
-          />
-        </div>
-        
-        <button className="text-gray-400 hover:text-gray-700 transition-colors">
-          <HelpCircle size={18} />
-        </button>
-        <button className="text-gray-400 hover:text-gray-700 transition-colors relative">
-          <Bell size={18} />
-          <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
-        </button>
-      </div>
+  return (
+    <header
+      className="os-chrome-header flex items-center gap-2 px-3 md:px-6 border-b border-border bg-surface shrink-0"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        minHeight: "calc(3.5rem + env(safe-area-inset-top))",
+      }}
+    >
+      <button
+        type="button"
+        onClick={toggle}
+        className="md:hidden inline-flex items-center justify-center w-11 h-11 -ml-1 rounded-md text-text-primary hover:bg-surface-raised"
+        aria-label={open ? "Close menu" : "Open menu"}
+        aria-expanded={open}
+      >
+        <Menu size={20} strokeWidth={1.75} />
+      </button>
+      <h1 className="text-[15px] font-semibold text-text-primary tracking-tight truncate min-w-0">
+        {title}
+      </h1>
+      {showNotifications ? <NotificationCenter /> : <div className="ml-auto" />}
     </header>
   );
 }

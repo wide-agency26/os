@@ -62,7 +62,38 @@ function looksLikeHeaderRow(cells: string[]): boolean {
     joined.some((c) => c.includes("post title") || c === "post type") &&
     joined.some((c) => c === "impressions" || c === "likes");
 
-  return (hasCampaign && hasMetric) || hasLiAds || hasLiOrganic || hasLiPosts;
+  const hasGsc =
+    joined.some(
+      (c) =>
+        c === "date" ||
+        c === "top queries" ||
+        c === "top pages" ||
+        c === "query" ||
+        c === "page" ||
+        c === "country" ||
+        c === "device" ||
+        c === "search appearance"
+    ) &&
+    joined.some(
+      (c) =>
+        c === "clicks" ||
+        c === "impressions" ||
+        c === "ctr" ||
+        c === "position"
+    );
+
+  const hasGa4 =
+    joined.some((c) => c === "sessionsource" || c === "session source" || c === "source") &&
+    joined.some((c) => c === "sessions" || c === "total users" || c === "totalusers");
+
+  return (
+    (hasCampaign && hasMetric) ||
+    hasLiAds ||
+    hasLiOrganic ||
+    hasLiPosts ||
+    hasGsc ||
+    hasGa4
+  );
 }
 
 function splitDelimitedLine(line: string): string[] {
@@ -137,17 +168,23 @@ export async function readFileText(file: File): Promise<string> {
 export function stripExportPreamble(text: string): string {
   // Normalize BOM leftovers
   const cleaned = text.replace(/^\uFEFF/, "");
-  const lines = cleaned.split(/\r?\n/);
-  if (lines.length < 2) return cleaned;
+  const withoutHash = cleaned
+    .split(/\r?\n/)
+    .filter((line) => {
+      const t = line.trim();
+      return t.length > 0 && !t.startsWith("#");
+    })
+    .join("\n");
+  const lines = (withoutHash || cleaned).split(/\r?\n/);
+  if (lines.length < 2) return withoutHash || cleaned;
 
-  for (let i = 0; i < Math.min(8, lines.length); i++) {
+  for (let i = 0; i < Math.min(12, lines.length); i++) {
     const cells = splitDelimitedLine(lines[i]);
-    if (looksLikeHeaderRow(cells) && i >= 0) {
-      // LinkedIn often has headers at line 5 (0-indexed 5) after 5 meta rows
+    if (looksLikeHeaderRow(cells)) {
       return lines.slice(i).join("\n");
     }
   }
-  return cleaned;
+  return withoutHash || cleaned;
 }
 
 export async function parseUploadFile(file: File): Promise<ParsedSheet[]> {
@@ -207,6 +244,4 @@ export async function parseUploadFile(file: File): Promise<ParsedSheet[]> {
   });
 }
 
-export function isAcceptedUploadName(filename: string): boolean {
-  return /\.(csv|tsv|txt|xlsx|xls|html|htm)$/i.test(filename);
-}
+export { isAcceptedUploadName } from "@/lib/data-hub/upload-names";

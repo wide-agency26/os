@@ -10,6 +10,7 @@ import {
   BD_SOURCE_LABELS,
   BD_STAGE_LABELS,
 } from "@/lib/bd/constants";
+import { LOSE_STAGES, QUALIFY_STAGES } from "@/lib/work/stages";
 import type {
   BdLegitimacyStatus,
   BdRecord,
@@ -42,7 +43,7 @@ function StageColumn({
 
   return (
     <div
-      className={`flex w-[260px] shrink-0 flex-col rounded-2xl border ${
+      className={`flex min-w-0 w-full flex-col rounded-2xl border ${
         muted ? "border-gray-200 bg-gray-50/80" : "border-gray-200 bg-gray-50"
       } ${over ? "ring-2 ring-blue-400 ring-offset-1" : ""}`}
       onDragOver={(e) => {
@@ -64,7 +65,7 @@ function StageColumn({
           {records.length}
         </span>
       </div>
-      <div className="flex-1 space-y-2 p-2 min-h-[120px] max-h-[calc(100vh-260px)] overflow-y-auto">
+      <div className="flex-1 space-y-2 p-2 min-h-[88px] max-h-[min(32vh,280px)] overflow-y-auto">
         {records.map((r) => (
           <BdKanbanCard
             key={r.id}
@@ -87,10 +88,18 @@ export function BdBoard({
   initialRecords,
   staff,
   currentUserId,
+  hideLoseLanes = false,
+  qualifyOnly = false,
+  loseOnly = false,
+  embedded = false,
 }: {
   initialRecords: BdRecord[];
   staff: BdStaffOption[];
   currentUserId: string;
+  hideLoseLanes?: boolean;
+  qualifyOnly?: boolean;
+  loseOnly?: boolean;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [records, setRecords] = useState(initialRecords);
@@ -121,9 +130,21 @@ export function BdBoard({
       ) {
         return false;
       }
+      if (hideLoseLanes && LOSE_STAGES.includes(r.stage)) return false;
+      if (loseOnly && !LOSE_STAGES.includes(r.stage)) return false;
+      if (qualifyOnly && !QUALIFY_STAGES.includes(r.stage)) return false;
       return true;
     });
-  }, [records, ownerFilter, sourceFilter, stageFilter, legitimacyFilter]);
+  }, [
+    records,
+    ownerFilter,
+    sourceFilter,
+    stageFilter,
+    legitimacyFilter,
+    hideLoseLanes,
+    qualifyOnly,
+    loseOnly,
+  ]);
 
   const byStage = useMemo(() => {
     const map = new Map<BdStage, BdRecord[]>();
@@ -199,13 +220,16 @@ export function BdBoard({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">BD Pipeline</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Prospects through won — drag cards between stages. Records are never
-            deleted; archive with a reason instead.
-          </p>
-        </div>
+        {!embedded && (
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">BD Pipeline</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Prospects through won — drag cards between stages. Records are never
+              deleted; archive with a reason instead.
+            </p>
+          </div>
+        )}
+        {embedded && <div />}
         <button
           type="button"
           onClick={() => setAddOpen(true)}
@@ -280,33 +304,38 @@ export function BdBoard({
         )}
       </div>
 
-      <div className="overflow-x-auto pb-4">
-        <div className="flex gap-3 min-w-max">
-          {BD_MAIN_STAGES.map((col) => (
-            <StageColumn
-              key={col.id}
-              stage={col.id}
-              label={col.label}
-              records={byStage.get(col.id) ?? []}
-              draggingId={draggingId}
-              onDragStart={setDraggingId}
-              onDrop={handleDrop}
-            />
-          ))}
-          <div className="w-px self-stretch bg-gray-200 mx-1" />
-          {BD_SIDE_LANES.map((col) => (
-            <StageColumn
-              key={col.id}
-              stage={col.id}
-              label={col.label}
-              records={byStage.get(col.id) ?? []}
-              draggingId={draggingId}
-              onDragStart={setDraggingId}
-              onDrop={handleDrop}
-              muted
-            />
-          ))}
-        </div>
+      <div className="space-y-3">
+        {!loseOnly && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {BD_MAIN_STAGES.map((col) => (
+              <StageColumn
+                key={col.id}
+                stage={col.id}
+                label={col.label}
+                records={byStage.get(col.id) ?? []}
+                draggingId={draggingId}
+                onDragStart={setDraggingId}
+                onDrop={handleDrop}
+              />
+            ))}
+          </div>
+        )}
+        {(!hideLoseLanes || loseOnly) && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {BD_SIDE_LANES.map((col) => (
+              <StageColumn
+                key={col.id}
+                stage={col.id}
+                label={col.label}
+                records={byStage.get(col.id) ?? []}
+                draggingId={draggingId}
+                onDragStart={setDraggingId}
+                onDrop={handleDrop}
+                muted
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <BdQuickAddModal

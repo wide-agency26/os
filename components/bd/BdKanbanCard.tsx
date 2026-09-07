@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { workPaths } from "@/lib/work/paths";
 import {
   BD_LEGITIMACY_LABELS,
   daysInStage,
   initialsFromName,
 } from "@/lib/bd/constants";
+import { formatEuro, stagePillarLabel } from "@/lib/accounting/types";
 import type { BdRecord } from "@/lib/bd/types";
+import { OfferingChips } from "@/components/offerings/OfferingChips";
 
 export function BdKanbanCard({
   record,
@@ -23,41 +26,59 @@ export function BdKanbanCard({
     : null;
 
   return (
-    <Link
-      href={`/app/bd/${record.id}`}
+    <div
       draggable
       onDragStart={(e) => {
+        if ((e.target as HTMLElement).closest("[data-no-card-drag]")) {
+          e.preventDefault();
+          return;
+        }
         e.dataTransfer.setData("text/bd-record-id", record.id);
         e.dataTransfer.effectAllowed = "move";
         onDragStart(record.id);
       }}
-      className={`block rounded-xl border bg-white p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing ${
-        dragging ? "opacity-50 border-blue-300" : "border-gray-200"
+      className={`rounded-lg border bg-surface p-3 hover:border-text-muted transition-colors cursor-grab active:cursor-grabbing ${
+        dragging ? "opacity-50 border-accent" : "border-border"
       }`}
-      onClick={(e) => {
-        // Allow drag without accidental navigation if user is dragging
-        if (dragging) e.preventDefault();
-      }}
     >
-      <div className="flex items-start gap-2.5">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[11px] font-bold text-white">
-          {initialsFromName(record.name)}
+      <Link href={workPaths.pipelineId(record.id)} className="block min-w-0">
+        <div className="flex items-start gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[11px] font-bold text-white">
+            {initialsFromName(record.name)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900 truncate">
+              {record.project_title || record.company_name}
+            </p>
+            <p className="text-xs text-gray-500 truncate">
+              {record.project_title && record.project_title !== record.company_name
+                ? record.company_name
+                : record.name}
+            </p>
+            {record.position && (
+              <p className="text-[11px] text-gray-400 truncate mt-0.5">
+                {record.position}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-900 truncate">{record.name}</p>
-          <p className="text-xs text-gray-500 truncate">{record.company_name}</p>
-          {record.position && (
-            <p className="text-[11px] text-gray-400 truncate mt-0.5">{record.position}</p>
-          )}
-        </div>
+      </Link>
+
+      <div className="mt-2">
+        <OfferingChips
+          value={record.offerings ?? []}
+          projectId={record.project_id}
+          bdRecordId={record.id}
+          compact
+        />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
           {record.owner?.full_name || "Unassigned"}
         </span>
         <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-          {days}d in stage
+          {days}d
         </span>
         {legitimacy ? (
           <span
@@ -71,9 +92,25 @@ export function BdKanbanCard({
           >
             {legitimacy}
           </span>
+        ) : null}
+        {typeof record.deal_value === "number" && record.deal_value > 0 ? (
+          <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-800">
+            {formatEuro(record.deal_value)}
+            {record.project_stage
+              ? ` · ${stagePillarLabel(record.project_stage)}`
+              : " · Unidentified"}
+          </span>
+        ) : null}
+        {record.project_id ? (
+          <Link
+            href={record.project_id ? workPaths.project(record.project_id) : "#"}
+            className="inline-flex items-center rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-black"
+          >
+            Project
+          </Link>
         ) : (
           <span className="inline-flex items-center rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-400">
-            Legitimacy —
+            No project
           </span>
         )}
       </div>
@@ -84,6 +121,6 @@ export function BdKanbanCard({
           {record.next_action_due ? ` · ${record.next_action_due}` : ""}
         </p>
       )}
-    </Link>
+    </div>
   );
 }

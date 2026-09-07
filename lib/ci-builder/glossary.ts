@@ -214,7 +214,9 @@ export const CI_GLOSSARY: GlossaryEntry[] = [
 ];
 
 /** Add-section picker uses only the 52-module catalog (not legacy buckets). */
-export const CI_ADDABLE_GLOSSARY: GlossaryEntry[] = CI_SUBMODULES.map(fromCatalog);
+export const CI_ADDABLE_GLOSSARY: GlossaryEntry[] = CI_SUBMODULES
+  .filter((s) => !["hex", "rgb", "cmyk", "color_scale"].includes(s.sectionType))
+  .map(fromCatalog);
 
 export interface MatchResult {
   type: SectionType | null;
@@ -255,12 +257,12 @@ export function matchSectionType(rawName: string): MatchResult {
     return { type: "misuse_examples", match_method: "substring", parts };
   }
 
-  // Correct-use logo examples belong in misuse_examples (Do column), not primary_logo.
+  // Correct Use / Do frames belong in misuse_examples (Do column).
   if (
-    /(?:^|[/\-_\s])(?:do|correct\s*use|proper\s*use|good\s+example)(?:$|[/\-_\s])/i.test(
+    /(?:^|[/\-_\s])(?:do|correct\s*use|correct\s*usage|proper\s*use|good\s+example)(?:$|[/\-_\s])/i.test(
       fullLower
     ) &&
-    /logo|mark|wordmark|brandmark/i.test(fullLower)
+    !/don'?t|do-not|misuse/i.test(fullLower)
   ) {
     return { type: "misuse_examples", match_method: "substring", parts };
   }

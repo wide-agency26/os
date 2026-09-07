@@ -6,6 +6,10 @@
 import type { Element } from "domhandler";
 import { load, type CheerioAPI } from "cheerio";
 import type { ParsedSheet } from "@/lib/data-hub/parse-workbook";
+import {
+  isValidIgPermalink,
+  usableIgThumbnail,
+} from "@/lib/reports/instagram-organic";
 
 export type IgHtmlKind =
   | "profiles_reached"
@@ -331,8 +335,8 @@ function extractPostCards($: CheerioAPI): Record<string, string>[] {
       caption: caption.slice(0, 2000),
       created_at: created ? created.toISOString() : createdRaw,
       created_label: createdRaw,
-      thumbnail_url: thumbnail,
-      post_url: links || "",
+      thumbnail_url: usableIgThumbnail(thumbnail),
+      post_url: isValidIgPermalink(links) ? links || "" : "",
       accounts_reached: metrics.accounts_reached || "0",
       impressions: metrics.impressions || "0",
       profile_visits: metrics.profile_visits || "0",

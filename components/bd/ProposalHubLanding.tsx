@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FileText, Presentation } from "lucide-react";
 import { Workspace } from "@/components/frappe-ui/Workspace";
+import { workPaths } from "@/lib/work/paths";
 
 export function ProposalHubLanding({
   bdRecordId,
@@ -16,7 +17,7 @@ export function ProposalHubLanding({
       <div className="space-y-8 py-2 max-w-4xl">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-            Business Development
+            Work · Propose
           </p>
           <h1 className="text-2xl font-semibold text-gray-950 tracking-tight">
             Proposal Builder
@@ -30,7 +31,7 @@ export function ProposalHubLanding({
 
         <div className="grid sm:grid-cols-2 gap-4">
           <Link
-            href={`/app/bd/lms${q}`}
+            href={`${workPaths.sow}${q}`}
             className="rounded-xl border border-gray-200 bg-white p-5 hover:border-gray-400 transition-colors space-y-3"
           >
             <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-800">
@@ -51,7 +52,7 @@ export function ProposalHubLanding({
           </Link>
 
           <Link
-            href={`/app/bd/proposal/slides/new${q}`}
+            href={`${workPaths.proposeNew}${q}`}
             className="rounded-xl border border-gray-200 bg-white p-5 hover:border-gray-400 transition-colors space-y-3"
           >
             <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-800">

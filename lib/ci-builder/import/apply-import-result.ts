@@ -6,6 +6,7 @@
 import type { CIAsset, CISection, CITheme } from "@/lib/ci-builder/types";
 import { generateUUID } from "@/lib/ci-builder/types";
 import type { ParseResult } from "@/lib/ci-builder/parser";
+import { ensureReadableTheme } from "@/lib/ci-builder/theme-css";
 
 function isValidUUID(str?: string | null): boolean {
   if (!str) return false;
@@ -21,6 +22,13 @@ export type ApplyImportOptions = {
   /** Optional raw payload for ci_imports audit */
   rawPayload?: unknown;
   createdBy?: string | null;
+  /**
+   * Module-scoped Figma re-sync: delete existing rows of these section_types,
+   * then upsert only matching sections/assets from `parsed`.
+   */
+  replaceSectionTypes?: string[];
+  /** When true, do not merge parsed.themeSuggested into the guideline theme. */
+  skipThemeMerge?: boolean;
 };
 
 export type ApplyImportResult = {
@@ -46,15 +54,38 @@ export async function applyImportResult(
     source = "json",
     rawPayload,
     createdBy,
+    replaceSectionTypes,
+    skipThemeMerge = false,
   } = options;
+
+  const typeFilter =
+    replaceSectionTypes && replaceSectionTypes.length > 0
+      ? new Set(replaceSectionTypes)
+      : null;
 
   if (mode === "replace") {
     await supabase.from("ci_assets").delete().eq("guideline_id", guidelineId);
     await supabase.from("ci_sections").delete().eq("guideline_id", guidelineId);
+  } else if (typeFilter) {
+    const { data: oldSecs } = await supabase
+      .from("ci_sections")
+      .select("id, section_type")
+      .eq("guideline_id", guidelineId);
+    const oldIds = ((oldSecs || []) as { id: string; section_type: string }[])
+      .filter((s) => typeFilter.has(s.section_type))
+      .map((s) => s.id);
+    if (oldIds.length) {
+      await supabase.from("ci_assets").delete().in("section_id", oldIds);
+      await supabase.from("ci_sections").delete().in("id", oldIds);
+    }
   }
 
+  const sourceSections = typeFilter
+    ? parsed.sections.filter((s) => typeFilter.has(String(s.section_type || "")))
+    : parsed.sections;
+
   const sectionIdMap = new Map<string, string>();
-  const newSections = parsed.sections.map((s, i) => {
+  const newSections = sourceSections.map((s, i) => {
     const oldId = s.id || "";
     const validId = isValidUUID(oldId) ? oldId : generateUUID();
     if (oldId && oldId !== validId) sectionIdMap.set(oldId, validId);
@@ -67,7 +98,19 @@ export async function applyImportResult(
   });
 
   const assetIdMap = new Map<string, string>();
-  const newAssets = parsed.assets.map((a) => {
+  const sourceSectionIds = new Set(
+    sourceSections.map((s) => s.id).filter(Boolean) as string[]
+  );
+  const sourceAssets = typeFilter
+    ? parsed.assets.filter((a) => {
+        if (a.section_id && sourceSectionIds.has(a.section_id)) return true;
+        const metaType = (a.metadata as { section_type?: string } | undefined)?.section_type;
+        if (metaType && typeFilter.has(metaType)) return true;
+        return false;
+      })
+    : parsed.assets;
+
+  const newAssets = sourceAssets.map((a) => {
     const oldId = a.id || "";
     const validId = isValidUUID(oldId) ? oldId : generateUUID();
     if (oldId && oldId !== validId) assetIdMap.set(oldId, validId);
@@ -113,12 +156,16 @@ export async function applyImportResult(
     if (astErr) throw astErr;
   }
 
-  const mergedTheme = {
+  const mergedTheme = ensureReadableTheme({
     ...(existingTheme || {}),
-    ...(parsed.themeSuggested || {}),
-  } as CITheme;
+    ...(skipThemeMerge ? {} : parsed.themeSuggested || {}),
+  });
 
-  if (parsed.themeSuggested && Object.keys(parsed.themeSuggested).length > 0) {
+  if (
+    !skipThemeMerge &&
+    parsed.themeSuggested &&
+    Object.keys(parsed.themeSuggested).length > 0
+  ) {
     const { error: themeErr } = await supabase
       .from("ci_guidelines")
       .update({ theme: mergedTheme })

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import { createBdRecord } from "@/app/actions/bd";
 import type { BdStaffOption } from "@/lib/bd/types";
+import { workPaths } from "@/lib/work/paths";
 
 export function BdQuickAddModal({
   open,
@@ -74,12 +75,12 @@ export function BdQuickAddModal({
       reset();
       onClose();
       router.refresh();
-      if (res.id) router.push(`/app/bd/${res.id}`);
+      if (res.id) router.push(workPaths.pipelineId(res.id));
     });
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4">
       <button
         type="button"
         className="absolute inset-0 bg-black/40"
@@ -88,7 +89,7 @@ export function BdQuickAddModal({
           if (!pending) onClose();
         }}
       />
-      <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-xl border border-gray-200">
+      <div className="relative w-full max-w-lg rounded-t-2xl sm:rounded-2xl bg-white shadow-xl border border-gray-200 max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Add prospect</h2>

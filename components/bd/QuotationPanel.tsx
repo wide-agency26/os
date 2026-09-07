@@ -19,6 +19,7 @@ import {
   mergeQuotation,
   type BdQuotationPayload,
 } from "@/lib/bd/quotation";
+import { workPaths } from "@/lib/work/paths";
 
 export function QuotationPanel({
   bdRecordId,
@@ -102,7 +103,7 @@ export function QuotationPanel({
           Status: <span className="font-semibold">{q.status}</span>
           {q.voucher_status ? ` · Lexware: ${q.voucher_status}` : ""}
           {" · "}
-          <Link href={`/app/bd/${bdRecordId}`} className="text-blue-700">
+          <Link href={workPaths.pipelineId(bdRecordId)} className="text-blue-700">
             BD record
           </Link>
         </p>
