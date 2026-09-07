@@ -1,0 +1,562 @@
+/* Ported from lib/ci-builder/canvas/prototype-reference.html — scoped to .ci-canvas */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap');
+
+
+  .ci-canvas {
+    /* colors — mirrors the "Alias" (Dark mode) Figma variable collection */
+    --tool-bg-canvas: #141414;
+    --tool-surface-input: #141414;
+    --tool-surface-card: #323233;
+    --tool-border-input: #656466;
+    --tool-border-subtle: #323233;
+    --tool-text-primary: #fcfaff;
+    --tool-text-muted: #cac8cc;
+    --tool-text-link: #70657e;
+    --tool-accent-ring: #70657e;
+    --tool-accent-primary: #4c3e5e;
+    --tool-accent-danger: #c93434;
+    --tool-accent-danger-muted: #792626;
+    --tool-accent-warning: #c66a21;
+    --tool-accent-success: #2ad867;
+    --tool-button-active-bg: #434343;
+    --tool-button-primary-bg: #4c3e5e;
+    --tool-button-text: #fcfaff;
+    --tool-button-text-active: #979699;
+    --tool-overlay-soft: rgba(255,255,255,.06);
+    --tool-overlay-mid: rgba(255,255,255,.08);
+    /* radius scale — Border Size/radius/* */
+    --radius-xs: 1px; --radius-s: 4px; --radius-m: 8px; --radius-l: 12px; --radius-xl: 20px; --radius-round: 999px;
+    /* spacing scale — scale/* */
+    --space-100: 4px; --space-200: 8px; --space-300: 12px; --space-400: 16px; --space-500: 20px;
+    --space-600: 24px; --space-700: 28px; --space-800: 32px; --space-900: 36px; --space-1000: 40px;
+    --space-1200: 48px; --space-1400: 56px; --space-1600: 64px;
+    --font-primary: 'Switzer Variable', Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: 'IBM Plex Mono', Menlo, ui-monospace, monospace;
+  }
+  /* Light mode for the Edit tab chrome — mirrors the "Alias" (Light
+     mode) Figma variable collection. Scoped to .ci-canvas.light-mode so it never
+     touches the View tab's own independent "Greenpoint" theme, which sets
+     its own variables at higher specificity regardless of this toggle. */
+  .ci-canvas.light-mode {
+    --tool-bg-canvas: #fcfaff;
+    --tool-surface-input: #fcfaff;
+    --tool-surface-card: #efedf2;
+    --tool-border-input: #979699;
+    --tool-border-subtle: #cac8cc;
+    --tool-text-primary: #141414;
+    --tool-text-muted: #323233;
+    --tool-text-link: #3d324b;
+    --tool-accent-ring: #b6a9c7;
+    --tool-accent-primary: #70657e;
+    --tool-accent-danger-muted: #d46666;
+    --tool-button-active-bg: #cac8cc;
+    --tool-button-primary-bg: #70657e;
+    --tool-overlay-soft: rgba(20,20,20,.06);
+    --tool-overlay-mid: rgba(20,20,20,.08);
+  }
+  .ci-canvas, .ci-canvas * { box-sizing: border-box; }
+  .ci-canvas { margin:0; background:var(--tool-bg-canvas); font-family:var(--font-primary); color:var(--tool-text-primary); }
+  #app-sidebar .icon-btn, #view-toolbar .icon-btn { display:flex; }
+  .ci-canvas.ci-view-root {
+    --brand-neutral: #faf7ef;
+    --brand-bg-canvas: var(--brand-neutral);
+    --brand-surface-card: color-mix(in srgb, var(--brand-neutral) 92%, #000);
+    --brand-border-subtle: color-mix(in srgb, var(--brand-neutral) 84%, #000);
+    --brand-border-input: color-mix(in srgb, var(--brand-neutral) 74%, #000);
+    --brand-text-primary: #17150f;
+    --brand-text-muted: #6d6656;
+    --brand-text-link: #17150f;
+    --brand-button-text: #17150f;
+    --brand-accent-primary: #4c3e5e;
+    --tf-heading-primary: var(--font-primary); --tw-heading-primary: 600; --ts-heading-primary: normal;
+    --tf-heading-secondary: var(--font-primary); --tw-heading-secondary: 700; --ts-heading-secondary: normal;
+    --tf-heading-tertiary: var(--font-primary); --tw-heading-tertiary: 600; --ts-heading-tertiary: normal;
+    --tf-copy-body: var(--font-primary); --tw-copy-body: 400; --ts-copy-body: normal;
+    --tf-copy-caption: var(--font-mono); --tw-copy-caption: 400; --ts-copy-caption: normal;
+    background: var(--brand-bg-canvas);
+    color: var(--brand-text-primary);
+    min-height: 100%;
+  }
+  .ci-canvas a { color:var(--tool-text-link); }
+  .mono { font-family:var(--font-mono); }
+  .navitem:hover { background:var(--tool-overlay-soft) !important; }
+  .navitem.active { background:var(--tool-accent-ring) !important; color:var(--tool-text-primary) !important; font-weight:600; }
+  .tabbtn { padding:8px 20px;border-radius:var(--radius-xl);color:var(--tool-button-text-active);font-size:12px;letter-spacing:.75px;cursor:pointer;background:var(--tool-button-active-bg); }
+  .tabbtn.active { background:var(--tool-button-active-bg);color:var(--tool-button-text-active); }
+  .tabbtn:not(.active) { background:var(--tool-button-primary-bg);color:var(--tool-button-text); }
+  .action-link { font-family:var(--font-mono);font-size:14px;letter-spacing:.5px;color:var(--tool-text-muted);text-transform:uppercase;cursor:pointer; }
+  .action-link:hover { color:var(--tool-text-primary); }
+  .page-edit-btn { padding:12px 20px;border-radius:var(--radius-m);background:var(--tool-accent-primary);color:var(--tool-text-primary);font-size:13px;font-weight:600;flex:none;cursor:pointer;display:flex;align-items:center;gap:6px; }
+  .page-edit-btn.active { background:var(--tool-bg-canvas);border:1px solid var(--tool-border-input); }
+  .icon-btn { width:28px;height:28px;flex:none;border-radius:var(--radius-s);background:transparent;display:none;align-items:center;justify-content:center;color:var(--tool-text-muted);cursor:pointer;opacity:.7; }
+  .icon-btn svg { width:15px;height:15px; }
+  .logo-well { padding:40px; }
+  #view-logo-primary-light, #view-logo-primary-dark { padding:56px; box-sizing:border-box; }
+  .icon-btn:hover { opacity:1;color:var(--tool-text-primary); }
+  .ci-canvas.edit-mode .icon-btn { display:flex; }
+  .field-label { font-size:11px;color:var(--tool-text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;display:block; }
+  .field-input, .field-select { width:100%;background:var(--tool-bg-canvas);border:1px solid var(--tool-border-input);border-radius:var(--radius-m);padding:10px 12px;color:var(--tool-text-primary);font-size:14px;font-family:var(--font-primary);box-sizing:border-box; }
+  .field-select { appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cac8cc' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");background-repeat:no-repeat;background-position:right 10px center;background-size:16px;padding-right:32px; }
+  .field-row { display:flex;gap:12px; }
+  .field-row > div { flex:1; }
+  .toggle-group { display:flex;gap:4px;background:var(--tool-bg-canvas);border-radius:var(--radius-m);padding:4px; }
+  .toggle-btn { flex:1;text-align:center;padding:8px 10px;border-radius:var(--radius-s);font-size:13px;color:var(--tool-text-muted);cursor:pointer;user-select:none; }
+  .toggle-btn.active { background:var(--tool-accent-primary);color:var(--tool-text-primary); }
+  #type-edit-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100; }
+  #type-edit-panel { display:none;position:fixed;top:0;right:0;height:100vh;width:400px;max-width:90vw;background:var(--tool-surface-input);border-left:.5px solid var(--tool-border-input);z-index:101;overflow-y:auto;padding:28px;flex-direction:column;gap:24px;box-sizing:border-box; }
+  #token-edit-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100; }
+  #token-edit-panel { display:none;position:fixed;top:0;right:0;height:100vh;width:360px;max-width:90vw;background:var(--tool-surface-input);border-left:.5px solid var(--tool-border-input);z-index:101;overflow-y:auto;padding:28px;flex-direction:column;gap:20px;box-sizing:border-box; }
+  .ci-canvas .ci-drawer-overlay { display:block;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:220; }
+  .ci-canvas .ci-drawer-panel { display:flex;position:fixed;top:0;right:0;height:100vh;width:380px;max-width:90vw;background:var(--tool-surface-input);border-left:.5px solid var(--tool-border-input);z-index:221;overflow-y:auto;padding:28px;flex-direction:column;gap:20px;box-sizing:border-box; }
+  .ci-canvas .ci-drawer-panel.wide { width:400px; }
+  .sortable-item.dragging { opacity:.35; }
+  .drag-handle { cursor:grab; }
+  .drag-handle:active { cursor:grabbing; }
+  .sortable-list.drag-over { outline:1px dashed var(--tool-border-input); outline-offset:8px; }
+  .sortable-list:not(:has(.sortable-item)) { min-height:52px; border:1px dashed var(--tool-border-input); border-radius:var(--radius-m); }
+  .ci-canvas.edit-mode .ai-editable { cursor:text;border-radius:var(--radius-s);box-shadow:0 0 0 1px var(--tool-border-input);padding:8px;margin:-8px; }
+  .ci-canvas.edit-mode .ai-editable:focus { box-shadow:0 0 0 1px var(--tool-accent-primary); }
+  .ci-canvas.edit-mode .tag-text { cursor:text;outline:none; }
+  .ci-canvas.edit-mode .tag-text:focus { text-decoration:underline;text-decoration-color:var(--tool-accent-primary); }
+  .style-tag .icon-btn { display:none; }
+  .ci-canvas.edit-mode .style-tag .icon-btn { display:flex; }
+  #tone-edit-panel, #voice-edit-panel, #editorial-edit-panel, #color-edit-panel, #scale-edit-panel, #photo-edit-panel, #core-edit-panel, #link-edit-panel, #rename-edit-panel, #settings-edit-panel, #template-settings-panel { display:none;position:fixed;top:0;right:0;height:100vh;width:380px;max-width:90vw;background:var(--tool-surface-input);border-left:.5px solid var(--tool-border-input);z-index:101;overflow-y:auto;padding:28px;flex-direction:column;gap:20px;box-sizing:border-box; }
+  #tone-edit-overlay, #voice-edit-overlay, #editorial-edit-overlay, #color-edit-overlay, #scale-edit-overlay, #photo-edit-overlay, #core-edit-overlay, #link-edit-overlay, #rename-edit-overlay, #settings-edit-overlay, #template-settings-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100; }
+  .navitem.module-hidden { opacity:.4; }
+  .navitem.module-hidden .module-vis-btn svg { display:none; }
+  .navitem.module-hidden .module-vis-btn::after { content:'🚫'; font-size:11px; }
+
+  /* ---- View template: "Greenpoint" — a light, photo-driven delivery page ----
+     Scoped to .screen[data-tab="view"] so these variables only re-theme the
+     client-facing page and never leak into the dark Edit tab chrome. */
+  .screen[data-tab="view"][data-template="greenpoint"], #view-client-nav[data-template="greenpoint"] {
+    --brand-surface-card: color-mix(in srgb, var(--brand-neutral) 92%, #000);
+    --brand-border-subtle: color-mix(in srgb, var(--brand-neutral) 84%, #000);
+    --brand-border-input: color-mix(in srgb, var(--brand-neutral) 74%, #000);
+    --brand-text-primary: #17150f;
+    --brand-text-muted: #6d6656;
+    --brand-text-link: #17150f;
+    --brand-button-text: #17150f;
+    background: var(--brand-bg-canvas);
+    color: var(--brand-text-primary);
+    font-family: var(--tf-copy-body);
+    font-weight: var(--tw-copy-body);
+  }
+  .screen[data-tab="view"][data-template="greenpoint"] .view-heading-primary, #view-client-nav[data-template="greenpoint"] .view-heading-primary {
+    font-family: var(--tf-heading-primary);
+    font-weight: var(--tw-heading-primary);
+    font-style: var(--ts-heading-primary);
+  }
+  .screen[data-tab="view"][data-template="greenpoint"] .view-heading-secondary, #view-client-nav[data-template="greenpoint"] .view-heading-secondary {
+    font-family: var(--tf-heading-secondary);
+    font-weight: var(--tw-heading-secondary);
+    font-style: var(--ts-heading-secondary);
+  }
+  .screen[data-tab="view"][data-template="greenpoint"] .view-heading-tertiary, #view-client-nav[data-template="greenpoint"] .view-heading-tertiary {
+    font-family: var(--tf-heading-tertiary);
+    font-weight: var(--tw-heading-tertiary);
+    font-style: var(--ts-heading-tertiary);
+  }
+  .screen[data-tab="view"][data-template="greenpoint"] .mono, #view-client-nav[data-template="greenpoint"] .mono {
+    font-family: var(--tf-copy-caption);
+    font-weight: var(--tw-copy-caption);
+    font-style: var(--ts-copy-caption);
+  }
+  .screen[data-tab="view"][data-template="greenpoint"] .view-dark-tile {
+    background: #141414 !important;
+    color: #fff !important;
+  }
+  .screen[data-tab="view"][data-template="greenpoint"] .view-photo-break,
+  .ci-view-root .view-photo-break {
+    width: 100%;
+    height: 320px;
+    margin: 0;
+    background: linear-gradient(135deg, var(--brand-accent-primary), #141414 130%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    flex: none;
+  }
+  .screen[data-tab="view"][data-template="greenpoint"] .view-photo-break span {
+    font-family: var(--tf-copy-caption);
+    font-weight: var(--tw-copy-caption);
+    font-size: 11px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,.7);
+  }
+  #view-header-stack { display:none; }
+  .ci-canvas.view-fullpage #app-sidebar { display:none !important; }
+  .ci-canvas.view-fullpage #view-header-stack { display:flex; }
+  .ci-canvas.view-fullpage .screen[data-tab="view"] { scroll-margin-top: 132px; }
+  .ci-canvas.view-fullpage #canvas-scroll { background:var(--brand-bg-canvas, #faf7ef); }
+  .ci-canvas.view-fullpage #canvas-col { background:var(--brand-bg-canvas, #faf7ef); }
+
+  /* ---- View template: "Foundry" — a structural clone of a reference
+     brand-guidelines wireframe: a landing grid of module cards, each
+     opening into its own full page (hero → intro statement → repeating
+     eyebrow/copy/CTA rows → showcase cards), instead of Greenpoint's
+     single continuous scroll. Measurements below (1520px content column,
+     127px page margin, 32px grid/section gaps, 16px card radius, 16:9
+     showcase cards) are taken directly from the reference's rendered
+     geometry, translated to responsive units. This template has its own
+     dedicated DOM (elements with [data-fd]) and its own sync function
+     (syncFoundryContent) — it does not share markup with Greenpoint. */
+  .screen[data-tab="view"][data-fd] {
+    --brand-surface-card: color-mix(in srgb, var(--brand-neutral) 94%, #000);
+    --brand-border-subtle: color-mix(in srgb, var(--brand-neutral) 88%, #000);
+    --brand-border-input: color-mix(in srgb, var(--brand-neutral) 76%, #000);
+    --brand-text-primary: #141414;
+    --brand-text-muted: #6b6b67;
+    --brand-text-link: #6b6b67;
+    --brand-button-text: #f6f5f2;
+    --brand-chrome-bg: #141414;
+    --brand-chrome-text: #f6f5f2;
+    --fd-maxw: none;
+    --fd-gap: 32px;
+    --fd-radius: 16px;
+    background: var(--brand-bg-canvas);
+    color: var(--brand-text-primary);
+    display: none;
+    font-family: var(--tf-copy-body);
+    font-weight: var(--tw-copy-body);
+  }
+  .screen[data-tab="view"][data-fd].fd-active { display: block; }
+  .screen[data-tab="view"][data-fd] .view-heading-primary {
+    font-family: var(--tf-heading-primary); font-weight: var(--tw-heading-primary); font-style: var(--ts-heading-primary);
+  }
+  .screen[data-tab="view"][data-fd] .view-heading-secondary {
+    font-family: var(--tf-heading-secondary); font-weight: var(--tw-heading-secondary); font-style: var(--ts-heading-secondary);
+  }
+  .screen[data-tab="view"][data-fd] .mono {
+    font-family: var(--tf-copy-caption); font-weight: var(--tw-copy-caption); font-style: var(--ts-copy-caption);
+  }
+  /* Shared content column — no artificial cap. Every block (hero text,
+     rows, showcase cards) shares the exact same 64px gutter that
+     canvas-scroll already provides, so nothing reads narrower than
+     anything else — the single consistent margin the reference uses
+     throughout (hero, cards, and copy all align to its one gutter). */
+  .fd-col { max-width: none; margin: 0; padding: 0 64px; box-sizing: border-box; }
+  .fd-page { display: flex; flex-direction: column; }
+  /* ---- Landing: full-bleed photo/color hero + intro statement + 3-col
+     grid of module cards (reference ratio ≈2.25:1 hero, 16:9 cards). ---- */
+  .fd-landing-hero {
+    width: 100%; aspect-ratio: 2.25 / 1; min-height: 320px; max-height: 620px;
+    margin: 0;
+    background: color-mix(in srgb, var(--brand-accent-primary) 22%, #121212);
+    background-size: cover; background-position: center;
+    display: flex; align-items: flex-end; box-sizing: border-box; flex: none;
+    position: relative; overflow: hidden;
+  }
+  .fd-landing-hero::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,.35), rgba(0,0,0,0) 55%);
+  }
+  .fd-landing-hero .fd-wordmark {
+    position: relative; z-index: 1; padding: 0 64px 48px;
+    font-size: clamp(40px, 9vw, 96px); line-height: 1; letter-spacing: -0.02em;
+    color: #fff; width: 100%; box-sizing: border-box;
+  }
+  .fd-landing-intro {
+    font-size: clamp(22px, 3vw, 34px); font-weight: 500; line-height: 1.25;
+    max-width: 66%; color: var(--brand-text-primary); padding: 64px 0 40px;
+  }
+  .fd-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--fd-gap);
+    padding-bottom: 96px;
+  }
+  @media (max-width: 900px) { .fd-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .fd-grid { grid-template-columns: 1fr; } }
+  .fd-card {
+    aspect-ratio: 16 / 9; border-radius: var(--fd-radius); background: var(--brand-surface-card);
+    border: 1px solid var(--brand-border-subtle);
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 24px; box-sizing: border-box; text-decoration: none; cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .fd-card:hover { border-color: var(--brand-accent-primary); }
+  .fd-card-num { font-family: var(--tf-copy-caption, monospace); font-size: 12px; letter-spacing: .1em; color: var(--brand-text-muted); }
+  .fd-card-label { font-size: 22px; font-weight: 600; color: var(--brand-text-primary); letter-spacing: -0.01em; }
+  .fd-card-accent { width: 28px; height: 4px; border-radius: 2px; background: var(--brand-accent-primary); }
+  /* ---- Module pages: dark hero (title low, huge negative space above) +
+     intro statement + repeating eyebrow/copy/CTA rows + showcase cards. ---- */
+  .fd-back-link {
+    display: inline-flex; align-items: center; gap: 8px; padding: 24px 0 40px;
+    font-family: var(--tf-copy-caption, monospace); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--brand-text-muted); cursor: pointer; width: fit-content; position: relative; z-index: 1;
+  }
+  .fd-back-link:hover { color: var(--brand-text-primary); }
+  .fd-module-hero {
+    width: 100%; aspect-ratio: 2.25 / 1; min-height: 340px; max-height: 640px;
+    margin: 0;
+    background: color-mix(in srgb, var(--brand-accent-primary) 16%, #121212);
+    background-size: cover; background-position: center;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 48px 64px; box-sizing: border-box; flex: none; gap: 24px;
+  }
+  .fd-module-hero .fd-title {
+    font-size: clamp(48px, 8.7vw, 140px); line-height: 1; letter-spacing: -0.02em; font-weight: 500;
+    color: var(--brand-chrome-text); margin: 0;
+  }
+  .fd-intro {
+    font-size: clamp(24px, 3.4vw, 44px); font-weight: 500; line-height: 1.1;
+    max-width: 65%; color: var(--brand-text-primary); padding: 96px 0 0;
+  }
+  .fd-row {
+    display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-start;
+    padding: 48px 0; border-top: 1px solid var(--brand-border-subtle);
+    margin-top: 48px;
+  }
+  .fd-row-eyebrow {
+    font-family: var(--tf-copy-caption, monospace); font-size: 12px; font-weight: 600; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--brand-text-primary); flex: 0 0 240px; white-space: nowrap;
+  }
+  .fd-row-copy { flex: 1; min-width: 240px; display: flex; gap: 40px; flex-wrap: wrap; }
+  .fd-row-copy p { flex: 1; min-width: 220px; margin: 0; font-size: 14px; line-height: 1.6; color: var(--brand-text-muted); }
+  .fd-cta {
+    flex: none; background: var(--brand-chrome-bg); color: var(--brand-chrome-text);
+    border-radius: var(--fd-radius); padding: 14px 24px; font-size: 13px; font-weight: 500;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    border: none; height: fit-content;
+  }
+  .fd-showcase {
+    width: 100%; aspect-ratio: 16 / 9; border-radius: var(--fd-radius);
+    background: var(--brand-surface-card); border: 1px solid var(--brand-border-subtle);
+    display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+    padding: 40px; margin-bottom: 48px; overflow: hidden;
+  }
+  .fd-showcase.fd-showcase-fill { border: none; background: color-mix(in srgb, var(--brand-neutral) 90%, #000); }
+  .fd-showcase.fd-showcase-dark { background: #141414; border: none; }
+  .fd-showcase-row { display: flex; gap: var(--fd-gap); margin-bottom: 48px; flex-wrap: wrap; }
+  .fd-plain-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 48px; }
+  .fd-showcase-row .fd-showcase { flex: 1; min-width: 280px; margin-bottom: 0; }
+  .fd-tile-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--fd-gap); width: 100%;
+  }
+  .fd-tile {
+    aspect-ratio: 4 / 3; border-radius: var(--fd-radius); display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 20px; box-sizing: border-box; font-size: 13px; color: #fff; background-size: cover; background-position: center;
+  }
+  .fd-footer {
+    width: 100%; margin: 96px 0 0;
+    background: var(--brand-chrome-bg); color: var(--brand-chrome-text);
+    padding: 80px 64px; box-sizing: border-box;
+  }
+  .fd-footer .fd-col { display: flex; flex-direction: column; gap: 8px; padding: 0; }
+  .fd-footer-label { font-family: var(--tf-copy-caption, monospace); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; opacity: .6; }
+  /* ---- Color System page ---- */
+  .fd-color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--fd-gap); width: 100%; margin-bottom: 24px; }
+  .fd-color-tile { aspect-ratio: 4/3; border-radius: var(--fd-radius); display: flex; flex-direction: column; justify-content: flex-end; padding: 20px; box-sizing: border-box; border: 1px solid rgba(0,0,0,.08); }
+  .fd-color-tile .fd-color-name { font-size: 18px; font-weight: 600; }
+  .fd-color-tile .fd-color-hex { font-family: var(--tf-copy-caption, monospace); font-size: 12px; opacity: .75; margin-top: 2px; }
+  .fd-scale-row { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+  .fd-scale-row-label { font-size: 14px; font-weight: 600; color: var(--brand-text-primary); }
+  .fd-scale-row-swatches { display: flex; gap: 12px; flex-wrap: wrap; }
+  .fd-scale-swatch { flex: 1; min-width: 100px; height: 80px; border-radius: 12px; position: relative; border: 1px solid rgba(0,0,0,.08); box-sizing: border-box; }
+  .fd-scale-swatch span { position: absolute; left: 10px; bottom: 8px; font-family: var(--tf-copy-caption, monospace); font-size: 10px; }
+  .fd-proportion-bar { display: flex; height: 64px; border-radius: var(--fd-radius); overflow: hidden; width: 100%; margin-bottom: 24px; border: 1px solid rgba(0,0,0,.08); box-sizing: border-box; }
+  .fd-proportion-bar span { display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--tf-copy-caption, monospace); }
+  .fd-status-strip { display: flex; gap: 2px; border-radius: var(--fd-radius); overflow: hidden; width: 100%; }
+  .fd-status-strip > div { flex: 1; min-height: 70px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--tf-copy-caption, monospace); }
+
+  /* ---- View template: "Multipage" — a direct structural clone of a real
+     multi-page brand-guidelines site (brand.curri.com): a homepage with a
+     centered wordmark and a grid of flat-colored module tiles, and every
+     module as its own full page — dark hero, plain intro, then repeating
+     sections where a hairline-topped row holds ONLY a small label and a
+     one-line description, and the actual content always breaks out full
+     width in its own block underneath (never crammed into the row as a
+     second column). No pill badges and no filled card boxes anywhere —
+     grouped values render as a plain numbered list, paired examples
+     (do/don't, on/off-brand) render as flat text columns split by a single
+     hairline, not two colored boxes. Every module page ends with a "next
+     module" card (inset, rounded, not full-bleed) and the same dark
+     contact footer that appears on the homepage. Fully independent DOM
+     ([data-mp]) and its own sync function (syncMultipageContent) — does
+     not share markup or classes with Greenpoint or Foundry. ---- */
+  .screen[data-tab="view"][data-mp] {
+    --brand-surface-card: color-mix(in srgb, var(--brand-neutral) 94%, #000);
+    --brand-border-subtle: color-mix(in srgb, var(--brand-neutral) 86%, #000);
+    --brand-border-input: color-mix(in srgb, var(--brand-neutral) 76%, #000);
+    --brand-text-primary: #141414;
+    --brand-text-muted: #6b6b67;
+    --brand-text-link: #6b6b67;
+    --brand-button-text: #f6f5f2;
+    --brand-chrome-bg: #141414;
+    --brand-chrome-text: #f6f5f2;
+    --mp-gap: 28px;
+    --mp-radius: 14px;
+    --mp-section-space: 56px;
+    background: var(--brand-bg-canvas);
+    color: var(--brand-text-primary);
+    display: none;
+    font-family: var(--tf-copy-body);
+    font-weight: var(--tw-copy-body);
+  }
+  .screen[data-tab="view"][data-mp].mp-active { display: block; }
+  .screen[data-tab="view"][data-mp] .view-heading-primary { font-family: var(--tf-heading-primary); font-weight: var(--tw-heading-primary); font-style: var(--ts-heading-primary); }
+  .screen[data-tab="view"][data-mp] .view-heading-secondary { font-family: var(--tf-heading-secondary); font-weight: var(--tw-heading-secondary); font-style: var(--ts-heading-secondary); }
+  .screen[data-tab="view"][data-mp] .mono { font-family: var(--tf-copy-caption); font-weight: var(--tw-copy-caption); font-style: var(--ts-copy-caption); }
+  .mp-col { max-width: none; margin: 0; padding: 0 64px; box-sizing: border-box; }
+  .mp-page { display: flex; flex-direction: column; }
+  /* ---- Homepage: centered wordmark on a dark hero — flat by default, or
+     the brand's own uploaded header image (Template Settings → Header
+     Image) with a dark scrim so the wordmark stays legible over any
+     photo. Taller than a title bar on purpose — this is a banner, not a
+     compact strip — then one plain-weight intro line, then the module
+     grid. ---- */
+  .mp-landing-hero {
+    width: 100%; min-height: 440px; margin: 0;
+    background: #141414; background-size: cover; background-position: center;
+    display: flex; align-items: center; justify-content: center;
+    box-sizing: border-box; flex: none; position: relative; overflow: hidden;
+  }
+  .mp-landing-hero.has-image::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,.4), rgba(0,0,0,.55));
+  }
+  .mp-landing-hero .mp-wordmark {
+    font-family: var(--tf-heading-primary); font-weight: var(--tw-heading-primary); font-style: var(--ts-heading-primary);
+    font-size: clamp(36px, 7vw, 72px); letter-spacing: -0.02em; color: #fff;
+    position: relative; z-index: 1;
+  }
+  .mp-landing-intro {
+    font-size: clamp(18px, 2.2vw, 22px); line-height: 1.5;
+    max-width: 640px; color: var(--brand-text-primary); padding: 56px 0 40px; margin: 0;
+  }
+  .mp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--mp-gap); padding-bottom: 96px; }
+  @media (max-width: 900px) { .mp-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .mp-grid { grid-template-columns: 1fr; } }
+  /* Flat color fill per tile (set inline per-card by cycling the brand's
+     own actual color swatches — see moduleTileColor() — never a
+     template-fixed hue) instead of Foundry's uniform neutral bordered
+     card. No border, no shadow — matches the reference's flat tiles. */
+  .mp-card {
+    aspect-ratio: 4 / 3; border-radius: var(--mp-radius); border: none;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 20px; box-sizing: border-box; cursor: pointer;
+    transition: transform .15s ease;
+  }
+  .mp-card:hover { transform: translateY(-3px); }
+  .mp-card-num { font-family: var(--tf-copy-caption, monospace); font-size: 11px; letter-spacing: .1em; align-self: flex-end; opacity: .65; }
+  .mp-card-label { font-family: var(--tf-heading-tertiary); font-weight: var(--tw-heading-tertiary); font-style: var(--ts-heading-tertiary); font-size: 19px; letter-spacing: -0.01em; }
+  /* ---- Module pages ---- */
+  .mp-back-link {
+    display: inline-flex; align-items: center; gap: 8px; padding: 24px 0 40px;
+    font-family: var(--tf-copy-caption, monospace); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--brand-text-muted); cursor: pointer; width: fit-content; position: relative; z-index: 1;
+  }
+  .mp-back-link:hover { color: var(--brand-text-primary); }
+  .mp-module-hero {
+    width: 100%; aspect-ratio: 1.9 / 1; min-height: 400px; max-height: 640px;
+    margin: 0; background: #141414; background-size: cover; background-position: center;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 48px 64px; box-sizing: border-box; flex: none; position: relative; overflow: hidden;
+  }
+  .mp-module-hero.has-image::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.65));
+  }
+  .mp-module-hero .mp-title {
+    font-family: var(--tf-heading-primary); font-weight: var(--tw-heading-primary); font-style: var(--ts-heading-primary);
+    font-size: clamp(44px, 8vw, 120px); line-height: 1; letter-spacing: -0.02em;
+    color: #fff; margin: 0; position: relative; z-index: 1;
+  }
+  .mp-intro {
+    font-size: clamp(22px, 2.6vw, 30px); line-height: 1.35;
+    max-width: 720px; color: var(--brand-text-primary); padding: 64px 0 0; margin: 0;
+  }
+  /* The row is ONLY ever a hairline + a small label + a one-line
+     description — the fix for the "3-column spec-sheet" bug: no value
+     ever lives inside this row. Whatever the row introduces always
+     renders in a sibling block placed after it. */
+  .mp-row {
+    display: flex; gap: 40px; flex-wrap: wrap; align-items: baseline;
+    padding-top: 40px; border-top: 1px solid var(--brand-border-subtle);
+    margin-top: var(--mp-section-space);
+  }
+  .mp-row-label {
+    font-family: var(--tf-copy-caption, monospace); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--brand-text-primary); flex: 0 0 200px; margin: 0;
+  }
+  .mp-row-desc { flex: 1; min-width: 240px; margin: 0; font-size: 13px; line-height: 1.6; color: var(--brand-text-muted); }
+  /* The breakout: a big statement spanning full width below the row,
+     unconstrained by the row's two-column layout. */
+  .mp-statement {
+    font-family: var(--tf-heading-secondary); font-weight: var(--tw-heading-secondary); font-style: var(--ts-heading-secondary);
+    font-size: clamp(26px, 3.6vw, 42px); line-height: 1.2;
+    color: var(--brand-text-primary); padding: 28px 0 0; max-width: 900px;
+  }
+  .mp-statement-sub { font-size: 15px; color: var(--brand-text-muted); padding: 10px 0 0; max-width: 640px; line-height: 1.6; }
+  /* Grouped short values (Core Values, traits, style tags) — a plain
+     numbered list, never a pill/badge. */
+  .mp-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px 32px; padding: 28px 0 0; }
+  .mp-list-item { display: flex; align-items: baseline; gap: 12px; }
+  .mp-list-num { font-family: var(--tf-copy-caption, monospace); font-size: 12px; color: var(--brand-text-muted); flex: none; }
+  .mp-list-label { font-family: var(--tf-heading-tertiary); font-weight: var(--tw-heading-tertiary); font-style: var(--ts-heading-tertiary); font-size: 16px; color: var(--brand-text-primary); }
+  /* Paired examples (Do/Don't, On/Off-brand) — flat text in two columns
+     split by one hairline, never two filled card boxes. */
+  .mp-pair { display: flex; gap: 48px; flex-wrap: wrap; padding: 28px 0 0; }
+  .mp-pair-col { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 14px; }
+  .mp-pair-col + .mp-pair-col { border-left: 1px solid var(--brand-border-subtle); padding-left: 48px; }
+  .mp-pair-label { font-family: var(--tf-copy-caption, monospace); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  .mp-pair-item { font-size: 14px; line-height: 1.6; color: var(--brand-text-primary); margin: 0; }
+  /* Neutral containers used only where the content is genuinely visual
+     (logo lockups, type samples, token swatches, UI components) — flat,
+     no border, not a decorative wrapper around plain text. */
+  .mp-panel { background: var(--brand-surface-card); border-radius: var(--mp-radius); padding: 28px; box-sizing: border-box; }
+  .mp-panel-dark { background: #141414; color: #fff; border-radius: var(--mp-radius); padding: 28px; box-sizing: border-box; }
+  .mp-showcase-row { display: flex; gap: var(--mp-gap); flex-wrap: wrap; padding: 28px 0 0; }
+  .mp-showcase-row .mp-panel, .mp-showcase-row .mp-panel-dark { flex: 1; min-width: 260px; aspect-ratio: 16/10; display: flex; align-items: center; justify-content: center; background-size: contain; background-repeat: no-repeat; background-position: center; }
+  .mp-tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--mp-gap); width: 100%; padding: 28px 0 0; }
+  .mp-tile { aspect-ratio: 4/3; border-radius: var(--mp-radius); display: flex; flex-direction: column; justify-content: flex-end; padding: 18px; box-sizing: border-box; font-size: 12px; color: #fff; background-size: cover; background-position: center; }
+  .mp-color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--mp-gap); width: 100%; padding: 28px 0 0; }
+  .mp-color-tile { aspect-ratio: 4/3; border-radius: var(--mp-radius); display: flex; flex-direction: column; justify-content: flex-end; padding: 20px; box-sizing: border-box; }
+  .mp-color-tile .mp-color-name { font-size: 17px; font-weight: 600; }
+  .mp-color-tile .mp-color-hex { font-family: var(--tf-copy-caption, monospace); font-size: 11px; opacity: .75; margin-top: 2px; }
+  .mp-scale-row { display: flex; flex-direction: column; gap: 10px; padding-top: 24px; }
+  .mp-scale-row-label { font-size: 13px; font-weight: 600; color: var(--brand-text-primary); }
+  .mp-scale-row-swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+  .mp-scale-swatch { flex: 1; min-width: 90px; height: 68px; border-radius: 8px; position: relative; }
+  .mp-scale-swatch span { position: absolute; left: 8px; bottom: 6px; font-family: var(--tf-copy-caption, monospace); font-size: 10px; }
+  .mp-proportion-bar { display: flex; height: 56px; border-radius: var(--mp-radius); overflow: hidden; width: 100%; margin-top: 28px; }
+  .mp-proportion-bar span { display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--tf-copy-caption, monospace); }
+  .mp-status-strip { display: flex; gap: 2px; border-radius: var(--mp-radius); overflow: hidden; width: 100%; margin-top: 28px; }
+  .mp-status-strip > div { flex: 1; min-height: 64px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--tf-copy-caption, monospace); }
+  .mp-cta {
+    flex: none; background: var(--brand-chrome-bg); color: var(--brand-chrome-text);
+    border-radius: 999px; padding: 12px 22px; font-size: 12px; font-weight: 500;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; border: none;
+  }
+  .mp-downloads { display: flex; gap: 12px; flex-wrap: wrap; padding-top: 28px; }
+  /* The "next module" card — inset and rounded, NOT full-bleed like the
+     hero. Sits on the page background, one per module page, just above
+     the footer. This is the piece Foundry never had at all. */
+  .mp-next {
+    margin: 80px 0 0; border-radius: calc(var(--mp-radius) + 6px); background: #141414; color: #fff;
+    padding: 40px 48px; display: none; align-items: center; justify-content: space-between;
+    cursor: pointer; gap: 24px; flex-wrap: wrap;
+  }
+  .mp-next-label { font-family: var(--tf-copy-caption, monospace); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; opacity: .6; margin-bottom: 6px; display: block; }
+  .mp-next-title { font-family: var(--tf-heading-tertiary); font-weight: var(--tw-heading-tertiary); font-style: var(--ts-heading-tertiary); font-size: 32px; }
+  .mp-next-arrow { font-size: 28px; flex: none; }
+  /* Full-bleed dark footer — appears on EVERY page (landing and every
+     module), not just the homepage. Extended to match the reference's
+     fuller footer: an intro line, a team name, a labeled point-of-contact
+     block, and a "Back to top" link — not just one contact line. */
+  .mp-footer {
+    width: 100%; margin: 64px 0 0;
+    background: var(--brand-chrome-bg); color: var(--brand-chrome-text);
+    padding: 64px 64px 56px; box-sizing: border-box;
+  }
+  .mp-footer-inner { display: flex; flex-direction: column; gap: 28px; max-width: 640px; }
+  .mp-footer-label { font-family: var(--tf-copy-caption, monospace); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; opacity: .6; }
+  .mp-footer-intro { font-size: 14px; line-height: 1.6; margin: 0; opacity: .85; }
+  .mp-footer-team { font-family: var(--tf-heading-tertiary); font-weight: var(--tw-heading-tertiary); font-style: var(--ts-heading-tertiary); font-size: 22px; }
+  .mp-footer-contact-block { display: flex; flex-direction: column; gap: 6px; }
+  .mp-footer-name { font-size: 16px; }
+  .mp-footer-email { color: inherit; font-size: 14px; text-decoration: underline; text-underline-offset: 2px; }
+  .mp-footer-backtotop { font-size: 13px; opacity: .7; cursor: pointer; width: fit-content; }
+  .mp-footer-backtotop:hover { opacity: 1; }

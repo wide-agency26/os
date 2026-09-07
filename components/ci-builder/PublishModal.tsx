@@ -42,8 +42,12 @@ export function PublishModal({
   );
 
   const origin =
-    typeof window !== "undefined" ? window.location.origin : "https://os-bice-nine.vercel.app";
+    typeof window !== "undefined" ? window.location.origin : "https://os.wide-communication.com";
 
+  const publicGuidelineUrl = useMemo(
+    () => `${origin}/g/${publishedSlug || slug.trim()}`,
+    [origin, publishedSlug, slug]
+  );
   const clientGuidelineUrl = useMemo(
     () => `${origin}/app/client-guidelines/${publishedSlug || slug.trim()}`,
     [origin, publishedSlug, slug]
@@ -136,8 +140,8 @@ export function PublishModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white text-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+      <div className="ci-chrome bg-white text-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-md overflow-y-auto max-h-[100dvh] sm:max-h-[90vh]">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <h2 className="text-xl font-bold text-gray-900">Publish Guideline</h2>
           <button
@@ -181,7 +185,38 @@ export function PublishModal({
 
               <div className="space-y-2">
                 <label className="block text-xs font-semibold text-gray-700">
-                  Client guideline link
+                  Public link (full width)
+                </label>
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={publicGuidelineUrl}
+                    className="flex-1 bg-transparent text-xs text-gray-900 outline-none min-w-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(publicGuidelineUrl)}
+                    className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded"
+                    title="Copy link"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                  <a
+                    href={publicGuidelineUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                    title="Open"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-gray-700">
+                  Client portal link
                 </label>
                 <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex items-center gap-2">
                   <input
@@ -246,7 +281,7 @@ export function PublishModal({
                 <label className="block text-sm font-medium text-gray-700 mb-2">URL slug</label>
                 <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
                   <span className="text-gray-400 text-[11px] py-3 select-none shrink-0">
-                    …/client-guidelines/
+                    …/g/
                   </span>
                   <input
                     type="text"

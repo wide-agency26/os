@@ -1,5 +1,14 @@
 /** Auto-derived from `lib/sow/CI Builder Modules - for cursor.csv` — 9 modules / 52 sub-modules. */
 
+const DEFAULT_DOWNLOADS_SEED = {
+  showOnSubmodule: false,
+  showOnModule: false,
+  offerPng: true,
+  offerOriginal: false,
+  driveUrl: "",
+  driveLabel: "Working files",
+};
+
 export type CiInputType =
   | "Form / Text Input"
   | "Figma Frame Import"
@@ -24,15 +33,20 @@ export type CiRendererKind =
   | "image_dual"
   | "image_slot"
   | "layout_grid"
+  | "link_list"
   | "list"
+  | "logo_mark_list"
   | "prompt_cards"
   | "sliders"
   | "spacing"
   | "text"
+  | "token_scale_list"
   | "type_scale"
   | "type_spec"
   | "type_tokens"
   | "ui_button"
+  | "ui_buttons"
+  | "ui_form_controls"
   | "ui_states"
   | "wcag"
 ;
@@ -47,6 +61,7 @@ export type CiSubModuleId =
   | "tone_matrix"
   | "copywriting_examples"
   | "ai_system_prompt"
+  | "logo_marks"
   | "primary_logo"
   | "secondary_logo"
   | "tertiary_logo"
@@ -56,6 +71,7 @@ export type CiSubModuleId =
   | "favicon"
   | "clear_space"
   | "misuse_examples"
+  | "logo_download_links"
   | "color_primary"
   | "color_secondary"
   | "color_accent"
@@ -74,8 +90,10 @@ export type CiSubModuleId =
   | "typography_scale"
   | "line_heights"
   | "letter_spacing"
+  | "type_download_links"
   | "layout_grids"
   | "spacing_system"
+  | "radius_system"
   | "ui_primary"
   | "ui_secondary"
   | "ui_tertiary"
@@ -83,13 +101,18 @@ export type CiSubModuleId =
   | "form_controls"
   | "status_badges"
   | "layout_containers"
+  | "ui_empty_error"
   | "photography_style"
+  | "brand_photography"
+  | "photography_dos_donts"
+  | "imagery_download_links"
   | "iconography"
   | "ai_image_prompts"
   | "social_4x5"
   | "social_9x16"
   | "email_signatures"
   | "presentation_deck"
+  | "touchpoints_download_links"
 ;
 
 export type CiModuleId =
@@ -286,6 +309,24 @@ export const CI_SUBMODULES: CiSubModuleDef[] = [
     defaultHeadline: "AI System Prompt",
     prefixes: ["AIPrompt", "SystemPrompt"],
     synonyms: ["system prompt", "llm"],
+  },
+  {
+    sectionType: "logo_marks",
+    moduleId: "logo_system",
+    moduleIndex: 3,
+    moduleLabel: "Logo System",
+    subModuleLabel: "Logo Marks",
+    inputType: "Figma Frame Import",
+    tier: "Essential",
+    adminEdit: "Flat drag-reorderable list of marks with independent light/dark image slots and a single MAIN flag.",
+    elementsView: "Download links for each mark asset + MAIN lockup preview.",
+    presentationView: "MAIN light+dark stacked; remaining marks in variations grid labeled by name.",
+    promptTemplate: "Copies LLM instruction: \"Primary Logo (MAIN): [Light URL] / [Dark URL]. Variations: [Mark List].\"",
+    renderer: "logo_mark_list",
+    eyebrow: "03.01 · Logo Marks",
+    defaultHeadline: "Logo Marks",
+    prefixes: ["Logo", "PrimaryLogo", "LogoMarks"],
+    synonyms: ["logo marks", "logos", "primary logo", "logo"],
   },
   {
     sectionType: "primary_logo",
@@ -799,33 +840,51 @@ export const CI_SUBMODULES: CiSubModuleDef[] = [
     subModuleLabel: "Spacing System",
     inputType: "Figma CSS / Variables API",
     tier: "CI Builder v2",
-    adminEdit: "Spacing Scale Form (xs, sm, md, lg, xl, 2xl in px).",
+    adminEdit: "Spacing Scale token list with live preview swatches (blank-add).",
     elementsView: "Exportable spacing.json token file or Tailwind spacing object.",
     presentationView: "Visual spacing ruler overlay illustrating padding and margin steps.",
     promptTemplate: "Copies LLM instruction: \"Spacing Tokens: Scale: { xs: [Px], sm: [Px], md: [Px], lg: [Px], xl: [Px] }. Enforce 8px grid.\"",
-    renderer: "spacing",
+    renderer: "token_scale_list",
     eyebrow: "06.02 · Spacing System",
     defaultHeadline: "Spacing System",
     prefixes: ["Spacing"],
     synonyms: ["spacing", "padding", "margin"],
   },
   {
+    sectionType: "radius_system",
+    moduleId: "design_tokens",
+    moduleIndex: 6,
+    moduleLabel: "Design Tokens",
+    subModuleLabel: "Radius Scale",
+    inputType: "Figma CSS / Variables API",
+    tier: "CI Builder v2",
+    adminEdit: "Radius token list with live preview swatches (blank-add).",
+    elementsView: "Copyable radius token map.",
+    presentationView: "Corner-radius specimen tiles.",
+    promptTemplate: "Copies LLM instruction: \"Radius Tokens: { xs: [Px], sm: [Px], md: [Px], lg: [Px], xl: [Px], round: 999 }.\"",
+    renderer: "token_scale_list",
+    eyebrow: "06.03 · Radius Scale",
+    defaultHeadline: "Radius Scale",
+    prefixes: ["Radius", "Corner"],
+    synonyms: ["radius", "border radius", "corners"],
+  },
+  {
     sectionType: "ui_primary",
     moduleId: "ui_elements",
     moduleIndex: 7,
     moduleLabel: "UI Elements",
-    subModuleLabel: "Primary",
+    subModuleLabel: "Buttons",
     inputType: "Figma Frame Import",
     tier: "Essential",
-    adminEdit: "<EditableImage> frame slot + Border Radius, Padding, and Bg inputs.",
-    elementsView: "Copyable Tailwind button code + raw SVG frame download.",
-    presentationView: "Live interactive button canvas with light/dark backdrop toggle.",
-    promptTemplate: "Copies LLM instruction: \"Primary Button Specs: Bg: [Hex], Text: [Hex], Border-Radius: [Px], Padding: [Padding].\"",
-    renderer: "ui_button",
-    eyebrow: "07.01 · Primary",
-    defaultHeadline: "Primary",
+    adminEdit: "Persisted button variants (primary/secondary/ghost/destructive) with token or image slots.",
+    elementsView: "Copyable button specs + asset downloads.",
+    presentationView: "Live button specimen row.",
+    promptTemplate: "Copies LLM instruction: \"Button Specs: [Variant List].\"",
+    renderer: "ui_buttons",
+    eyebrow: "07.01 · Buttons",
+    defaultHeadline: "Buttons",
     prefixes: ["Buttons", "UI", "PrimaryButton"],
-    synonyms: ["button", "primary button"],
+    synonyms: ["button", "primary button", "buttons"],
   },
   {
     sectionType: "ui_secondary",
@@ -893,7 +952,7 @@ export const CI_SUBMODULES: CiSubModuleDef[] = [
     elementsView: "Form element CSS library code export.",
     presentationView: "Live interactive form sandbox (Input, Checkbox, Toggle switches).",
     promptTemplate: "Copies LLM instruction: \"Form Control Specs: Input Border: [Hex], Focus Border: [Accent Hex], Border-Radius: [Px].\"",
-    renderer: "image_slot",
+    renderer: "ui_form_controls",
     eyebrow: "07.05 · Form Controls",
     defaultHeadline: "Form Controls",
     prefixes: ["Forms", "Inputs"],
@@ -904,18 +963,36 @@ export const CI_SUBMODULES: CiSubModuleDef[] = [
     moduleId: "ui_elements",
     moduleIndex: 7,
     moduleLabel: "UI Elements",
-    subModuleLabel: "Feedback & Status Badges",
+    subModuleLabel: "Badges & Containers",
     inputType: "Figma Frame Import",
     tier: "CI Builder v2",
-    adminEdit: "Image slot picker for Status Badges (Success, Warning, Info).",
-    elementsView: "Copyable HTML/Tailwind badge component snippets.",
-    presentationView: "Interactive status badge showcase grid.",
-    promptTemplate: "Copies LLM instruction: \"Badge Tokens: Success: Bg [Hex]/Text [Hex]; Warning: Bg [Hex]/Text [Hex].\"",
-    renderer: "image_slot",
-    eyebrow: "07.06 · Feedback & Status Badges",
-    defaultHeadline: "Feedback & Status Badges",
-    prefixes: ["Badges", "Feedback"],
-    synonyms: ["badge", "status"],
+    adminEdit: "Badge styles + container specs (persisted).",
+    elementsView: "Copyable badge/container tokens.",
+    presentationView: "Badge and container specimen grid.",
+    promptTemplate: "Copies LLM instruction: \"Badge & Container Specs: [List].\"",
+    renderer: "container_spec",
+    eyebrow: "07.06 · Badges & Containers",
+    defaultHeadline: "Badges & Containers",
+    prefixes: ["Badges", "Containers", "Status", "Feedback"],
+    synonyms: ["badge", "chip", "container", "status"],
+  },
+  {
+    sectionType: "ui_empty_error",
+    moduleId: "ui_elements",
+    moduleIndex: 7,
+    moduleLabel: "UI Elements",
+    subModuleLabel: "Empty & Error States",
+    inputType: "Figma Frame Import",
+    tier: "CI Builder v2",
+    adminEdit: "Editable empty/error messages with optional illustration assets.",
+    elementsView: "Copyable state copy + assets.",
+    presentationView: "Empty and error state specimens (all client templates).",
+    promptTemplate: "Copies LLM instruction: \"Empty/Error States: [List].\"",
+    renderer: "ui_states",
+    eyebrow: "07.07 · Empty & Error States",
+    defaultHeadline: "Empty & Error States",
+    prefixes: ["Empty", "Error", "States"],
+    synonyms: ["empty state", "error state", "blank"],
   },
   {
     sectionType: "layout_containers",
@@ -934,6 +1011,96 @@ export const CI_SUBMODULES: CiSubModuleDef[] = [
     defaultHeadline: "Layout Containers (Cards, Modals)",
     prefixes: ["Cards", "Modals", "Containers"],
     synonyms: ["card", "modal", "glass"],
+  },
+  {
+    sectionType: "brand_photography",
+    moduleId: "imagery",
+    moduleIndex: 8,
+    moduleLabel: "Imagery",
+    subModuleLabel: "Brand Photography",
+    inputType: "Figma Frame Import",
+    tier: "Optional",
+    adminEdit: "Blank-add photo list with captions (never clone-last).",
+    elementsView: "Asset downloads for photography set.",
+    presentationView: "Photography gallery on Imagery module page (all templates).",
+    promptTemplate: "Copies LLM instruction: \"Brand Photography references: [Captions].\"",
+    renderer: "image_dual",
+    eyebrow: "08.00 · Brand Photography",
+    defaultHeadline: "Brand Photography",
+    prefixes: ["BrandPhoto", "PhotoBreak"],
+    synonyms: ["brand photography", "photo break"],
+  },
+  {
+    sectionType: "logo_download_links",
+    moduleId: "logo_system",
+    moduleIndex: 3,
+    moduleLabel: "Logo System",
+    subModuleLabel: "Download Links",
+    inputType: "Form / Text Input",
+    tier: "Optional",
+    adminEdit: "Label+URL link list (no implied ZIP packaging).",
+    elementsView: "Pill links.",
+    presentationView: "Download link pills + optional hero first link.",
+    promptTemplate: "Copies LLM instruction: \"Logo download links: [List].\"",
+    renderer: "link_list",
+    eyebrow: "03.99 · Download Links",
+    defaultHeadline: "Download Links",
+    prefixes: ["LogoDownloads"],
+    synonyms: ["logo downloads", "logo links"],
+  },
+  {
+    sectionType: "type_download_links",
+    moduleId: "typography_properties",
+    moduleIndex: 5,
+    moduleLabel: "Typography Properties",
+    subModuleLabel: "Download Links (Fonts)",
+    inputType: "Form / Text Input",
+    tier: "Optional",
+    adminEdit: "Label+URL link list for font files.",
+    elementsView: "Pill links.",
+    presentationView: "Font download pills.",
+    promptTemplate: "Copies LLM instruction: \"Font download links: [List].\"",
+    renderer: "link_list",
+    eyebrow: "05.99 · Download Links",
+    defaultHeadline: "Download Links (Fonts)",
+    prefixes: ["FontDownloads"],
+    synonyms: ["font downloads"],
+  },
+  {
+    sectionType: "imagery_download_links",
+    moduleId: "imagery",
+    moduleIndex: 8,
+    moduleLabel: "Imagery",
+    subModuleLabel: "Download Links",
+    inputType: "Form / Text Input",
+    tier: "Optional",
+    adminEdit: "Label+URL photography guide links.",
+    elementsView: "Pill links.",
+    presentationView: "Photography download pills.",
+    promptTemplate: "Copies LLM instruction: \"Imagery download links: [List].\"",
+    renderer: "link_list",
+    eyebrow: "08.99 · Download Links",
+    defaultHeadline: "Download Links",
+    prefixes: ["ImageryDownloads"],
+    synonyms: ["photography downloads"],
+  },
+  {
+    sectionType: "touchpoints_download_links",
+    moduleId: "touchpoints",
+    moduleIndex: 9,
+    moduleLabel: "Touchpoints",
+    subModuleLabel: "Download Links",
+    inputType: "Form / Text Input",
+    tier: "Optional",
+    adminEdit: "Label+URL template links.",
+    elementsView: "Pill links.",
+    presentationView: "Template download pills.",
+    promptTemplate: "Copies LLM instruction: \"Touchpoint download links: [List].\"",
+    renderer: "link_list",
+    eyebrow: "09.99 · Download Links",
+    defaultHeadline: "Download Links",
+    prefixes: ["TouchpointDownloads"],
+    synonyms: ["template downloads"],
   },
   {
     sectionType: "photography_style",
@@ -1143,11 +1310,17 @@ export function defaultDataForSubModule(sectionType: string): Record<string, unk
     case "code":
       return { prompt: "" };
     case "image_slot":
-      return { assetId: "", label: "", stage: "light", caption: "", aspectRatio: "" };
+      return { assetId: "", label: "", stage: "light", caption: "", aspectRatio: "", downloads: { ...DEFAULT_DOWNLOADS_SEED } };
     case "clearspace":
-      return { multiplier: 1.5, assetId: "", notes: "" };
+      return { multiplier: 1.5, assetId: "", notes: "", downloads: { ...DEFAULT_DOWNLOADS_SEED } };
     case "image_dual":
-      return { items: [] };
+      return { items: [], columns: 3, downloads: { ...DEFAULT_DOWNLOADS_SEED } };
+    case "ui_button":
+      return { assetId: "", label: "Button", bg: "", text: "", border: "", radius: "", padding: "", downloads: { ...DEFAULT_DOWNLOADS_SEED } };
+    case "container_spec":
+      return { bg: "", blur: "", border: "", radius: "", shadow: "", assetId: "", downloads: { ...DEFAULT_DOWNLOADS_SEED } };
+    case "icon_set":
+      return { icons: [], strokeWidth: "", style: "linear", color: "", downloads: { ...DEFAULT_DOWNLOADS_SEED } };
     case "color_group":
       return { swatches: [] };
     case "color_format":
@@ -1157,9 +1330,9 @@ export function defaultDataForSubModule(sectionType: string): Record<string, unk
     case "wcag":
       return { pairs: [] };
     case "type_spec":
-      return { fontFamily: "", fontWeight: "", fontSize: "", lineHeight: "", letterSpacing: "", sampleText: "The quick brown fox" };
+      return { fontFamily: "", fontWeight: "", fontStyle: "", fontSize: "", lineHeight: "", letterSpacing: "", sampleText: "The quick brown fox", fontFiles: [] };
     case "font_stack":
-      return { stack: "system-ui, -apple-system, sans-serif" };
+      return { stack: "system-ui, -apple-system, sans-serif", fontFiles: [] };
     case "type_scale":
       return { scale: [] };
     case "type_tokens":
@@ -1168,22 +1341,62 @@ export function defaultDataForSubModule(sectionType: string): Record<string, unk
       return { columns: 12, gutters: 24, margins: 32, maxWidth: 1440 };
     case "spacing":
       return { scale: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, "2xl": 48 } };
-    case "ui_button":
-      return { assetId: "", label: "Button", bg: "", text: "", border: "", radius: "", padding: "" };
     case "ui_states":
       return { states: [] };
-    case "container_spec":
-      return { bg: "", blur: "", border: "", radius: "", shadow: "", assetId: "" };
-    case "icon_set":
-      return { icons: [], strokeWidth: "", style: "linear", color: "" };
     case "prompt_cards":
       return { prompts: [] };
     case "email_sig":
-      return { html: "", assetId: "" };
+      return { html: "", assetId: "", downloads: { ...DEFAULT_DOWNLOADS_SEED } };
     case "deck":
-      return { slides: [] };
+      return { slides: [], downloads: { ...DEFAULT_DOWNLOADS_SEED } };
+    case "logo_mark_list":
+      return { marks: [] };
+    case "link_list":
+      return { links: [] };
+    case "token_scale_list":
+      return {
+        tokens: [
+          { id: "xs", label: "xs", value: "4px" },
+          { id: "sm", label: "sm", value: "8px" },
+          { id: "md", label: "md", value: "16px" },
+          { id: "lg", label: "lg", value: "24px" },
+          { id: "xl", label: "xl", value: "32px" },
+        ],
+      };
+    case "ui_buttons":
+      return {
+        variants: [
+          { id: "primary", label: "Primary", bg: "", text: "", border: "", radius: "", padding: "", assetId: "" },
+          { id: "secondary", label: "Secondary", bg: "", text: "", border: "", radius: "", padding: "", assetId: "" },
+          { id: "ghost", label: "Ghost", bg: "", text: "", border: "", radius: "", padding: "", assetId: "" },
+          { id: "destructive", label: "Destructive", bg: "", text: "", border: "", radius: "", padding: "", assetId: "" },
+        ],
+      };
+    case "ui_form_controls":
+      return {
+        controls: [
+          { id: "input", label: "Input", assetId: "", notes: "" },
+          { id: "select", label: "Select", assetId: "", notes: "" },
+          { id: "checkbox", label: "Checkbox", assetId: "", notes: "" },
+        ],
+      };
     default:
       return {};
   }
 }
 
+/** Side-image layout only on text-first editorial sub-modules. */
+const SIDE_IMAGE_SECTIONS = new Set<CiSubModuleId>([
+  "mission",
+  "vision",
+  "claim_pitch",
+  "brand_personality",
+]);
+
+export function supportsSideImageLayout(
+  sectionType: string | null | undefined
+): boolean {
+  const def = getSubModule(sectionType);
+  if (!def) return false;
+  return SIDE_IMAGE_SECTIONS.has(def.sectionType);
+}
