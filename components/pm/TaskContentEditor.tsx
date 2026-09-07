@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Block, PartialBlock } from "@blocknote/core";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
+import "./blocknote.css";
 
 export type TaskContentEditorProps = {
   taskId: string;
@@ -20,7 +21,7 @@ export type TaskContentEditorProps = {
 /**
  * Notion-style BlockNote editor for a single PM task's body.
  * Uncontrolled: never pass blocks as a controlled `value` after mount.
- * CSS is loaded once via app/globals.css — do not re-import theme sheets here.
+ * CSS loads with this module — not globally — so other OS pages stay light.
  */
 export function TaskContentEditor({
   taskId,

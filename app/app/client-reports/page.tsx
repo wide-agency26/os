@@ -4,22 +4,28 @@ import { Suspense, useCallback, useEffect, useMemo, useState, type ElementType }
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace } from "@/components/frappe-ui/Workspace";
+import { ClientNavGuard } from "@/components/client/ClientNavGuard";
 import { ClientAccessFlowGate } from "@/components/client/ClientAccessFlowGate";
+import { DataFreshnessBar } from "@/components/reports/DataFreshnessBar";
 import {
   GeneralReportView,
   GENERAL_CHANNEL_ICONS,
 } from "@/components/reports/GeneralReportView";
-import { AdsReportShell } from "@/components/reports/AdsReportShell";
-import { SocialReportShell } from "@/components/reports/SocialReportShell";
-import { WebsiteReportDashboard } from "@/components/reports/WebsiteReportDashboard";
-import { SeoReportView } from "@/components/reports/SeoReportView";
+import {
+  AdsReportShell,
+  SeoReportView,
+  SocialReportShell,
+  WebsiteReportDashboard,
+} from "@/components/reports/lazy-dashboards";
 import {
   ClientAskAiDrawer,
   type AskAiMessage,
 } from "@/components/reports/ClientAskAiDrawer";
 import { ContactAgencyModal } from "@/components/reports/ContactAgencyModal";
+import { DownloadPdfButton } from "@/components/pdf/DownloadPdfButton";
 import { isFounder } from "@/lib/rbac";
-import { isWebsiteDataset } from "@/lib/reports/ga4-website";
+import { getViewAsCompany } from "@/app/actions/view-as-client";
+import { isWebsiteDataset, pickPrimaryWebsiteDataset } from "@/lib/reports/ga4-website";
 import { isMetaAdsDataset } from "@/lib/reports/meta-ads";
 import { isGoogleAdsDataset } from "@/lib/reports/google-ads";
 import {
@@ -32,9 +38,9 @@ import {
   hydrateLoadedDatasets,
   type DatasetMeta,
 } from "@/lib/reports/load-datasets";
+import type { FreshnessConnection, FreshnessStream } from "@/lib/reports/freshness";
 import type { ColumnSchema } from "@/lib/data-hub/column-detector";
 import {
-  Building2,
   Download,
   FileSpreadsheet,
   Globe2,
@@ -44,7 +50,10 @@ import {
   MessageSquare,
   Search,
   Share2,
+  Copy,
+  Check,
 } from "lucide-react";
+import { getClientReportShareUrl } from "@/app/actions/report-share";
 
 const CATEGORIES: {
   id: ReportCategory;
@@ -94,11 +103,23 @@ function ClientReportsInner() {
   const [publishedCategories, setPublishedCategories] = useState<
     Record<string, boolean>
   >({});
+  const [freshnessStreams, setFreshnessStreams] = useState<FreshnessStream[]>([]);
+  const [freshnessConnections, setFreshnessConnections] = useState<FreshnessConnection[]>([]);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
 
   const project = useMemo(
     () => projects.find((p) => p.id === projectId),
     [projects, projectId]
   );
+
+  useEffect(() => {
+    if (!projectId) {
+      setShareUrl(null);
+      return;
+    }
+    void getClientReportShareUrl(projectId).then(setShareUrl);
+  }, [projectId]);
 
   useEffect(() => {
     void (async () => {
@@ -113,10 +134,11 @@ function ClientReportsInner() {
         .eq("id", user.id)
         .maybeSingle();
       const staff = profile ? isFounder(profile.role) : false;
+      const viewAs = staff ? await getViewAsCompany() : null;
 
       const { data: members } = await (supabase as any)
         .from("company_members")
-        .select("company_id, status, crm_customers(company, name)")
+        .select("company_id, status, crm_customers!company_id(company, name)")
         .eq("user_id", user.id)
         .eq("status", "active");
 
@@ -144,6 +166,7 @@ function ClientReportsInner() {
           )
         `
         )
+        .eq("client_visible", true)
         .order("title");
 
       if (!staff) {
@@ -153,10 +176,13 @@ function ClientReportsInner() {
           return;
         }
         query = query.in("client_id", companyIds);
+      } else if (viewAs?.id) {
+        query = query.eq("client_id", viewAs.id);
+        setOrganization(viewAs.name);
       }
 
       const { data: projData } = await query;
-      const mapped: ProjectOption[] = (projData || []).map((p: any) => {
+      let mapped: ProjectOption[] = (projData || []).map((p: any) => {
         const cust = Array.isArray(p.crm_customers) ? p.crm_customers[0] : p.crm_customers;
         return {
           id: p.id,
@@ -165,6 +191,28 @@ function ClientReportsInner() {
           companyId: p.client_id,
         };
       });
+
+      if (!staff && companyIds.length) {
+        const { data: memRows } = await (supabase as any)
+          .from("company_members")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("status", "active");
+        const memberIds = ((memRows || []) as { id: string }[]).map((m) => m.id);
+        if (memberIds.length) {
+          const { data: grants } = await (supabase as any)
+            .from("project_members")
+            .select("project_id")
+            .in("company_member_id", memberIds)
+            .eq("status", "active");
+          const granted = new Set(
+            ((grants || []) as { project_id: string }[]).map((g) => g.project_id)
+          );
+          if (granted.size > 0) {
+            mapped = mapped.filter((p) => granted.has(p.id));
+          }
+        }
+      }
 
       setProjects(mapped);
       if (mapped[0]?.company) {
@@ -184,7 +232,9 @@ function ClientReportsInner() {
     async (pid: string) => {
       const { data } = await (supabase as any)
         .from("datasets")
-        .select("id, category, subcategory, columns, is_current")
+        .select(
+          "id, name, category, subcategory, columns, is_current, source_type, synced_at, created_at, external_account_label, row_count"
+        )
         .eq("project_id", pid);
 
       const list = ((data || []) as DatasetMeta[]).filter(
@@ -202,6 +252,26 @@ function ClientReportsInner() {
         }
       }
       setChannelPresence(presence);
+
+      setFreshnessStreams(
+        list.map((d) => ({
+          id: d.id,
+          name: d.name,
+          category: d.category,
+          subcategory: d.subcategory ?? null,
+          sourceType: d.source_type,
+          syncedAt: d.synced_at,
+          createdAt: d.created_at,
+          externalAccountLabel: d.external_account_label,
+          rowCount: d.row_count,
+        }))
+      );
+      const { data: conns } = await (supabase as any)
+        .from("project_data_connections")
+        .select("provider, status, last_error, last_synced_at, external_account_label")
+        .eq("project_id", pid)
+        .neq("status", "revoked");
+      setFreshnessConnections((conns || []) as FreshnessConnection[]);
 
       // RLS only returns published rows for clients
       const { data: pubs } = await (supabase as any)
@@ -234,7 +304,7 @@ function ClientReportsInner() {
         if (cat === "General") {
           const { data: allDs } = await (supabase as any)
             .from("datasets")
-            .select("id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id")
+            .select("id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id, source_type, synced_at, external_account_label")
             .eq("project_id", pid)
             .order("created_at", { ascending: false });
           const list = ((allDs || []) as DatasetMeta[]).filter(
@@ -248,7 +318,7 @@ function ClientReportsInner() {
         const cats = datasetCategoriesForReport(cat);
         const { data: ds } = await (supabase as any)
           .from("datasets")
-          .select("id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id")
+          .select("id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id, source_type, synced_at, external_account_label")
           .eq("project_id", pid)
           .in("category", cats)
           .order("created_at", { ascending: false });
@@ -273,12 +343,16 @@ function ClientReportsInner() {
         }
 
         if (list.length) {
-          setDatasets(list);
-          setSelectedDatasetId(list[0].id);
           const loaded = await hydrateLoadedDatasets(supabase, list);
           setLoadedDatasets(loaded);
-          setDatasetColumns(loaded[0].columns as ColumnSchema[]);
-          setDatasetRows(loaded[0].rows);
+          const primary =
+            cat === "Website"
+              ? pickPrimaryWebsiteDataset(loaded) || loaded[0]
+              : loaded[0];
+          setDatasets(list);
+          setSelectedDatasetId(primary.id);
+          setDatasetColumns(primary.columns as ColumnSchema[]);
+          setDatasetRows(primary.rows);
         }
       } catch (e) {
         console.error(e);
@@ -308,6 +382,9 @@ function ClientReportsInner() {
     name: selectedDataset?.name,
     createdAt: selectedDataset?.created_at,
     rowCount: selectedDataset?.row_count ?? datasetRows.length,
+    sourceType: selectedDataset?.source_type,
+    syncedAt: selectedDataset?.synced_at,
+    externalAccountLabel: selectedDataset?.external_account_label,
   };
 
   const reportContext = useMemo(() => {
@@ -427,13 +504,27 @@ function ClientReportsInner() {
       return <SocialReportShell datasets={loadedDatasets} />;
     }
     if (category === "Website") {
-      if (!hasData) return null;
-      if (isWebsiteDataset(datasetColumns, datasetRows) || datasetColumns.length > 0) {
+      const webDs = pickPrimaryWebsiteDataset(loadedDatasets);
+      const webRows = webDs?.rows ?? datasetRows;
+      const webCols = webDs?.columns ?? datasetColumns;
+      if (!webDs && !hasData) return null;
+      if (isWebsiteDataset(webCols, webRows) || webCols.length > 0) {
         return (
           <WebsiteReportDashboard
-            rows={datasetRows}
-            datasetName={selectedDataset?.name}
-            datasetMeta={datasetMeta}
+            rows={webRows}
+            datasetName={webDs?.name ?? selectedDataset?.name}
+            datasetMeta={
+              webDs
+                ? {
+                    name: webDs.name,
+                    createdAt: webDs.createdAt,
+                    rowCount: webDs.rowCount ?? webDs.rows.length,
+                    sourceType: webDs.sourceType,
+                    syncedAt: webDs.syncedAt,
+                    externalAccountLabel: webDs.externalAccountLabel,
+                  }
+                : datasetMeta
+            }
           />
         );
       }
@@ -464,31 +555,26 @@ function ClientReportsInner() {
     <Workspace wide>
       <div className="client-report-viewer space-y-4 pb-10">
         {/* Header */}
-        <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm print:shadow-none print:border-0">
+        <div className="bg-surface border border-border rounded-lg p-4 print:shadow-none print:border-0">
           <div className="flex flex-wrap items-end gap-3 justify-between">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 text-white flex items-center justify-center shrink-0">
-                <Building2 size={18} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                  Organization
+            <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+                  Reports
                 </p>
-                <h1 className="text-[17px] font-bold text-gray-900 truncate">
+                <h1 className="text-xl sm:text-2xl font-semibold text-text-primary tracking-tight truncate">
                   {organization}
                 </h1>
-              </div>
             </div>
 
             <div className="flex flex-wrap items-end gap-2">
               <div className="min-w-[220px]">
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-1">
                   Project
                 </label>
                 <select
                   value={projectId}
                   onChange={(e) => onProjectChange(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px] bg-white outline-none focus:ring-2 focus:ring-indigo-500 no-print"
+                  className="w-full border border-border rounded-lg px-3 py-2.5 min-h-11 text-[13px] bg-surface outline-none focus:ring-1 focus:ring-accent no-print"
                 >
                   {projects.length === 0 && (
                     <option value="">No projects available</option>
@@ -508,22 +594,47 @@ function ClientReportsInner() {
                 type="button"
                 onClick={() => setAskOpen(true)}
                 disabled={!projectId || !isCategoryPublished}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[13px] font-semibold hover:bg-indigo-100 disabled:opacity-50 no-print"
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 min-h-11 rounded-lg border border-border bg-surface text-text-primary text-[13px] font-semibold hover:bg-surface-raised disabled:opacity-50 no-print"
               >
                 <MessageSquare size={14} /> Ask AI
               </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
+              <DownloadPdfButton
+                body={{ kind: "report", projectId, category }}
                 disabled={!projectId || !isCategoryPublished}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-[13px] font-semibold hover:bg-black disabled:opacity-50 no-print"
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 min-h-11 rounded-lg bg-accent text-white text-[13px] font-semibold hover:bg-accent-hover disabled:opacity-50 no-print"
               >
                 <Download size={14} /> Download PDF
-              </button>
+              </DownloadPdfButton>
+              {shareUrl ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(shareUrl);
+                    setShareCopied(true);
+                    setTimeout(() => setShareCopied(false), 1600);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2.5 min-h-11 rounded-lg border border-border bg-surface text-text-primary text-[13px] font-semibold hover:bg-surface-raised no-print"
+                  title="Copy the password-gated public URL"
+                >
+                  {shareCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {shareCopied ? "Copied link" : "Copy public link"}
+                </button>
+              ) : null}
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-1.5 border-t border-gray-100 pt-3 no-print">
+          {projectId ? (
+            <div className="mt-4 no-print">
+              <DataFreshnessBar
+                streams={freshnessStreams}
+                connections={freshnessConnections}
+                projectId={projectId}
+                isStaff={false}
+              />
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap gap-1.5 border-t border-border pt-3 no-print">
             {CATEGORIES.map((c) => {
               const Icon = c.icon;
               const active = category === c.id;
@@ -535,12 +646,12 @@ function ClientReportsInner() {
                   disabled={!live}
                   title={live ? undefined : "Not published yet"}
                   onClick={() => live && setCategory(c.id)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-2.5 min-h-11 rounded-lg text-[12px] font-semibold transition-colors ${
                     !live
-                      ? "bg-gray-50 text-gray-400 border border-gray-100 cursor-not-allowed opacity-70"
+                      ? "bg-surface-raised text-text-muted border border-border cursor-not-allowed opacity-70"
                       : active
-                        ? "bg-indigo-600 text-white"
-                        : "bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+                        ? "bg-accent text-white"
+                        : "bg-surface-raised text-text-secondary hover:bg-surface-raised hover:text-text-primary border border-border"
                   }`}
                 >
                   <Icon size={13} />
@@ -562,43 +673,43 @@ function ClientReportsInner() {
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-20 text-gray-400">
+          <div className="flex justify-center py-20 text-text-muted">
             <Loader2 className="animate-spin" size={22} />
           </div>
         ) : !projectId ? (
-          <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center">
-            <FileSpreadsheet className="mx-auto text-gray-300 mb-3" size={28} />
-            <p className="text-[14px] font-semibold text-gray-800">No projects yet</p>
-            <p className="text-[13px] text-gray-500 mt-1 max-w-md mx-auto">
+          <div className="bg-surface border border-dashed border-border rounded-lg p-10 text-center">
+            <FileSpreadsheet className="mx-auto text-text-muted mb-3" size={28} />
+            <p className="text-[14px] font-semibold text-text-primary">No projects yet</p>
+            <p className="text-[13px] text-text-secondary mt-1 max-w-md mx-auto">
               Once your agency links an active project to your organization, executive reports
               will appear here.
             </p>
           </div>
         ) : !hasAnyPublished ? (
-          <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-10 text-center">
-            <p className="text-[14px] font-semibold text-gray-800">
+          <div className="bg-surface border border-dashed border-border rounded-lg p-10 text-center">
+            <p className="text-[14px] font-semibold text-text-primary">
               Reports not published yet
             </p>
-            <p className="text-[13px] text-gray-500 mt-1 max-w-md mx-auto">
+            <p className="text-[13px] text-text-secondary mt-1 max-w-md mx-auto">
               Your agency is still preparing this project&apos;s executive dashboards. Published
               tabs will appear here automatically.
             </p>
           </div>
         ) : !isCategoryPublished ? (
-          <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-10 text-center">
-            <p className="text-[14px] font-semibold text-gray-800">
+          <div className="bg-surface border border-dashed border-border rounded-lg p-10 text-center">
+            <p className="text-[14px] font-semibold text-text-primary">
               {category} report not published yet
             </p>
-            <p className="text-[13px] text-gray-500 mt-1">
+            <p className="text-[13px] text-text-secondary mt-1">
               Choose another published tab above, or check back soon.
             </p>
           </div>
         ) : showEmpty ? (
-          <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-10 text-center">
-            <p className="text-[14px] font-semibold text-gray-800">
+          <div className="bg-surface border border-dashed border-border rounded-lg p-10 text-center">
+            <p className="text-[14px] font-semibold text-text-primary">
               {category} report not available yet
             </p>
-            <p className="text-[13px] text-gray-500 mt-1">
+            <p className="text-[13px] text-text-secondary mt-1">
               Your agency is still preparing this channel. Check back soon.
             </p>
           </div>
@@ -644,6 +755,7 @@ function ClientReportsInner() {
 export default function ClientReportsPage() {
   return (
     <ClientAccessFlowGate>
+      <ClientNavGuard navKey="reports" />
       <Suspense
         fallback={
           <Workspace wide>

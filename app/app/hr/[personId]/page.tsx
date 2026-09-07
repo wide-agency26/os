@@ -15,10 +15,12 @@ import { runSyncHrAndOverheadLedger } from "@/app/actions/accounting";
 import { summarizeDeleteImpact } from "@/lib/hr/delete-impact";
 import {
   ROSTER_STATUSES,
+  isFounderPerson,
   legacyPersonType,
   rosterStatusPill,
   type EngagementType,
   type HrDocType,
+  type PersonKind,
   type RosterStatus,
   type Skill,
 } from "@/lib/hr/types";
@@ -67,11 +69,13 @@ export default function PersonDetailPage() {
     phone: "",
     engagement_type_id: "",
     roster_status: "active" as RosterStatus,
+    kind: "human" as PersonKind,
     bio_notes: "",
     rate_notes: "",
     co_founder_track: false,
     co_founder_track_notes: "",
     hourly_rate_cost: "",
+    wishlist_hourly_rate: "",
   });
 
   const load = useCallback(async () => {
@@ -107,12 +111,15 @@ export default function PersonDetailPage() {
         phone: person.phone || "",
         engagement_type_id: person.engagement_type_id || "",
         roster_status: (person.roster_status || "active") as RosterStatus,
+        kind: person.kind === "bot" ? "bot" : "human",
         bio_notes: person.bio_notes || "",
         rate_notes: person.rate_notes || "",
         co_founder_track: Boolean(person.co_founder_track),
         co_founder_track_notes: person.co_founder_track_notes || "",
         hourly_rate_cost:
           person.hourly_rate_cost != null ? String(person.hourly_rate_cost) : "",
+        wishlist_hourly_rate:
+          person.wishlist_hourly_rate != null ? String(person.wishlist_hourly_rate) : "",
       });
       setSelectedSkillIds(
         (person.person_skills || []).map((ps: { skill_id: string }) => ps.skill_id)
@@ -180,27 +187,54 @@ export default function PersonDetailPage() {
     const skillLabels = skills
       .filter((s) => selectedSkillIds.includes(s.id))
       .map((s) => s.label);
+    const kind: PersonKind = form.kind === "bot" ? "bot" : "human";
+    let email = form.primary_email.trim() || null;
+    if (kind === "bot" && !email) {
+      const slug = form.full_name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 40);
+      email = `${slug || "agent"}@bots.wide`;
+    }
+    const engagementId =
+      kind === "bot"
+        ? engagementTypes.find((t) => t.key === "bot")?.id ||
+          form.engagement_type_id ||
+          null
+        : form.engagement_type_id || null;
 
     const { error } = await (supabase as any)
       .from("people")
       .update({
         full_name: form.full_name.trim(),
         name: form.full_name.trim(),
-        primary_email: form.primary_email.trim() || null,
+        primary_email: email,
         phone: form.phone.trim() || null,
-        engagement_type_id: form.engagement_type_id || null,
+        engagement_type_id: engagementId,
         roster_status: form.roster_status,
+        kind,
         bio_notes: form.bio_notes.trim() || null,
         rate_notes: form.rate_notes.trim() || null,
-        co_founder_track: form.co_founder_track,
-        co_founder_track_notes: form.co_founder_track
-          ? form.co_founder_track_notes.trim() || null
-          : null,
-        person_type: legacyPersonType(eng?.key),
+        co_founder_track: kind === "bot" ? false : form.co_founder_track,
+        co_founder_track_notes:
+          kind === "bot" || !form.co_founder_track
+            ? null
+            : form.co_founder_track_notes.trim() || null,
+        person_type: legacyPersonType(
+          engagementTypes.find((t) => t.id === engagementId)?.key || eng?.key
+        ),
         expertise_tags: skillLabels,
-        hourly_rate_cost: form.hourly_rate_cost
-          ? Number(form.hourly_rate_cost)
-          : 0,
+        hourly_rate_cost:
+          kind === "bot"
+            ? null
+            : form.hourly_rate_cost
+              ? Number(form.hourly_rate_cost)
+              : 0,
+        wishlist_hourly_rate: form.wishlist_hourly_rate
+          ? Number(form.wishlist_hourly_rate)
+          : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id);
@@ -266,7 +300,7 @@ export default function PersonDetailPage() {
       alert("Error deleting: " + error.message);
       return;
     }
-    void runSyncHrAndOverheadLedger();
+    await runSyncHrAndOverheadLedger();
     router.push("/app/hr/roster");
   };
 
@@ -366,6 +400,20 @@ export default function PersonDetailPage() {
                       onChange={onChange}
                       className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
                     />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="text-[12px] font-semibold text-gray-700">
+                      Kind
+                    </span>
+                    <select
+                      name="kind"
+                      value={form.kind}
+                      onChange={onChange}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                    >
+                      <option value="human">Human</option>
+                      <option value="bot">Bot / Agent</option>
+                    </select>
                   </label>
                   <label className="block">
                     <span className="text-[12px] font-semibold text-gray-700">
@@ -503,6 +551,29 @@ export default function PersonDetailPage() {
                       className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
                     />
                   </label>
+                  {isFounderPerson({
+                    co_founder_track: form.co_founder_track,
+                    engagement_types: eng,
+                  }) ? (
+                    <label className="block">
+                      <span className="text-[12px] font-semibold text-gray-700">
+                        Wishlist hourly rate
+                      </span>
+                      <input
+                        name="wishlist_hourly_rate"
+                        type="number"
+                        step="0.01"
+                        value={form.wishlist_hourly_rate}
+                        onChange={onChange}
+                        placeholder="What you want to draw"
+                        className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Founder-only. Accounting → Runway uses this vs current
+                        rate for cash-only months.
+                      </p>
+                    </label>
+                  ) : null}
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"

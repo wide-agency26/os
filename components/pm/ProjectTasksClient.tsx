@@ -13,15 +13,22 @@ import {
   updatePmTaskStatus,
   updatePmTaskAssignee,
   updatePmTaskContent,
+  updatePmTaskClientContent,
   updatePmTaskTitle,
   deletePmTask,
   duplicatePmTask,
   movePmTaskPhase,
   reorderPmTasks,
+  createPmTasksBulk,
+  deletePmTasksBulk,
+  assignPlaybookToProject,
+  setPmTaskClientVisible,
+  setProjectTaskPolicy,
 } from "@/app/actions/pm";
 import { blocksToPlainSummary } from "@/lib/pm/blocknote";
 import { needsProjectCompensationOnAssign } from "@/lib/hr/types";
 import type { PmTaskStatus } from "@/lib/pm/types";
+import { DoneSummary } from "@/components/frappe-ui/primitives";
 
 type Props = { projectId: string };
 
@@ -51,6 +58,12 @@ export function ProjectTasksClient({ projectId }: Props) {
   const [loading, setLoading] = useState(true);
   const [pending, startTransition] = useTransition();
   const [pendingAssign, setPendingAssign] = useState<PendingAssign | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [showBulk, setShowBulk] = useState(false);
+  const [playbooks, setPlaybooks] = useState<{ id: string; name: string }[]>([]);
+  const [playbookId, setPlaybookId] = useState("");
   const dragIdRef = useRef<string | null>(null);
 
   const patchTaskLocal = (taskId: string, patch: Record<string, unknown>) => {
@@ -108,7 +121,7 @@ export function ProjectTasksClient({ projectId }: Props) {
     const supabase = createClient();
     const { data: proj } = await (supabase as any)
       .from("projects")
-      .select(`id, title, client:client_id ( company, name )`)
+      .select(`id, title, status, task_policy, client:client_id ( company, name )`)
       .eq("id", projectId)
       .single();
     setProject(proj);
@@ -119,6 +132,17 @@ export function ProjectTasksClient({ projectId }: Props) {
       .eq("project_id", projectId)
       .order("sort_order", { ascending: true });
     setTasks(taskRows || []);
+
+    const { data: pkgs } = await (supabase as any)
+      .from("package_playbooks")
+      .select(`id, package:package_id ( name )`)
+      .order("created_at");
+    setPlaybooks(
+      (pkgs || []).map((p: any) => ({
+        id: p.id,
+        name: p.package?.name || "Playbook",
+      }))
+    );
 
     const { data: roster } = await (supabase as any)
       .from("people")
@@ -210,14 +234,74 @@ export function ProjectTasksClient({ projectId }: Props) {
     [tasks, openTaskId]
   );
 
+  useEffect(() => {
+    if (!openTaskId) return;
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const { data } = await (supabase as any)
+        .from("pm_tasks")
+        .select("content_blocks, client_content_blocks, description")
+        .eq("id", openTaskId)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      patchTaskLocal(openTaskId, {
+        content_blocks: data.content_blocks,
+        client_content_blocks: data.client_content_blocks,
+        description: data.description,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [openTaskId]);
+
+  const refreshTasksOnly = async () => {
+    const supabase = createClient();
+    const { data: taskRows } = await (supabase as any)
+      .from("pm_tasks")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("sort_order", { ascending: true });
+    setTasks(taskRows || []);
+  };
+
+  const revertRef = useRef<Record<string, { status: PmTaskStatus; completed_at: string | null }>>(
+    {}
+  );
+
   const setStatus = (id: string, status: PmTaskStatus) => {
-    patchTaskLocal(id, {
-      status,
-      completed_at: status === "done" ? new Date().toISOString() : null,
+    setTasks((prev) => {
+      const current = prev.find((t) => t.id === id);
+      if (current) {
+        revertRef.current[id] = {
+          status: current.status,
+          completed_at: current.completed_at ?? null,
+        };
+      }
+      return prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              status,
+              completed_at: status === "done" ? new Date().toISOString() : null,
+            }
+          : t
+      );
     });
+    void updatePmTaskStatus(id, status).then((res) => {
+      if (!res?.ok && revertRef.current[id]) {
+        patchTaskLocal(id, revertRef.current[id]);
+        return;
+      }
+      if (res?.refreshTasks) void refreshTasksOnly();
+    });
+  };
+
+  const setClientVisible = (id: string, visible: boolean) => {
+    patchTaskLocal(id, { client_visible: visible });
     startTransition(async () => {
-      await updatePmTaskStatus(id, status);
-      await load();
+      await setPmTaskClientVisible(id, visible);
     });
   };
 
@@ -229,6 +313,13 @@ export function ProjectTasksClient({ projectId }: Props) {
     });
     startTransition(async () => {
       await updatePmTaskContent(taskId, blocks, plain);
+    });
+  };
+
+  const saveClientTaskContent = (taskId: string, blocks: Block[]) => {
+    patchTaskLocal(taskId, { client_content_blocks: blocks });
+    startTransition(async () => {
+      await updatePmTaskClientContent(taskId, blocks);
     });
   };
 
@@ -246,23 +337,46 @@ export function ProjectTasksClient({ projectId }: Props) {
       clientLabel={clientLabel}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex gap-1 rounded border border-gray-200 p-0.5">
+        <div className="flex gap-1 rounded-md border border-border p-0.5">
           <button
             type="button"
             onClick={() => setView("list")}
-            className={`text-xs px-3 py-1 rounded ${view === "list" ? "bg-gray-900 text-white" : "text-gray-600"}`}
+            className={`text-xs px-3 py-1 rounded-md ${view === "list" ? "bg-accent text-white" : "text-text-secondary"}`}
           >
             List
           </button>
           <button
             type="button"
             onClick={() => setView("board")}
-            className={`text-xs px-3 py-1 rounded ${view === "board" ? "bg-gray-900 text-white" : "text-gray-600"}`}
+            className={`text-xs px-3 py-1 rounded-md ${view === "board" ? "bg-accent text-white" : "text-text-secondary"}`}
           >
             Board
           </button>
         </div>
-        <label className="text-xs text-gray-500 flex items-center gap-2">
+        <label className="text-xs text-text-secondary flex items-center gap-2">
+          <span className="text-text-muted">Retitle policy</span>
+          <select
+            className="border border-border rounded-md px-2 py-1 bg-surface text-text-primary"
+            value={project?.task_policy || "default"}
+            disabled={pending}
+            onChange={(e) => {
+              const next = e.target.value as "locked" | "default" | "free";
+              setProject((p: any) => (p ? { ...p, task_policy: next } : p));
+              startTransition(async () => {
+                const res = await setProjectTaskPolicy(projectId, next);
+                if (!res.ok) alert(res.error || "Could not save policy");
+              });
+            }}
+          >
+            <option value="default">Default (global rules)</option>
+            <option value="locked">Locked</option>
+            <option value="free">Free</option>
+          </select>
+        </label>
+        <p className="text-[11px] text-text-muted">
+          Eye icon: show or hide each task on the client board (default show).
+        </p>
+        <label className="text-xs text-text-secondary flex items-center gap-2">
           <input
             type="checkbox"
             checked={showDonePhases}
@@ -272,20 +386,109 @@ export function ProjectTasksClient({ projectId }: Props) {
         </label>
       </div>
 
+      {project?.status === "pipeline" && (
+        <p className="text-[11px] text-gray-500 mb-3">
+          Tasks are for after the contract. You can still sketch them here.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <button
+          type="button"
+          className={`text-xs font-semibold rounded-lg border px-3 py-1.5 ${
+            selectMode
+              ? "border-gray-900 bg-gray-900 text-white"
+              : "border-gray-200"
+          }`}
+          onClick={() => {
+            setSelectMode((v) => !v);
+            if (selectMode) setSelected(new Set());
+          }}
+        >
+          {selectMode ? "Done selecting" : "Select"}
+        </button>
+        <button
+          type="button"
+          className="text-xs font-semibold rounded-lg border border-gray-200 px-3 py-1.5"
+          onClick={() => setShowBulk((v) => !v)}
+        >
+          Add many
+        </button>
+        {selected.size > 0 && (
+          <button
+            type="button"
+            className="text-xs font-semibold rounded-lg border border-red-200 text-red-700 px-3 py-1.5"
+            onClick={() => {
+              const ids = [...selected];
+              setTasks((prev) => prev.filter((t) => !selected.has(t.id)));
+              setSelected(new Set());
+              startTransition(async () => {
+                await deletePmTasksBulk(projectId, ids);
+              });
+            }}
+          >
+            Delete selected ({selected.size})
+          </button>
+        )}
+      </div>
+      {showBulk && (
+        <div className="mb-4 rounded-lg border border-gray-200 p-3 space-y-2">
+          <textarea
+            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm min-h-[80px]"
+            placeholder="One task title per line"
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+          />
+          {playbooks.length > 0 && (
+            <select
+              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+              value={playbookId}
+              onChange={(e) => setPlaybookId(e.target.value)}
+            >
+              <option value="">Or seed from a playbook…</option>
+              {playbooks.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            disabled={pending}
+            className="rounded-lg bg-gray-900 text-white text-xs font-semibold px-3 py-1.5"
+            onClick={() => {
+              const titles = bulkText.split("\n");
+              const pb = playbookId;
+              startTransition(async () => {
+                if (pb) await assignPlaybookToProject(projectId, pb);
+                if (titles.some((t) => t.trim())) {
+                  await createPmTasksBulk(projectId, titles);
+                }
+                setBulkText("");
+                setPlaybookId("");
+                setShowBulk(false);
+                await load();
+              });
+            }}
+          >
+            Add tasks
+          </button>
+        </div>
+      )}
+
       {view === "list" ? (
         <div className="space-y-3">
           {phases.map((phase) => {
             // Existing collapse-when-done phase wrapper — unchanged
             if (phase.allDone && !showDonePhases) {
               return (
-                <button
+                <DoneSummary
                   key={phase.label}
-                  type="button"
-                  onClick={() => setShowDonePhases(true)}
-                  className="w-full text-left text-sm text-gray-500 border border-dashed border-gray-200 rounded px-3 py-2 hover:bg-gray-50"
-                >
-                  ✓ {phase.label} — completed ({phase.items.length} tasks)
-                </button>
+                  label={phase.label}
+                  count={phase.items.length}
+                  onExpand={() => setShowDonePhases(true)}
+                />
               );
             }
 
@@ -314,20 +517,45 @@ export function ProjectTasksClient({ projectId }: Props) {
                     </li>
                   ) : null}
                   {visibleItems.map((t) => (
+                    <li key={t.id} className="flex items-start gap-2 px-2">
+                      {selectMode ? (
+                        <input
+                          type="checkbox"
+                          className="mt-3"
+                          checked={selected.has(t.id)}
+                          aria-label={`Select ${t.title}`}
+                          onChange={(e) => {
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(t.id);
+                              else next.delete(t.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      ) : null}
+                      <div className="flex-1 min-w-0">
                     <TaskRow
                       key={t.id}
                       task={t}
                       profiles={profiles}
                       phaseOptions={phaseOptions}
-                      disabled={pending}
                       onOpen={setOpenTaskId}
                       onToggleDone={(id, done) =>
                         setStatus(id, done ? "done" : "todo")
                       }
+                      onClientVisibleChange={setClientVisible}
                       onTitleChange={(id, title) => {
+                        const prev = tasks.find((t) => t.id === id)?.title;
                         patchTaskLocal(id, { title });
                         startTransition(async () => {
-                          await updatePmTaskTitle(id, title);
+                          const res = await updatePmTaskTitle(id, title, {
+                            materialChange: true,
+                          });
+                          if (!res.ok) {
+                            if (prev !== undefined) patchTaskLocal(id, { title: prev });
+                            alert(res.error || "Retitle blocked");
+                          }
                         });
                       }}
                       onAssigneeChange={(id, personId) => {
@@ -399,6 +627,8 @@ export function ProjectTasksClient({ projectId }: Props) {
                         });
                       }}
                     />
+                      </div>
+                    </li>
                   ))}
                 </ul>
               </section>
@@ -431,12 +661,19 @@ export function ProjectTasksClient({ projectId }: Props) {
                       key={t.id}
                       task={t}
                       profiles={profiles}
-                      disabled={pending}
+                      disabled={false}
                       onOpen={setOpenTaskId}
                       onTitleChange={(id, title) => {
+                        const prev = tasks.find((t) => t.id === id)?.title;
                         patchTaskLocal(id, { title });
                         startTransition(async () => {
-                          await updatePmTaskTitle(id, title);
+                          const res = await updatePmTaskTitle(id, title, {
+                            materialChange: true,
+                          });
+                          if (!res.ok) {
+                            if (prev !== undefined) patchTaskLocal(id, { title: prev });
+                            alert(res.error || "Retitle blocked");
+                          }
                         });
                       }}
                       onAssigneeChange={(id, personId) => {
@@ -446,6 +683,7 @@ export function ProjectTasksClient({ projectId }: Props) {
                       onToggleDone={(id, done) =>
                         setStatus(id, done ? "done" : "todo")
                       }
+                      onClientVisibleChange={setClientVisible}
                     />
                   ))}
               </ul>
@@ -469,9 +707,16 @@ export function ProjectTasksClient({ projectId }: Props) {
           open
           onClose={() => setOpenTaskId(null)}
           onTitleChange={(id, title) => {
+            const prev = tasks.find((t) => t.id === id)?.title;
             patchTaskLocal(id, { title });
             startTransition(async () => {
-              await updatePmTaskTitle(id, title);
+              const res = await updatePmTaskTitle(id, title, {
+                materialChange: true,
+              });
+              if (!res.ok) {
+                if (prev !== undefined) patchTaskLocal(id, { title: prev });
+                alert(res.error || "Retitle blocked");
+              }
             });
           }}
           onAssigneeChange={(id, personId) => {
@@ -479,6 +724,7 @@ export function ProjectTasksClient({ projectId }: Props) {
           }}
           onStatusChange={setStatus}
           onContentSave={saveTaskContent}
+          onClientContentSave={saveClientTaskContent}
           suggestions={
             openTask.task_template_id
               ? suggestionsByTemplate[openTask.task_template_id] || []

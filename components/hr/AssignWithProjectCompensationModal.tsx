@@ -93,12 +93,12 @@ export function AssignWithProjectCompensationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="assign-comp-title"
-        className="w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200 p-5 space-y-4"
+        className="w-full max-w-md rounded-t-2xl sm:rounded-xl bg-white shadow-xl border border-gray-200 p-5 space-y-4 max-h-[100dvh] overflow-y-auto"
       >
         <div>
           <h3
@@ -119,7 +119,7 @@ export function AssignWithProjectCompensationModal({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block col-span-2 sm:col-span-1">
             <span className="text-[12px] font-semibold text-gray-700">Model</span>
             <select

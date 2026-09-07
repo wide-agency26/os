@@ -8,7 +8,7 @@ export default async function ProjectPmOverviewPage({
 }) {
   const { project_id } = await params;
   return (
-    <Workspace>
+    <Workspace wide>
       <ProjectOverviewClient projectId={project_id} />
     </Workspace>
   );

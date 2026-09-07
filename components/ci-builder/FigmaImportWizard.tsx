@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Layers,
@@ -11,7 +12,49 @@ import {
   CheckCircle2,
   AlertTriangle,
   Unplug,
+  Copy,
+  Download,
+  Check,
 } from "lucide-react";
+import { triggerToast } from "./Toast";
+
+const CANVAS_SCRIPT_HREF = "/api/ci-builder/figma/canvas-script";
+
+function parseDumpText(raw: string): { dump: unknown; count: number } | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    const obj = JSON.parse(trimmed);
+    const collections = obj?.collections;
+    if (!Array.isArray(collections) || collections.length === 0) return null;
+    const count = collections.reduce(
+      (n: number, c: { variables?: unknown[] }) =>
+        n + (Array.isArray(c?.variables) ? c.variables.length : 0),
+      0
+    );
+    if (count < 1) return null;
+    return { dump: obj, count };
+  } catch {
+    return null;
+  }
+}
+
+function parseFigmaFileKey(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  if (/^[a-zA-Z0-9]{10,}$/.test(raw) && !raw.includes("/")) return raw;
+  try {
+    const url = new URL(raw);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const idx = parts.findIndex((p) =>
+      ["file", "design", "proto", "board", "slides"].includes(p)
+    );
+    if (idx >= 0 && parts[idx + 1]) return parts[idx + 1];
+  } catch {
+    /* not a URL */
+  }
+  return null;
+}
 
 type ConnectionInfo = {
   connected: true;
@@ -50,7 +93,7 @@ type FigmaImportWizardProps = {
 
 export function FigmaImportWizard({
   guidelineId,
-  projectId,
+  projectId: _projectId,
   linkedFigma,
   onClose,
   onImported,
@@ -72,8 +115,16 @@ export function FigmaImportWizard({
   const [preview, setPreview] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [syncInfo, setSyncInfo] = useState<any>(null);
+  const [mounted, setMounted] = useState(false);
+  const [colorsDumpText, setColorsDumpText] = useState("");
+  const patRef = useRef<HTMLInputElement>(null);
 
-  const returnTo = `/app/projects/${projectId}/ci-builder`;
+  const parsedDump = parseDumpText(colorsDumpText);
+
+  const returnTo =
+    typeof window !== "undefined"
+      ? `${window.location.pathname}${window.location.search}`
+      : `/app/tools/ci`;
 
   async function refreshStatus() {
     setLoading(true);
@@ -100,6 +151,7 @@ export function FigmaImportWizard({
   }
 
   useEffect(() => {
+    setMounted(true);
     refreshStatus();
     const params = new URLSearchParams(window.location.search);
     if (params.get("figma_connected") === "1") {
@@ -114,13 +166,18 @@ export function FigmaImportWizard({
   }, []);
 
   async function connectPat() {
+    const token = (patRef.current?.value || pat).trim();
+    if (!token) {
+      setError("Paste your Figma personal access token first.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/ci-builder/figma/connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ personalAccessToken: pat }),
+        body: JSON.stringify({ personalAccessToken: token }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "PAT connect failed");
@@ -148,6 +205,10 @@ export function FigmaImportWizard({
   }
 
   async function loadProjects() {
+    if (!teamInput.trim()) {
+      setError("Paste a Figma team URL or numeric team ID first.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -187,12 +248,33 @@ export function FigmaImportWizard({
     }
   }
 
+  function applyFileUrl(value: string) {
+    setFileUrl(value);
+    const key = parseFigmaFileKey(value);
+    if (key) {
+      setSelectedFile((prev) =>
+        prev?.key === key ? prev : { key, name: prev?.name || "Figma file" }
+      );
+    }
+  }
+
   async function resolveFileUrl() {
+    const url = fileUrl.trim();
+    if (!url) {
+      setError("Paste a Figma file URL or key first.");
+      return;
+    }
+    const parsed = parseFigmaFileKey(url);
+    if (parsed) {
+      setSelectedFile((prev) =>
+        prev?.key === parsed ? prev : { key: parsed, name: prev?.name || "Figma file" }
+      );
+    }
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/ci-builder/figma/files?file_url=${encodeURIComponent(fileUrl)}`
+        `/api/ci-builder/figma/files?file_url=${encodeURIComponent(url)}`
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid file URL");
@@ -218,6 +300,7 @@ export function FigmaImportWizard({
           teamId,
           projectId: projectIdSelected,
           previewOnly: true,
+          variablesDump: parsedDump?.dump ?? null,
         }),
       });
       const data = await res.json();
@@ -244,6 +327,7 @@ export function FigmaImportWizard({
           teamId,
           projectId: projectIdSelected,
           previewOnly: false,
+          variablesDump: parsedDump?.dump ?? null,
         }),
       });
       const data = await res.json();
@@ -269,7 +353,11 @@ export function FigmaImportWizard({
       const res = await fetch("/api/ci-builder/figma/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ guidelineId, force }),
+        body: JSON.stringify({
+          guidelineId,
+          force,
+          variablesDump: parsedDump?.dump ?? null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sync failed");
@@ -297,9 +385,53 @@ export function FigmaImportWizard({
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
+  async function applyColorsDump() {
+    if (!parsedDump) {
+      setError(
+        "Paste Brand Colors JSON from the WIDE OS Figma plugin first."
+      );
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/ci-builder/figma/colors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guidelineId,
+          variablesDump: parsedDump.dump,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not apply Brand Colors");
+      onImported({
+        sections: data.sections || [],
+        assets: data.assets || [],
+        theme: data.theme || {},
+        report: data.report,
+      });
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Connect to Figma"
+    >
+      <div
+        className="ci-chrome bg-white text-gray-900 rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-xl max-h-[100dvh] sm:max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gray-900 text-white flex items-center justify-center">
@@ -322,6 +454,8 @@ export function FigmaImportWizard({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          <CanvasScriptNudge />
+
           {error && (
             <div className="flex items-start gap-2 text-[12px] text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -358,9 +492,18 @@ export function FigmaImportWizard({
                   Personal Access Token
                 </label>
                 <input
+                  ref={patRef}
                   type="password"
                   value={pat}
+                  autoComplete="off"
                   onChange={(e) => setPat(e.target.value)}
+                  onInput={(e) => setPat((e.target as HTMLInputElement).value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void connectPat();
+                    }
+                  }}
                   placeholder="figd_…"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                 />
@@ -371,8 +514,8 @@ export function FigmaImportWizard({
                 </p>
                 <button
                   type="button"
-                  disabled={!pat || busy}
-                  onClick={connectPat}
+                  disabled={busy}
+                  onClick={() => void connectPat()}
                   className="w-full py-2 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
                 >
                   {busy ? "Connecting…" : "Connect with PAT"}
@@ -461,8 +604,8 @@ export function FigmaImportWizard({
                   />
                   <button
                     type="button"
-                    disabled={!teamInput || busy}
-                    onClick={loadProjects}
+                    disabled={busy}
+                    onClick={() => void loadProjects()}
                     className="px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium disabled:opacity-50"
                   >
                     Load
@@ -515,19 +658,68 @@ export function FigmaImportWizard({
                 <div className="flex gap-2">
                   <input
                     value={fileUrl}
-                    onChange={(e) => setFileUrl(e.target.value)}
+                    onChange={(e) => applyFileUrl(e.target.value)}
                     placeholder="https://www.figma.com/design/…"
                     className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
                   />
                   <button
                     type="button"
-                    disabled={!fileUrl || busy}
-                    onClick={resolveFileUrl}
+                    disabled={busy}
+                    onClick={() => void resolveFileUrl()}
                     className="px-3 py-2 rounded-lg border border-gray-300 text-xs font-medium disabled:opacity-50"
                   >
                     Use
                   </button>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+                  Brand Colors (Figma variables)
+                </label>
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  Figma&apos;s REST Variables API is Enterprise-only. On Pro,
+                  colors live in Variables (often <strong>Brand Colors</strong>
+                  ). Run the WIDE OS CI Canvas script in the file — it paints
+                  the Colors Systems section and writes JSON on the page{" "}
+                  <strong>WIDE OS · Brand Colors JSON</strong>. Copy that JSON
+                  and paste it here. Connecting the Figma file still imports
+                  logos, type, and the rest of the canvas.
+                </p>
+                {(preview?.variablesUnavailableReason ||
+                  (!preview?.variablesAvailable && preview)) && (
+                  <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                    {preview.variablesUnavailableReason ||
+                      "Figma Variables REST is Enterprise-only. Paste Brand Colors from the plugin."}
+                  </p>
+                )}
+                <textarea
+                  value={colorsDumpText}
+                  onChange={(e) => setColorsDumpText(e.target.value)}
+                  placeholder='{"source":"wide-os-figma-colors","collections":[...]}'
+                  rows={5}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[11px] font-mono"
+                />
+                {colorsDumpText.trim() && !parsedDump && (
+                  <p className="text-[11px] text-red-600">
+                    Could not parse Brand Colors JSON. Copy again from the
+                    plugin.
+                  </p>
+                )}
+                {parsedDump && (
+                  <p className="text-[11px] text-emerald-700">
+                    {parsedDump.count} color variable
+                    {parsedDump.count === 1 ? "" : "s"} ready to import.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={busy || !parsedDump}
+                  onClick={() => void applyColorsDump()}
+                  className="w-full py-2 rounded-lg border border-gray-300 text-xs font-medium hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Apply Brand Colors only
+                </button>
               </div>
 
               {selectedFile && (
@@ -562,9 +754,8 @@ export function FigmaImportWizard({
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-400">
-                    Full import maps colors, typography, buttons, logos,
-                    backgrounds, frames, applications, and do/don&apos;ts — then
-                    exports images into shared assets.
+                    {preview.report?.message ||
+                      "Full import maps colors, typography, buttons, logos, backgrounds, frames, applications, and do/don’ts — then exports images into shared assets."}
                   </p>
                 </div>
               )}
@@ -592,6 +783,84 @@ export function FigmaImportWizard({
             </button>
           </div>
         )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function CanvasScriptNudge() {
+  const [copied, setCopied] = useState(false);
+  const [working, setWorking] = useState(false);
+
+  async function loadScript() {
+    const res = await fetch(CANVAS_SCRIPT_HREF, { credentials: "same-origin", cache: "no-store" });
+    if (!res.ok) throw new Error("Could not load the canvas script");
+    return res.text();
+  }
+
+  async function copyScript() {
+    setWorking(true);
+    try {
+      await navigator.clipboard.writeText(await loadScript());
+      setCopied(true);
+      triggerToast("CI Canvas script copied — paste into Figma and run");
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch (err: any) {
+      triggerToast(err?.message || "Could not copy script");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function downloadScript() {
+    setWorking(true);
+    try {
+      const text = await loadScript();
+      const blob = new Blob([text], { type: "text/javascript;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "wide-os-ci-canvas.js";
+      a.click();
+      URL.revokeObjectURL(url);
+      triggerToast("Downloaded wide-os-ci-canvas.js");
+    } catch (err: any) {
+      triggerToast(err?.message || "Could not download script");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 space-y-2">
+      <p className="text-[12px] font-semibold text-gray-900">
+        First: run the CI Canvas script in Figma
+      </p>
+      <p className="text-[11px] text-gray-600 leading-relaxed">
+        Copy or download the latest script, paste it into the same Figma runner
+        you already use, and run it on the brand file. It builds the 9 modules
+        this import expects, plus Brand Colors JSON on the page.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={working}
+          onClick={() => void copyScript()}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-900 text-white text-[11px] font-medium hover:bg-gray-800 disabled:opacity-50"
+        >
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? "Copied" : "Copy script"}
+        </button>
+        <button
+          type="button"
+          disabled={working}
+          onClick={() => void downloadScript()}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-300 bg-white text-[11px] font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Download .js
+        </button>
       </div>
     </div>
   );

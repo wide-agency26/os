@@ -4,6 +4,7 @@ import React from "react";
 import { CISection, CIAsset, ImagerySectionData, RuleItem } from "@/lib/ci-builder/types";
 import { SectionContainer } from "./SectionContainer";
 import { EditableText, EditableListItem, AddItemButton } from "../primitives";
+import { ensureKeyedList } from "@/lib/ci-builder/keyed-list";
 
 export interface SectionProps {
   section: Partial<CISection>;
@@ -25,18 +26,25 @@ export function ImagerySection({
   onEditSectionFields
 }: SectionProps) {
   const data = (section.data || {}) as ImagerySectionData;
-  const rules = data.rules || [
-    {
-      id: "r1",
-      title: "Authentic & Candid Expressions",
-      description: "Avoid overly staged stock photography. Focus on genuine human interactions, natural lighting, and unposed subjects."
-    },
-    {
-      id: "r2",
-      title: "Consistent Color Palette",
-      description: "Ensure photography tones reflect our brand color harmony with clean shadows and natural saturation."
-    }
-  ];
+  const rules = ensureKeyedList(
+    data.rules?.length
+      ? data.rules
+      : [
+          {
+            id: "r1",
+            title: "Authentic & Candid Expressions",
+            description:
+              "Avoid overly staged stock photography. Focus on genuine human interactions, natural lighting, and unposed subjects.",
+          },
+          {
+            id: "r2",
+            title: "Consistent Color Palette",
+            description:
+              "Ensure photography tones reflect our brand color harmony with clean shadows and natural saturation.",
+          },
+        ],
+    "title"
+  ).items as RuleItem[];
 
   const addRule = () => {
     const newRule: RuleItem = {

@@ -25,6 +25,7 @@ import {
 import {
   isMetaAdsDataset,
   looksLikeGoogleAdsRows,
+  pickPrimaryMetaDatasets,
   availableMonths as metaAvailableMonths,
   normalizeMetaRows,
 } from "@/lib/reports/meta-ads";
@@ -129,6 +130,9 @@ function AdsOverallView({
               name: result.channels[0]?.datasetName || gDs?.name,
               createdAt: gDs?.createdAt,
               rowCount: gDs?.rowCount,
+              sourceType: gDs?.sourceType,
+              syncedAt: gDs?.syncedAt,
+              externalAccountLabel: gDs?.externalAccountLabel,
             }}
           />
         </div>
@@ -145,6 +149,9 @@ function AdsOverallView({
               name: result.channels[0]?.datasetName || liDs?.name,
               createdAt: liDs?.createdAt,
               rowCount: liDs?.rowCount,
+              sourceType: liDs?.sourceType,
+              syncedAt: liDs?.syncedAt,
+              externalAccountLabel: liDs?.externalAccountLabel,
             }}
           />
         </div>
@@ -160,6 +167,9 @@ function AdsOverallView({
             name: result.channels[0]?.datasetName || metaDs?.name,
             createdAt: metaDs?.createdAt,
             rowCount: metaDs?.rowCount,
+            sourceType: metaDs?.sourceType,
+            syncedAt: metaDs?.syncedAt,
+            externalAccountLabel: metaDs?.externalAccountLabel,
           }}
         />
       </div>
@@ -183,14 +193,18 @@ export function AdsReportShell({ datasets }: AdsReportShellProps) {
   const metaDatasets = useMemo(() => datasets.filter(isMetaDataset), [datasets]);
   const googleDatasets = useMemo(() => datasets.filter(isGoogleDataset), [datasets]);
   const linkedInDatasets = useMemo(() => datasets.filter(isLinkedInAdsDs), [datasets]);
+  const primaryMetaDatasets = useMemo(
+    () => pickPrimaryMetaDatasets(metaDatasets),
+    [metaDatasets]
+  );
 
-  const metaDataset = metaDatasets[0];
+  const metaDataset = primaryMetaDatasets[0];
   const googleDataset = googleDatasets[0];
   const linkedInDataset = linkedInDatasets[0];
 
   const metaRows = useMemo(
-    () => metaDatasets.flatMap((d) => d.rows),
-    [metaDatasets]
+    () => primaryMetaDatasets.flatMap((d) => d.rows),
+    [primaryMetaDatasets]
   );
   const googleRows = useMemo(
     () => googleDatasets.flatMap((d) => d.rows),
@@ -203,12 +217,12 @@ export function AdsReportShell({ datasets }: AdsReportShellProps) {
 
   const metaMeta: DatasetMeta | undefined = metaDataset
     ? {
-        name:
-          metaDatasets.length > 1
-            ? `Meta Ads (${metaDatasets.length} files)`
-            : metaDataset.name,
+        name: metaDataset.name,
         createdAt: metaDataset.createdAt,
-        rowCount: metaDatasets.reduce((s, d) => s + d.rowCount, 0),
+        rowCount: primaryMetaDatasets.reduce((s, d) => s + d.rowCount, 0),
+        sourceType: metaDataset.sourceType,
+        syncedAt: metaDataset.syncedAt,
+        externalAccountLabel: metaDataset.externalAccountLabel,
       }
     : undefined;
 
@@ -220,6 +234,9 @@ export function AdsReportShell({ datasets }: AdsReportShellProps) {
             : googleDataset.name,
         createdAt: googleDataset.createdAt,
         rowCount: googleDatasets.reduce((s, d) => s + d.rowCount, 0),
+        sourceType: googleDataset.sourceType,
+        syncedAt: googleDataset.syncedAt,
+        externalAccountLabel: googleDataset.externalAccountLabel,
       }
     : undefined;
 
@@ -231,6 +248,9 @@ export function AdsReportShell({ datasets }: AdsReportShellProps) {
             : linkedInDataset.name,
         createdAt: linkedInDataset.createdAt,
         rowCount: linkedInDatasets.reduce((s, d) => s + d.rowCount, 0),
+        sourceType: linkedInDataset.sourceType,
+        syncedAt: linkedInDataset.syncedAt,
+        externalAccountLabel: linkedInDataset.externalAccountLabel,
       }
     : undefined;
 

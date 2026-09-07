@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Building2, Search, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Search, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Button } from "@/components/frappe-ui/primitives";
+import { requestCompanyAccess } from "@/app/actions/client-access";
 
 interface CompanyPickerModalProps {
   userId: string;
-  onRequestSubmitted: (companyName: string) => void;
+  onResolved: (next: { state: "active" | "pending"; companyName: string }) => void;
 }
 
-export function CompanyPickerModal({ userId, onRequestSubmitted }: CompanyPickerModalProps) {
+export function CompanyPickerModal({ userId, onResolved }: CompanyPickerModalProps) {
   const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
@@ -20,7 +22,7 @@ export function CompanyPickerModal({ userId, onRequestSubmitted }: CompanyPicker
   useEffect(() => {
     async function loadCompanies() {
       const supabase = createClient();
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("crm_customers")
         .select("id, company, name")
         .eq("record_kind", "company")
@@ -30,64 +32,35 @@ export function CompanyPickerModal({ userId, onRequestSubmitted }: CompanyPicker
         console.error("Error loading companies:", error);
         setError("Failed to load company directory. Please refresh.");
       } else if (data) {
-        const formatted = data.map((c: any) => ({
+        const formatted = data.map((c) => ({
           id: c.id,
-          name: c.company || c.name || "Untitled Organization"
+          name: c.company || c.name || "Untitled Organization",
         }));
         setCompanies(formatted);
         if (formatted.length > 0) setSelectedCompanyId(formatted[0].id);
       }
       setLoading(false);
     }
-    loadCompanies();
-  }, []);
+    void loadCompanies();
+  }, [userId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCompanyId || !userId) return;
+    if (!selectedCompanyId) return;
 
     setSubmitting(true);
     setError(null);
 
     try {
-      const supabase = createClient();
-
-      // Check if membership row already exists
-      const { data: existing } = await (supabase as any)
-        .from("company_members")
-        .select("id, status")
-        .eq("user_id", userId)
-        .eq("company_id", selectedCompanyId)
-        .maybeSingle();
-
-      const comp = companies.find((c) => c.id === selectedCompanyId);
-      const companyName = comp?.name || "Selected Company";
-
-      if (existing) {
-        if (existing.status === "pending" || existing.status === "active") {
-          setError(`You already have a ${existing.status} request or membership for ${companyName}.`);
-          setTimeout(() => {
-            onRequestSubmitted(companyName);
-          }, 1500);
-          return;
-        }
+      const res = await requestCompanyAccess(selectedCompanyId);
+      if (res.error || !res.state || !res.companyName) {
+        setError(res.error || "Could not submit the access request.");
+        return;
       }
-
-      const { error: insertErr } = await (supabase as any)
-        .from("company_members")
-        .upsert({
-          user_id: userId,
-          company_id: selectedCompanyId,
-          status: "pending",
-          source: "self_service"
-        }, { onConflict: "user_id, company_id" });
-
-      if (insertErr) throw insertErr;
-
-      onRequestSubmitted(companyName);
-    } catch (err: any) {
-      console.error("Error requesting access:", err);
-      setError(`Failed to submit access request: ${err.message}`);
+      onResolved({ state: res.state, companyName: res.companyName });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to submit access request.";
+      setError(message);
     } finally {
       setSubmitting(false);
     }
@@ -98,46 +71,47 @@ export function CompanyPickerModal({ userId, onRequestSubmitted }: CompanyPicker
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6 text-gray-900 font-sans">
-      <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 p-8 shadow-xl">
-        <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4 border border-blue-100">
-          <Building2 className="w-6 h-6" />
-        </div>
-
-        <h1 className="text-xl font-bold text-center text-gray-900 mb-2">Select Your Organization</h1>
-        <p className="text-xs text-center text-gray-500 mb-6 leading-relaxed">
-          Please select your company to request access to your brand guidelines and workspace assets.
+    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-surface rounded-lg border border-border p-8">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted text-center mb-2">
+          Access
+        </p>
+        <h1 className="text-xl font-semibold text-center text-text-primary mb-2">
+          Select your organization
+        </h1>
+        <p className="text-[13px] text-center text-text-secondary mb-6 leading-relaxed">
+          Choose your company to request access to guidelines, reports, and project files.
         </p>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-[13px] text-red-700 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {loading ? (
-          <div className="py-12 flex justify-center items-center text-gray-400">
-            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <div className="py-12 flex justify-center items-center">
+            <Loader2 className="w-6 h-6 animate-spin text-text-muted" />
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Search Input */}
             <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3.5" />
+              <Search className="w-4 h-4 text-text-muted absolute left-3 top-3.5" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search company name..."
-                className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                placeholder="Search company name…"
+                className="w-full pl-9 pr-4 py-2.5 min-h-11 bg-surface border border-border rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
 
-            {/* Select Input / List */}
-            <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-xl p-1 space-y-1 bg-white">
+            <div className="max-h-48 overflow-y-auto border border-border rounded-lg p-1 space-y-1 bg-surface">
               {filteredCompanies.length === 0 ? (
-                <div className="p-4 text-center text-xs text-gray-400">No matching organizations found</div>
+                <div className="p-4 text-center text-[13px] text-text-muted">
+                  No matching organizations found
+                </div>
               ) : (
                 filteredCompanies.map((c) => {
                   const isSelected = selectedCompanyId === c.id;
@@ -145,29 +119,27 @@ export function CompanyPickerModal({ userId, onRequestSubmitted }: CompanyPicker
                     <div
                       key={c.id}
                       onClick={() => setSelectedCompanyId(c.id)}
-                      className={`flex items-center justify-between p-2.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                        isSelected ? "bg-blue-50 text-blue-700 font-semibold" : "hover:bg-gray-50 text-gray-700"
+                      className={`flex items-center justify-between p-2.5 min-h-11 rounded-md text-[13px] cursor-pointer ${
+                        isSelected
+                          ? "bg-accent text-white font-medium"
+                          : "hover:bg-surface-raised text-text-primary"
                       }`}
                     >
                       <span className="truncate">{c.name}</span>
-                      {isSelected && <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />}
+                      {isSelected ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : null}
                     </div>
                   );
                 })
               )}
             </div>
 
-            <button
+            <Button
               type="submit"
               disabled={submitting || !selectedCompanyId}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2"
+              className="w-full"
             >
-              {submitting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <span>Request Access</span>
-              )}
-            </button>
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Request access"}
+            </Button>
           </form>
         )}
       </div>

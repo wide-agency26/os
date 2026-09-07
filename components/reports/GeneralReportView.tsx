@@ -13,7 +13,6 @@ import {
   MousePointerClick,
   Target,
   Banknote,
-  Sparkles,
   Coins,
 } from "lucide-react";
 import {
@@ -26,7 +25,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import { formatCompact } from "@/lib/reports/ga4-website";
+import { formatCompact, isWebsiteDataset } from "@/lib/reports/ga4-website";
 import { formatCurrency } from "@/lib/reports/meta-ads";
 import {
   type LoadedDataset,
@@ -81,6 +80,7 @@ import {
   DEFAULT_FUNNEL_CONFIG,
   normalizeFunnelConfig,
   funnelMetricSubtitles,
+  funnelClientCopy,
   type ProjectFunnelConfig,
 } from "@/lib/reports/funnel-config";
 import { createClient } from "@/utils/supabase/client";
@@ -189,10 +189,7 @@ export function GeneralReportView({
       .flatMap((d) => availableLinkedInAdsMonths(normalizeLinkedInAdsRows(d.rows)));
 
     const webMs = datasets
-      .filter((d) => {
-        const sub = d.subcategory || detectSubcategory(d.name, d.columns);
-        return d.category === "Website" || sub === "ga4";
-      })
+      .filter((d) => isWebsiteDataset(d.columns, d.rows))
       .flatMap((d) => ga4AvailableMonths(normalizeGa4Rows(d.rows)));
 
     const liOrg = availableLiMonths(buildLinkedInBundle(pickLinkedInPayloads(datasets)));
@@ -211,25 +208,22 @@ export function GeneralReportView({
   const visibleInsights = pinned.length ? pinned : insights.slice(0, 3);
   const showAdminChrome = Boolean(isAdmin) && !clientMode;
   const metricSubs = funnelMetricSubtitles(funnelConfig);
+  const clientCopy = funnelClientCopy(funnelConfig);
+  const stageCopy = clientMode ? clientCopy : null;
 
   const insightsBlock =
     visibleInsights.length > 0 || showAdminChrome ? (
-      <section
-        className={`bg-white border border-gray-200 rounded-2xl p-5 shadow-sm space-y-3 ${
-          clientMode ? "border-amber-200/80 bg-gradient-to-br from-amber-50/50 to-white" : ""
-        }`}
-      >
+      <section className="bg-surface border border-border rounded-lg p-5 space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-amber-500" />
-            <h3 className="text-[15px] font-bold text-gray-900">
-              {clientMode ? "Executive strategic summary" : "Strategic insights"}
+          <div>
+            <h3 className="text-[15px] font-semibold text-text-primary">
+              {clientMode ? "Executive summary" : "Strategic insights"}
             </h3>
           </div>
           {showAdminChrome && projectId && (
             <Link
               href={`/app/projects/insights?project=${projectId}`}
-              className="text-[12px] font-medium text-indigo-600 hover:underline no-print"
+              className="text-[12px] font-medium text-text-secondary hover:text-text-primary underline no-print"
             >
               Open AI Insight Center →
             </Link>
@@ -251,13 +245,13 @@ export function GeneralReportView({
             {visibleInsights.map((card) => (
               <div
                 key={card.id}
-                className={`rounded-xl border border-gray-200 bg-gradient-to-br from-white to-amber-50/40 p-4 ${
+                className={`rounded-lg border border-border bg-surface p-4 ${
                   clientMode ? "md:flex md:gap-4 md:items-start" : ""
                 }`}
               >
                 <div className={clientMode ? "md:min-w-[200px]" : ""}>
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary bg-surface-raised px-1.5 py-0.5 rounded">
                       {card.impact}
                     </span>
                     <span className="text-[10px] text-gray-500">{card.category}</span>
@@ -292,7 +286,7 @@ export function GeneralReportView({
         <DateRangeControls
           months={months}
           state={dateState}
-          accent="#4f46e5"
+          accent="#171717"
           rowCountHint="Filters the executive funnel across all channels"
         />
       </div>
@@ -301,14 +295,14 @@ export function GeneralReportView({
 
       {/* Admin-only intro / funnel mapping status — hidden on client executive view */}
       {!clientMode && (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+        <div className="bg-surface border border-border rounded-lg p-6">
           <div className="flex items-start gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-accent text-white flex items-center justify-center shrink-0">
               <LayoutGrid size={18} />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-[17px] font-bold text-gray-900">Executive funnel overview</h3>
-              <p className="text-[13px] text-gray-500 mt-1 max-w-2xl leading-relaxed">
+              <h3 className="text-[17px] font-semibold text-text-primary">Executive funnel overview</h3>
+              <p className="text-[13px] text-text-secondary mt-1 max-w-2xl leading-relaxed">
                 Stage metrics follow this project&apos;s Funnel Config. Missing channels are skipped —
                 one active source is enough.
               </p>
@@ -316,7 +310,7 @@ export function GeneralReportView({
             {showAdminChrome && projectId && (
               <Link
                 href={`/app/projects/funnel?project=${projectId}`}
-                className="text-[12px] font-medium text-indigo-600 hover:underline shrink-0 no-print"
+                className="text-[12px] font-medium text-text-secondary hover:text-text-primary underline shrink-0 no-print"
               >
                 Edit funnel mapping →
               </Link>
@@ -324,7 +318,7 @@ export function GeneralReportView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700">
+            <span className="inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-raised text-text-secondary border border-border">
               {connected} of {channels.length} channel sources connected
             </span>
             {funnel?.notice && (
@@ -341,36 +335,38 @@ export function GeneralReportView({
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
           {[
             {
-              label: clientMode ? "Total brand footprint" : "Marketing footprint",
+              label: clientMode ? "Times the brand showed up" : "Marketing footprint",
               value: formatCompact(funnel.stages.awareness),
-              metric: metricSubs.awareness,
+              metric: stageCopy ? stageCopy.awareness : metricSubs.awareness,
               icon: Eye,
             },
             {
-              label: clientMode ? "Inbound web visits" : "Inbound interest",
+              label: clientMode ? "People who visited the site" : "Inbound interest",
               value: formatCompact(funnel.stages.consideration),
-              metric: metricSubs.consideration,
+              metric: stageCopy ? stageCopy.consideration : metricSubs.consideration,
               icon: MousePointerClick,
             },
             {
-              label: "Verified conversions",
+              label: clientMode ? "People who took an action" : "Verified conversions",
               value: formatCompact(funnel.stages.conversion),
-              metric: metricSubs.conversion,
+              metric: stageCopy
+                ? stageCopy.conversion
+                : metricSubs.conversion,
               icon: Target,
             },
             {
               label: "Total ad spend",
               value: funnel.conversions.adSpendLabel || formatCurrency(funnel.conversions.adSpend),
-              metric: metricSubs.spend,
+              metric: stageCopy ? stageCopy.spend : metricSubs.spend,
               icon: Banknote,
             },
             {
-              label: "Blended CPA",
+              label: clientMode ? "Cost per action" : "Blended CPA",
               value:
                 funnel.conversions.cpa != null
                   ? formatCurrency(funnel.conversions.cpa)
                   : "—",
-              metric: metricSubs.cpa,
+              metric: stageCopy ? stageCopy.cpa : metricSubs.cpa,
               icon: Coins,
             },
           ].map((m) => {
@@ -384,7 +380,7 @@ export function GeneralReportView({
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                     {m.label}
                   </p>
-                  <Icon size={13} className="text-indigo-500" />
+                  <Icon size={13} className="text-text-muted" />
                 </div>
                 <p className="text-[20px] font-bold text-gray-900 tabular-nums">{m.value}</p>
                 <p className="text-[11px] text-gray-400 mt-1.5 leading-snug">{m.metric}</p>
@@ -398,42 +394,68 @@ export function GeneralReportView({
       {funnel && (
         <section className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
           <div className="mb-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">
               Section 2
             </p>
-            <h3 className="text-[16px] font-bold text-gray-900">Hourglass marketing funnel</h3>
+            <h3 className="text-[16px] font-bold text-gray-900">
+              {clientMode ? "From seeing the brand to taking an action" : "Hourglass marketing funnel"}
+            </h3>
             <p className="text-[12px] text-gray-500 mt-1">
-              Awareness → Consideration → Conversion, with stage-over-stage rates and drop-offs.
-              {funnel.rates.totalFunnelEfficiency != null && (
+              {clientMode ? (
                 <>
-                  {" "}
-                  Total funnel efficiency:{" "}
-                  <strong className="text-gray-800">
-                    {funnel.rates.totalFunnelEfficiency.toFixed(2)}%
-                  </strong>
+                  Awareness is how often the brand showed up. Consideration is people who visited
+                  the website. Conversion is people who subscribed, sent a message, or reached a
+                  thank-you page.
+                  {funnel.rates.totalFunnelEfficiency != null && (
+                    <>
+                      {" "}
+                      Overall,{" "}
+                      <strong className="text-gray-800">
+                        {funnel.rates.totalFunnelEfficiency.toFixed(2)}%
+                      </strong>{" "}
+                      of impressions became an action.
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  Awareness → Consideration → Conversion, with stage-over-stage rates and drop-offs.
+                  {funnel.rates.totalFunnelEfficiency != null && (
+                    <>
+                      {" "}
+                      Total funnel efficiency:{" "}
+                      <strong className="text-gray-800">
+                        {funnel.rates.totalFunnelEfficiency.toFixed(2)}%
+                      </strong>
+                    </>
+                  )}
                 </>
               )}
             </p>
           </div>
           <HourglassFunnel
+            plainLanguage={clientMode}
             stages={[
               {
                 id: "awareness",
                 label: "Awareness",
                 value: funnel.stages.awareness,
-                metricHint: metricSubs.awareness,
+                metricHint: stageCopy ? stageCopy.awareness : metricSubs.awareness,
+                detail: stageCopy?.awarenessDetail,
               },
               {
                 id: "consideration",
                 label: "Consideration",
                 value: funnel.stages.consideration,
-                metricHint: metricSubs.consideration,
+                metricHint: stageCopy ? stageCopy.consideration : metricSubs.consideration,
+                detail: stageCopy?.considerationDetail,
               },
               {
                 id: "conversion",
                 label: "Conversion",
                 value: funnel.stages.conversion,
-                metricHint: metricSubs.conversion,
+                metricHint: stageCopy ? stageCopy.conversion : metricSubs.conversion,
+                detail: stageCopy?.conversionDetail,
               },
               {
                 id: "loyalty",
@@ -458,7 +480,7 @@ export function GeneralReportView({
       {funnel && funnel.attribution.length > 0 && (
         <section className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
           <div className="mb-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 mb-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">
               Section 3
             </p>
             <h3 className="text-[16px] font-bold text-gray-900">
@@ -477,9 +499,9 @@ export function GeneralReportView({
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatCompact(v)} />
                 <Tooltip formatter={(v) => formatCompact(Number(v) || 0)} />
                 <Legend />
-                <Bar dataKey="awareness" name="Awareness" stackId="a" fill="#6366f1" />
-                <Bar dataKey="consideration" name="Consideration" stackId="a" fill="#8b5cf6" />
-                <Bar dataKey="conversion" name="Conversion" stackId="a" fill="#10b981" />
+                <Bar dataKey="awareness" name="Awareness" stackId="a" fill="#171717" />
+                <Bar dataKey="consideration" name="Consideration" stackId="a" fill="#525252" />
+                <Bar dataKey="conversion" name="Conversion" stackId="a" fill="#a3a3a3" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -492,7 +514,7 @@ export function GeneralReportView({
         <div className="border border-dashed border-gray-300 rounded-2xl bg-gray-50 p-6 text-center no-print">
           <Database className="mx-auto mb-2 text-gray-400" size={22} />
           <p className="text-[13px] text-gray-600 mb-2">
-            Upload missing channel CSVs or Excel workbooks in the Data Hub to enrich the funnel.
+            Connect missing channels in Sources, or upload a file for platforms that need one.
           </p>
           <Link
             href={
@@ -500,9 +522,9 @@ export function GeneralReportView({
                 ? `/app/projects/report-data?project=${projectId}`
                 : "/app/projects/report-data"
             }
-            className="text-[13px] text-blue-600 hover:underline font-medium"
+            className="text-[13px] text-text-secondary hover:text-text-primary underline font-medium"
           >
-            Open Data Hub →
+            Open Sources →
           </Link>
         </div>
       )}

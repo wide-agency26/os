@@ -9,7 +9,7 @@ import {
   EmailSourceIcon,
   TaskStatusBadge,
 } from "@/components/pm/PmBadges";
-import { initialBlocksForTask } from "@/lib/pm/blocknote";
+import { initialBlocksForTask, initialClientBlocksForTask } from "@/lib/pm/blocknote";
 import type { PmTaskStatus } from "@/lib/pm/types";
 import type { TaskRowProfile } from "@/components/pm/TaskRow";
 import { AssigneeSuggestBanner } from "@/components/hr/AssigneeSuggestBanner";
@@ -42,9 +42,12 @@ export type TaskDetailTask = {
   assignee_person_id?: string | null;
   description?: string | null;
   content_blocks?: unknown;
+  client_content_blocks?: unknown;
   is_gate?: boolean;
   cycle_key?: string | null;
   source?: string | null;
+  waiting_on?: "us" | "them" | null;
+  last_evidence?: string | null;
   default_role?: string | null;
   phase_label?: string | null;
   task_template_id?: string | null;
@@ -59,6 +62,7 @@ export type TaskDetailPageProps = {
   onAssigneeChange: (taskId: string, assigneeId: string | null) => void;
   onStatusChange: (taskId: string, status: PmTaskStatus) => void;
   onContentSave: (taskId: string, blocks: Block[]) => void;
+  onClientContentSave: (taskId: string, blocks: Block[]) => void;
   /** RACI-matched roster suggestions (confirm manually). */
   suggestions?: RosterSuggestPerson[];
 };
@@ -75,6 +79,7 @@ export function TaskDetailPage({
   onAssigneeChange,
   onStatusChange,
   onContentSave,
+  onClientContentSave,
   suggestions = [],
 }: TaskDetailPageProps) {
   const [titleDraft, setTitleDraft] = useState(task.title);
@@ -105,7 +110,7 @@ export function TaskDetailPage({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[80] flex justify-end" role="dialog" aria-modal="true">
       <button
         type="button"
         aria-label="Close task detail"
@@ -114,7 +119,7 @@ export function TaskDetailPage({
       />
       <div
         ref={panelRef}
-        className="relative z-10 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl border-l border-gray-200 animate-in slide-in-from-right"
+        className="relative z-10 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl border-l border-gray-200 animate-in slide-in-from-right pb-[var(--os-bottom-nav)]"
       >
         <header className="shrink-0 border-b border-gray-100 px-5 pt-4 pb-3 space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -196,15 +201,51 @@ export function TaskDetailPage({
           />
         ) : null}
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
-          {/* Sole BlockNote mount point for Tasks */}
-          <TaskContentEditor
-            key={task.id}
-            taskId={task.id}
-            initialContent={initialBlocksForTask(task)}
-            onSave={(blocks) => onContentSave(task.id, blocks)}
-            className="border-0 shadow-none"
-          />
+        {task.waiting_on || task.last_evidence ? (
+          <div className="px-3 py-2 border-b border-gray-100 text-xs text-gray-600 space-y-1">
+            {task.waiting_on ? (
+              <p>
+                Waiting on{" "}
+                <span className="font-semibold text-gray-900">{task.waiting_on}</span>
+              </p>
+            ) : null}
+            {task.last_evidence ? (
+              <p className="leading-relaxed">
+                <span className="text-gray-400">Evidence · </span>
+                {task.last_evidence}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-6">
+          <section>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2 px-2">
+              Internal brief
+            </h3>
+            <TaskContentEditor
+              key={`${task.id}-internal`}
+              taskId={task.id}
+              initialContent={initialBlocksForTask(task)}
+              onSave={(blocks) => onContentSave(task.id, blocks)}
+              className="border-0 shadow-none"
+            />
+          </section>
+          <section className="border-t border-gray-100 pt-4">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 px-2">
+              Client view
+            </h3>
+            <p className="text-[11px] text-gray-400 mb-2 px-2">
+              Shown on the client Tasks tab only. Never copied from the internal brief.
+            </p>
+            <TaskContentEditor
+              key={`${task.id}-client`}
+              taskId={`${task.id}-client`}
+              initialContent={initialClientBlocksForTask(task)}
+              onSave={(blocks) => onClientContentSave(task.id, blocks)}
+              className="border-0 shadow-none"
+            />
+          </section>
         </div>
       </div>
     </div>

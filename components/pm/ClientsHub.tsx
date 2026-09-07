@@ -67,7 +67,7 @@ function SignalIcons({ signal }: { signal: AttentionSignal }) {
     return <PM_ICONS.stale className="w-3.5 h-3.5 text-red-600 shrink-0" />;
   }
   if (signal === "pending_review") {
-    return <PM_ICONS.pendingReview className="w-3.5 h-3.5 text-indigo-700 shrink-0" />;
+    return <PM_ICONS.pendingReview className="w-3.5 h-3.5 text-text-primary shrink-0" />;
   }
   return <PM_ICONS.gateCleared className="w-3.5 h-3.5 text-emerald-600 shrink-0" />;
 }
@@ -80,7 +80,6 @@ export function ClientsHub() {
     (searchParams.get("activity") as ActivityEventType | "all") || "all";
 
   const [clients, setClients] = useState<ClientRow[]>([]);
-  const [rawCustomers, setRawCustomers] = useState<any[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [stats, setStats] = useState({
     activeClients: 0,
@@ -116,15 +115,14 @@ export function ClientsHub() {
     const { data: customers } = await (supabase as any)
       .from("crm_customers")
       .select(
-        "id, name, company, status, start_date, contract_value, services_package, subscriber_status, record_kind"
+        "id, name, company, status, services_package, subscriber_status, record_kind"
       )
       .eq("record_kind", "company")
       .order("company", { ascending: true });
-    setRawCustomers(customers || []);
 
     const { data: projects } = await (supabase as any)
       .from("projects")
-      .select("id, title, status, client_id, pm_cycle_key, package_playbook_id");
+      .select("id, title, status, client_id, pm_cycle_key, package_playbook_id, deal_value, expected_start_date, start_date");
 
     const projectIds = (projects || []).map((p: any) => p.id);
 
@@ -275,8 +273,20 @@ export function ClientsHub() {
         company: c.company,
         name: c.name,
         status: c.status,
-        start_date: c.start_date,
-        contract_value: c.contract_value,
+        start_date:
+          clientProjects.find((p: any) => p.expected_start_date || p.start_date)
+            ?.expected_start_date ||
+          clientProjects.find((p: any) => p.expected_start_date || p.start_date)
+            ?.start_date ||
+          null,
+        contract_value: (() => {
+          const valued = [...clientProjects]
+            .filter((p: any) => Number(p.deal_value || 0) > 0)
+            .sort(
+              (a: any, b: any) => Number(b.deal_value || 0) - Number(a.deal_value || 0)
+            )[0];
+          return valued ? Number(valued.deal_value) : null;
+        })(),
         services_package: c.services_package,
         signal,
         projectCount: clientProjects.length,
@@ -432,12 +442,6 @@ export function ClientsHub() {
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
-          <Link
-            href="/app/projects/project"
-            className="text-xs text-gray-600 underline"
-          >
-            All projects →
-          </Link>
         </div>
       </div>
 
@@ -664,7 +668,7 @@ export function ClientsHub() {
         </section>
       </div>
 
-      <ClientIntakeChart customers={rawCustomers} />
+      <ClientIntakeChart customers={clients} />
     </div>
   );
 }

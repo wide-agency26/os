@@ -24,7 +24,7 @@ export function ReportSubTabs({
   activeId,
   onChange,
   ariaLabel,
-  activeClassName = "bg-blue-600 text-white shadow-sm",
+  activeClassName = "bg-accent text-white",
 }: ReportSubTabsProps) {
   const cols =
     tabs.length <= 4
@@ -34,7 +34,7 @@ export function ReportSubTabs({
         : "grid-cols-2 lg:grid-cols-3";
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-2 shadow-sm">
+    <div className="bg-surface border border-border rounded-lg p-2">
       <div className={`grid ${cols} gap-1.5`} role="tablist" aria-label={ariaLabel}>
         {tabs.map((t) => {
           const Icon = t.icon;
@@ -49,21 +49,21 @@ export function ReportSubTabs({
               disabled={!t.enabled}
               title={t.enabled ? t.hint : "Coming soon"}
               onClick={() => t.enabled && onChange(t.id)}
-              className={`relative flex items-start gap-2.5 rounded-xl px-3 py-3 text-left transition-all ${
+              className={`relative flex items-start gap-2.5 rounded-md px-3 py-3 text-left transition-colors ${
                 !t.enabled
-                  ? "opacity-45 cursor-not-allowed bg-gray-50 text-gray-400"
+                  ? "opacity-45 cursor-not-allowed bg-surface-raised text-text-muted"
                   : active
                     ? activeClassName
-                    : "text-gray-700 hover:bg-gray-50"
+                    : "text-text-secondary hover:bg-surface-raised"
               }`}
             >
               <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${
                   !t.enabled
-                    ? "bg-gray-200/80 text-gray-400"
+                    ? "bg-surface-raised text-text-muted"
                     : active
                       ? "bg-white/20 text-white"
-                      : "bg-blue-50 text-blue-600"
+                      : "bg-surface-raised text-text-secondary"
                 }`}
               >
                 <Icon size={15} />
@@ -75,7 +75,7 @@ export function ReportSubTabs({
                 </div>
                 <p
                   className={`text-[10px] mt-0.5 truncate ${
-                    active && t.enabled ? "text-white/75" : "text-gray-400"
+                    active && t.enabled ? "text-white/75" : "text-text-muted"
                   }`}
                 >
                   {t.enabled ? t.hint : "Coming soon"}

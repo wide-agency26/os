@@ -47,6 +47,7 @@ export default async function BdRecordPage({
         initial={result.record}
         timeline={result.timeline ?? []}
         staff={result.staff ?? []}
+        companyProjects={result.companyProjects ?? []}
       />
     </Workspace>
   );

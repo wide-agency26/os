@@ -93,6 +93,7 @@ export default async function PortalGuidelinePage({
     <div className="flex-1 min-h-0 flex flex-col -m-0 overflow-hidden bg-white">
       <PublicGuidelineClient
         mode="portal"
+        slug={slug}
         brandName={result.brandName}
         theme={result.theme as CITheme}
         sections={result.sections as Partial<CISection>[]}

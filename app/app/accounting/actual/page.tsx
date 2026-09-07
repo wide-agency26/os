@@ -9,7 +9,7 @@ export default function ActualLedgerPage() {
       <PillarPageShell
         pillar="actual"
         title="Actual"
-        description="Signed revenue and real costs — HR &amp; overhead run-rate, plus delivered project revenue and assignment costs."
+        description="Live work. Signed deal revenue plus HR payroll and Resources costs. Auto rows stay locked — categorize them, or tuck a one-off Adjustment (bank fee, tax) here."
         runSyncOnMount
         groupMode="project"
       />

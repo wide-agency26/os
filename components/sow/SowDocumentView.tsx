@@ -20,6 +20,12 @@ import type {
   SowLineItem,
   SowSection,
 } from "@/lib/sow/types";
+import {
+  orderedPortfolioSlides,
+  portfolioCaseTitle,
+  portfolioHref,
+  portfolioUrlLabel,
+} from "@/lib/sow/portfolio";
 
 function money(amount: number | null | undefined, currency: string) {
   if (amount == null) return null;
@@ -464,7 +470,8 @@ function CostGroupsBlock({ sow }: { sow: SowDocument }) {
 }
 
 function PortfolioBlock({ sow }: { sow: SowDocument }) {
-  if (!sow.portfolio_slides.length) return null;
+  const slides = orderedPortfolioSlides(sow.portfolio_slides);
+  if (!slides.length) return null;
   return (
     <section className="sow-section space-y-8">
       <header className="max-w-3xl space-y-4">
@@ -477,15 +484,18 @@ function PortfolioBlock({ sow }: { sow: SowDocument }) {
         </h2>
       </header>
       <div className="grid gap-4 sm:grid-cols-2">
-        {sow.portfolio_slides.map((slide, idx) => {
-          const href = slide.link_url || slide.source_url || undefined;
+        {slides.map((slide, idx) => {
+          const href = portfolioHref(slide);
+          const urlLabel = portfolioUrlLabel(slide);
+          const title = portfolioCaseTitle(slide);
+          const featured = idx === 0;
           const Wrapper = href ? "a" : "div";
           return (
             <Wrapper
               key={slide.id}
               {...(href ? { href, target: "_blank", rel: "noreferrer" } : {})}
               className={`group relative block overflow-hidden rounded-2xl ${
-                idx === 0 ? "sm:col-span-2 aspect-[16/9]" : "aspect-[4/3]"
+                featured ? "sm:col-span-2 aspect-[16/9]" : "aspect-[4/3]"
               }`}
               style={{ background: "var(--sow-card)" }}
             >
@@ -493,23 +503,24 @@ function PortfolioBlock({ sow }: { sow: SowDocument }) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={slide.image_url}
-                  alt={slide.title}
+                  alt={title}
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
                 />
               ) : null}
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6">
-                <p className="text-xl sm:text-2xl font-semibold text-white tracking-tight">
-                  {slide.title}
+                <p
+                  className={`${
+                    featured ? "text-2xl sm:text-3xl" : "text-xl sm:text-2xl"
+                  } font-semibold text-white tracking-tight`}
+                >
+                  {title}
                 </p>
-                {(slide.caption || slide.slide_kind === "screenshot") && (
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-white/55">
-                    {slide.caption ||
-                      (slide.slide_kind === "screenshot"
-                        ? "Case screenshot"
-                        : "View the project")}
+                {urlLabel ? (
+                  <p className="mt-1.5 text-[12px] sm:text-[13px] font-medium text-white/70 tracking-tight">
+                    {urlLabel}
                   </p>
-                )}
+                ) : null}
               </div>
             </Wrapper>
           );

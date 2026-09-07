@@ -6,6 +6,7 @@ import { getValidFigmaAccessToken } from "@/lib/ci-builder/figma/connection";
 import { parseFigmaFileKey, FigmaApiError } from "@/lib/ci-builder/figma/client";
 import { runFigmaImportPipeline } from "@/lib/ci-builder/figma/pipeline";
 import { applyImportResult } from "@/lib/ci-builder/import/apply-import-result";
+import { parseColorVariablesDump } from "@/lib/ci-builder/figma/normalize/colors";
 
 /**
  * POST { guidelineId, fileKey|fileUrl, teamId?, projectId?, previewOnly?, skipAi?, mode? }
@@ -31,6 +32,9 @@ export async function POST(req: NextRequest) {
   const teamId = body.teamId ? String(body.teamId) : null;
   const projectId = body.projectId ? String(body.projectId) : null;
   const mode = body.mode === "replace" ? "replace" : "additive";
+  const variablesDump = parseColorVariablesDump(
+    body.variablesDump ?? body.dump ?? null
+  );
 
   if (!guidelineId || !fileKey) {
     return NextResponse.json(
@@ -69,6 +73,7 @@ export async function POST(req: NextRequest) {
       previewOnly,
       skipAssetUpload: previewOnly,
       runAiSuggest: !previewOnly && !skipAi,
+      variablesDump,
     });
 
     if (previewOnly) {
@@ -77,6 +82,7 @@ export async function POST(req: NextRequest) {
         preview: true,
         summary: pipeline.summary,
         variablesAvailable: pipeline.variablesAvailable,
+        variablesUnavailableReason: pipeline.variablesUnavailableReason,
         report: {
           totalItems: pipeline.summary.items.length,
           mapped: pipeline.summary.items.filter((i) => i.confidence === "mapped")
@@ -104,6 +110,7 @@ export async function POST(req: NextRequest) {
         version: pipeline.summary.version,
         stats: pipeline.stats,
         variablesAvailable: pipeline.variablesAvailable,
+        variablesDump: Boolean(variablesDump),
         items: pipeline.summary.items.slice(0, 200),
       },
       createdBy: gate.user.id,
@@ -142,6 +149,7 @@ export async function POST(req: NextRequest) {
       summary: pipeline.summary,
       stats: pipeline.stats,
       variablesAvailable: pipeline.variablesAvailable,
+      variablesUnavailableReason: pipeline.variablesUnavailableReason,
       report: pipeline.parsed.report,
       sections: secs || applied.sections,
       assets: asts || applied.assets,

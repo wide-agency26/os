@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { ProjectPmShell } from "@/components/pm/ProjectPmShell";
+import { ContextBankPanel } from "@/components/context-bank/ContextBankPanel";
 import {
   GateIcon,
   ReviewQueueBadge,
@@ -10,6 +11,7 @@ import {
   TaskStatusBadge,
 } from "@/components/pm/PmBadges";
 import { assignPlaybookToProject } from "@/app/actions/pm";
+import { formatEuro, stagePillarLabel } from "@/lib/accounting/types";
 import { PM_ICONS } from "@/lib/pm/icons";
 import Link from "next/link";
 
@@ -22,6 +24,10 @@ export function ProjectOverviewClient({ projectId }: Props) {
   const [reviewCount, setReviewCount] = useState(0);
   const [selectedPlaybook, setSelectedPlaybook] = useState("");
   const [loading, setLoading] = useState(true);
+  const [contacts, setContacts] = useState<{ id: string; name: string }[]>([]);
+  const [sowStatus, setSowStatus] = useState<string | null>(null);
+  const [contractStatus, setContractStatus] = useState<string | null>(null);
+  const [financeNote, setFinanceNote] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
 
@@ -31,7 +37,7 @@ export function ProjectOverviewClient({ projectId }: Props) {
     const { data: proj } = await (supabase as any)
       .from("projects")
       .select(
-        `id, title, status, package_playbook_id, pm_cycle_key, client:client_id ( company, name )`
+        `id, title, status, stage, deal_value, package_playbook_id, pm_cycle_key, client_id, client:client_id ( company, name )`
       )
       .eq("id", projectId)
       .single();
@@ -56,6 +62,55 @@ export function ProjectOverviewClient({ projectId }: Props) {
       .select(`id, cadence_type, package:package_id ( name )`)
       .order("created_at");
     setPackages(pkgs || []);
+
+    const { data: people } = await (supabase as any)
+      .from("project_deal_contacts")
+      .select("contact_id, crm_customers:contact_id ( id, name )")
+      .eq("project_id", projectId);
+    setContacts(
+      (people || []).map((row: any) => {
+        const c = Array.isArray(row.crm_customers) ? row.crm_customers[0] : row.crm_customers;
+        return { id: c?.id || row.contact_id, name: c?.name || "Contact" };
+      })
+    );
+
+    const { data: sowRows } = await (supabase as any)
+      .from("sows")
+      .select("status")
+      .eq("project_id", projectId)
+      .order("version_number", { ascending: false });
+    setSowStatus(sowRows?.[0]?.status || null);
+
+    const snap = await fetch(
+      `/api/projects/deal-snapshot?projectId=${encodeURIComponent(projectId)}`,
+      { cache: "no-store" }
+    ).then((r) => r.json()) as {
+      ok?: boolean;
+      snapshot?: {
+        contractConfirmed?: boolean;
+        source?: string;
+        amount?: number | null;
+        versionCount?: number;
+      };
+    };
+    if (snap.ok && snap.snapshot) {
+      setContractStatus(
+        snap.snapshot.contractConfirmed
+          ? "Confirmed"
+          : snap.snapshot.source === "contract_draft"
+            ? "Draft"
+            : "—"
+      );
+      const amt = snap.snapshot.amount != null ? formatEuro(snap.snapshot.amount) : "€0";
+      const extra =
+        snap.snapshot.source === "sow_family_min" && (snap.snapshot.versionCount ?? 0) > 1
+          ? ` (lower of ${snap.snapshot.versionCount})`
+          : "";
+      setFinanceNote(
+        `${stagePillarLabel(proj?.stage)} · ${amt} net${extra}`
+      );
+    }
+
     setLoading(false);
   };
 
@@ -119,7 +174,38 @@ export function ProjectOverviewClient({ projectId }: Props) {
       <div className="grid gap-6 lg:grid-cols-3">
         <section className="lg:col-span-2 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-gray-600">Status: {project?.status || "—"}</span>
+            <span className="text-sm text-gray-600">
+              Status:{" "}
+              {project?.stage === "completed" || project?.status === "completed"
+                ? "Done"
+                : project?.status === "expired"
+                  ? "Lost"
+                  : project?.status === "running"
+                  ? "Live"
+                  : project?.status === "pipeline" || project?.stage === "lead"
+                    ? "Lead"
+                    : project?.status || project?.stage || "—"}
+            </span>
+            {contacts.length > 0 ? (
+              <span className="text-sm text-gray-700">
+                {contacts.map((c) => c.name).join(", ")}
+              </span>
+            ) : null}
+            {financeNote ? (
+              <span className="text-sm font-semibold text-gray-900 tabular-nums">
+                {financeNote}
+              </span>
+            ) : project?.deal_value ? (
+              <span className="text-sm font-semibold text-gray-900 tabular-nums">
+                Deal {new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(Number(project.deal_value))} net
+              </span>
+            ) : null}
+            <Link href={`/app/projects/${projectId}/sow`} className="text-xs font-semibold text-blue-700">
+              SOW{sowStatus ? ` · ${sowStatus}` : ""}
+            </Link>
+            <Link href={`/app/projects/${projectId}/contract`} className="text-xs font-semibold text-blue-700">
+              Contract{contractStatus && contractStatus !== "—" ? ` · ${contractStatus}` : ""}
+            </Link>
             <StaleBadge lastActivityAt={lastActivity} />
             {reviewCount > 0 ? (
               <Link href={`/app/projects/${projectId}/review`}>
@@ -224,6 +310,14 @@ export function ProjectOverviewClient({ projectId }: Props) {
           </div>
         </aside>
       </div>
+      {project?.client_id ? (
+        <div className="mt-6">
+          <ContextBankPanel
+            companyId={project.client_id}
+            projectId={projectId}
+          />
+        </div>
+      ) : null}
     </ProjectPmShell>
   );
 }

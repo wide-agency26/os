@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash, X, ExternalLink } from "lucide-react";
 import { ProjectLinkSelect } from "@/components/hr/ProjectLinkSelect";
 import {
   firstDayOfMonth,
@@ -16,10 +17,12 @@ import {
   OVERHEAD_FREQUENCIES,
   formatMoney,
   monthlyOverheadAmount,
+  overheadAmountForCoveredMonth,
+  isRecurringOverheadFrequency,
   type OverheadCostCategory,
   type OverheadFrequency,
 } from "@/lib/hr/types";
-import { runSyncHrAndOverheadLedger } from "@/app/actions/accounting";
+import { saveResourceCost, deleteResourceCost } from "@/app/actions/resource-costs";
 
 type OverheadRow = {
   id: string;
@@ -150,7 +153,7 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
   const openMonthTotal = useMemo(
     () =>
       openMonthRows.reduce(
-        (s, r) => s + monthlyOverheadAmount(r.amount, r.frequency),
+        (s, r) => s + overheadAmountForCoveredMonth(r.amount, r.frequency),
         0
       ),
     [openMonthRows]
@@ -208,32 +211,30 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
       return;
     }
     setSaving(true);
-    const supabase = createClient();
-    const payload = {
+    const from = form.effective_from || todayIso();
+    const oneOffEnd =
+      form.frequency === "one_off"
+        ? lastDayOfMonth(Number(from.slice(0, 4)), Number(from.slice(5, 7)))
+        : null;
+    const res = await saveResourceCost({
+      id: form.id,
+      scope: "person",
       person_id: personId,
+      project_id: form.project_id || null,
       cost_category: form.cost_category,
       label: form.label.trim(),
       amount: form.amount ? Number(form.amount) : 0,
       currency: form.currency || "EUR",
       frequency: form.frequency,
-      effective_from: form.effective_from || todayIso(),
-      effective_to: form.effective_to || null,
+      effective_from: from,
+      effective_to: form.effective_to || oneOffEnd,
       notes: form.notes.trim() || null,
       accounting_ref_id: form.accounting_ref_id.trim() || null,
-      project_id: form.project_id || null,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = form.id
-      ? await (supabase as any)
-          .from("person_overhead_costs")
-          .update(payload)
-          .eq("id", form.id)
-      : await (supabase as any).from("person_overhead_costs").insert([payload]);
+    });
 
     setSaving(false);
-    if (error) {
-      alert(error.message);
+    if (!res.ok) {
+      alert(res.error || "Failed to save");
       return;
     }
     setEditing(false);
@@ -245,25 +246,19 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
       )
     );
     await load();
-    void runSyncHrAndOverheadLedger();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Remove this overhead cost line?")) return;
-    const supabase = createClient();
-    const { error } = await (supabase as any)
-      .from("person_overhead_costs")
-      .delete()
-      .eq("id", id);
-    if (error) {
-      alert(error.message);
+    const res = await deleteResourceCost(id);
+    if (!res.ok) {
+      alert(res.error || "Failed to delete");
       return;
     }
     if (form.id === id) {
       setEditing(false);
     }
     await load();
-    void runSyncHrAndOverheadLedger();
   };
 
   if (loading) {
@@ -276,8 +271,11 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
         <div>
           <h3 className="text-[15px] font-bold text-gray-900">Resource overhead</h3>
           <p className="text-[12px] text-gray-500 mt-1 max-w-xl">
-            Costs that come with this person beyond pay — desk, office share, utilities,
-            equipment seats. Not compensation.
+            Assigned slice of the Resources catalog for this person — desk, seats,
+            not compensation.{" "}
+            <Link href="/app/resources?tab=people" className="text-blue-700 hover:underline inline-flex items-center gap-1">
+              Open in Resources <ExternalLink size={11} />
+            </Link>
           </p>
           <p className="text-[13px] text-gray-800 mt-2">
             Active monthly run-rate:{" "}
@@ -331,7 +329,7 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
           const covering = byMonth[month] || [];
           const isOpen = openMonth === month;
           const monthSum = covering.reduce(
-            (s, r) => s + monthlyOverheadAmount(r.amount, r.frequency),
+            (s, r) => s + overheadAmountForCoveredMonth(r.amount, r.frequency),
             0
           );
           const preview = covering.slice(0, 2);
@@ -559,7 +557,7 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
                     className="sm:col-span-2"
                     value={form.project_id}
                     onChange={(project_id) => setForm((f) => ({ ...f, project_id }))}
-                    hint="Optionally charge this overhead to a specific project’s cost view."
+                    hint="Same line appears on Resources and that project’s cost center. Accounting posts it once."
                   />
                 </div>
                 <div className="flex gap-2">
@@ -597,7 +595,13 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
             ) : openMonthRows.length > 0 ? (
               <ul className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
                 {openMonthRows.map((r) => {
-                  const active = !r.effective_to || r.effective_to >= todayIso();
+                  const recurring = isRecurringOverheadFrequency(r.frequency);
+                  const active =
+                    !recurring || !r.effective_to || r.effective_to >= todayIso();
+                  const booked = overheadAmountForCoveredMonth(
+                    r.amount,
+                    r.frequency
+                  );
                   return (
                     <li
                       key={r.id}
@@ -614,15 +618,10 @@ export function PersonOverheadCostsPanel({ personId }: Props) {
                         </p>
                         <p className="text-[12px] text-gray-500 mt-0.5">
                           {categoryLabel(r.cost_category)} · {r.frequency} ·{" "}
-                          {formatMoney(r.amount, r.currency)}
-                          <span className="text-gray-400">
-                            {" "}
-                            (≈ {formatMoney(
-                              monthlyOverheadAmount(r.amount, r.frequency),
-                              r.currency
-                            )}
-                            /mo)
-                          </span>
+                          {formatMoney(booked, r.currency)}
+                          {recurring ? (
+                            <span className="text-gray-400"> /mo</span>
+                          ) : null}
                         </p>
                         <p className="text-[12px] text-gray-600 mt-1 tabular-nums">
                           {r.effective_from}

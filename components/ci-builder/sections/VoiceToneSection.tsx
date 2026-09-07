@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { CISection, CIAsset, VoiceToneSectionData, VoiceTonePill, VoiceTonePhrase } from "@/lib/ci-builder/types";
+import { CISection, CIAsset, VoiceToneSectionData, VoiceTonePill, VoiceTonePhrase, generateUUID } from "@/lib/ci-builder/types";
 import { SectionContainer } from "./SectionContainer";
 import { EditableText, EditableListItem, AddItemButton } from "../primitives";
+import { ensureKeyedList } from "@/lib/ci-builder/keyed-list";
 
 export interface SectionProps {
   section: Partial<CISection>;
@@ -26,33 +27,14 @@ export function VoiceToneSection({
 }: SectionProps) {
   const data = (section.data || {}) as VoiceToneSectionData;
 
-  // Normalize string arrays to objects with IDs
-  const rawPills = data.marqueeWords || ["Bold", "Human", "Direct", "Confident"];
-  const pills: VoiceTonePill[] = rawPills.map((item, idx) =>
-    typeof item === "string" ? { id: `p_${idx}`, word: item } : item
-  );
-
-  const rawDo = data.doPhrases || [
-    "Simple, clear explanations without jargon.",
-    "Empowering and welcoming tone.",
-    "Action-oriented headlines."
-  ];
-  const doPhrases: VoiceTonePhrase[] = rawDo.map((item, idx) =>
-    typeof item === "string" ? { id: `do_${idx}`, text: item } : item
-  );
-
-  const rawDont = data.dontPhrases || [
-    "Overly academic or technical corporate speak.",
-    "Passive aggressive or dismissive phrasing.",
-    "Vague claims without clear value."
-  ];
-  const dontPhrases: VoiceTonePhrase[] = rawDont.map((item, idx) =>
-    typeof item === "string" ? { id: `dont_${idx}`, text: item } : item
-  );
+  const pills = ensureKeyedList(data.marqueeWords, "word").items as VoiceTonePill[];
+  const doPhrases = ensureKeyedList(data.doPhrases, "text").items as VoiceTonePhrase[];
+  const dontPhrases = ensureKeyedList(data.dontPhrases, "text")
+    .items as VoiceTonePhrase[];
 
   // Marquee pill handlers
   const addPill = () => {
-    const newPill: VoiceTonePill = { id: `pill_${Date.now()}`, word: "Key Word" };
+    const newPill: VoiceTonePill = { id: generateUUID(), word: "Key Word" };
     if (onUpdateData) onUpdateData({ ...data, marqueeWords: [...pills, newPill] });
   };
 
@@ -67,7 +49,7 @@ export function VoiceToneSection({
 
   // Do Phrases handlers
   const addDoPhrase = () => {
-    const newPhrase: VoiceTonePhrase = { id: `do_${Date.now()}`, text: "Say this positive phrase..." };
+    const newPhrase: VoiceTonePhrase = { id: generateUUID(), text: "Say this positive phrase..." };
     if (onUpdateData) onUpdateData({ ...data, doPhrases: [...doPhrases, newPhrase] });
   };
 
@@ -82,7 +64,7 @@ export function VoiceToneSection({
 
   // Don't Phrases handlers
   const addDontPhrase = () => {
-    const newPhrase: VoiceTonePhrase = { id: `dont_${Date.now()}`, text: "Avoid this phrase or tone..." };
+    const newPhrase: VoiceTonePhrase = { id: generateUUID(), text: "Avoid this phrase or tone..." };
     if (onUpdateData) onUpdateData({ ...data, dontPhrases: [...dontPhrases, newPhrase] });
   };
 
@@ -108,13 +90,15 @@ export function VoiceToneSection({
             {pills.map((pill) => (
               <EditableListItem
                 key={pill.id}
+                variant="chip"
                 onDelete={() => deletePill(pill.id)}
                 deleteConfirmTitle="Delete pillar word?"
                 isAdmin={isAdmin}
-                className="bg-gray-100 border border-gray-200 rounded-full px-4 py-2 text-sm font-semibold text-gray-800"
+                className="inline-flex items-center px-4 py-2 rounded-full bg-[var(--ci-accent)]/10 text-[var(--ci-accent)] text-sm font-semibold"
               >
                 <EditableText
                   tag="span"
+                  variant="chip"
                   value={pill.word}
                   placeholder="Word"
                   onSave={(val) => updatePill(pill.id, val)}
@@ -146,10 +130,11 @@ export function VoiceToneSection({
               {doPhrases.map((phrase) => (
                 <EditableListItem
                   key={phrase.id}
+                  variant="row"
                   onDelete={() => deleteDoPhrase(phrase.id)}
                   deleteConfirmTitle="Delete phrase from Say This?"
                   isAdmin={isAdmin}
-                  className="bg-white border border-emerald-100 p-4 rounded-xl shadow-sm text-sm text-gray-800 font-medium"
+                  className="bg-white border border-emerald-100 p-3 rounded-xl shadow-sm text-sm text-gray-800 font-medium"
                 >
                   <EditableText
                     tag="p"
@@ -183,10 +168,11 @@ export function VoiceToneSection({
               {dontPhrases.map((phrase) => (
                 <EditableListItem
                   key={phrase.id}
+                  variant="row"
                   onDelete={() => deleteDontPhrase(phrase.id)}
                   deleteConfirmTitle="Delete phrase from Avoid This?"
                   isAdmin={isAdmin}
-                  className="bg-white border border-rose-100 p-4 rounded-xl shadow-sm text-sm text-gray-800 font-medium"
+                  className="bg-white border border-rose-100 p-3 rounded-xl shadow-sm text-sm text-gray-800 font-medium"
                 >
                   <EditableText
                     tag="p"

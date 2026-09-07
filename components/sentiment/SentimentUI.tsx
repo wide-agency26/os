@@ -11,11 +11,13 @@ export function SentimentLauncher({
   initialBrand = "",
   initialUrl = "",
   bdRecordId = null,
+  projectId = null,
   recent = [],
 }: {
   initialBrand?: string;
   initialUrl?: string;
   bdRecordId?: string | null;
+  projectId?: string | null;
   recent?: SentimentReportRow[];
 }) {
   const router = useRouter();
@@ -31,6 +33,7 @@ export function SentimentLauncher({
         brandName: brand,
         websiteUrl: url || null,
         bdRecordId,
+        projectId,
       });
       if (!res.ok) {
         setMessage(res.error || "Failed");
@@ -71,6 +74,11 @@ export function SentimentLauncher({
         {bdRecordId && (
           <p className="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
             Will link back to BD record {bdRecordId.slice(0, 8)}…
+          </p>
+        )}
+        {projectId && (
+          <p className="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+            Result will show on this project’s Strategy Builder when ready.
           </p>
         )}
         {message && (

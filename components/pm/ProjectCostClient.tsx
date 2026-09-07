@@ -20,8 +20,12 @@ import {
   deleteProjectCostLine,
   saveProjectCostLine,
 } from "@/app/actions/accounting";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { financeYearBooked } from "@/lib/accounting/finance";
 import Link from "next/link";
+import {
+  ProjectFinanceLinesPanel,
+  type FinanceLine,
+} from "@/components/pm/ProjectFinanceLinesPanel";
 
 type Props = { projectId: string };
 
@@ -37,14 +41,7 @@ type ProjectCompRow = {
   people?: { full_name: string | null } | null;
 };
 
-type CostLine = {
-  id: string;
-  label: string;
-  amount: number;
-  entry_date: string;
-  category: string;
-  notes: string | null;
-};
+type CostLine = FinanceLine;
 
 export function ProjectCostClient({ projectId }: Props) {
   const [project, setProject] = useState<any>(null);
@@ -60,23 +57,35 @@ export function ProjectCostClient({ projectId }: Props) {
     Record<string, number>
   >({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    label: "",
-    amount: "",
-    entry_date: new Date().toISOString().slice(0, 10),
-    category: "Actual cost",
-  });
   const period = currentCycleKey();
 
   async function reloadLines() {
     const supabase = createClient();
     const { data } = await (supabase as any)
       .from("project_cost_lines")
-      .select("id, label, amount, entry_date, category, notes")
+      .select("id, label, amount, entry_date, category, notes, frequency, effective_to, overhead_cost_id, overhead:overhead_cost_id ( person_id, people:person_id ( full_name ) )")
       .eq("project_id", projectId)
       .order("entry_date", { ascending: false });
-    setCostLines((data || []) as CostLine[]);
+    setCostLines(
+      ((data || []) as Array<
+        CostLine & {
+          overhead_cost_id?: string | null;
+          overhead?: { person_id?: string | null; people?: { full_name?: string | null } | null } | null;
+        }
+      >).map((row) => ({
+        id: row.id,
+        label: row.label,
+        amount: row.amount,
+        entry_date: row.entry_date,
+        category: row.category,
+        notes: row.notes,
+        frequency: row.frequency,
+        effective_to: row.effective_to,
+        overhead_cost_id: row.overhead_cost_id || null,
+        person_id: row.overhead?.person_id || null,
+        person_name: row.overhead?.people?.full_name || null,
+      }))
+    );
   }
 
   useEffect(() => {
@@ -220,7 +229,17 @@ export function ProjectCostClient({ projectId }: Props) {
       Math.round((hoursCost * multiplier + linkedFees) * 100) / 100;
     const realCost =
       Math.round(
-        costLines.reduce((s, l) => s + Number(l.amount || 0), 0) * 100
+        costLines.reduce(
+          (s, l) =>
+            s +
+            financeYearBooked(
+              Number(l.amount || 0),
+              l.frequency,
+              l.entry_date,
+              l.effective_to
+            ),
+          0
+        ) * 100
       ) / 100;
     const variance = Math.round((realCost - estimatedCost) * 100) / 100;
     const penaltyPct = Math.round((multiplier - 1) * 100);
@@ -246,46 +265,6 @@ export function ProjectCostClient({ projectId }: Props) {
     costLines,
   ]);
 
-  const handleAddLine = async () => {
-    const amount = Number(form.amount);
-    if (!form.label.trim() || !Number.isFinite(amount) || amount === 0) {
-      alert("Enter a label and a non-zero amount.");
-      return;
-    }
-    setSaving(true);
-    const res = await saveProjectCostLine({
-      project_id: projectId,
-      label: form.label,
-      amount,
-      entry_date: form.entry_date,
-      category: form.category,
-    });
-    setSaving(false);
-    if (!res.ok) {
-      alert(res.error || "Failed to save");
-      return;
-    }
-    setForm({
-      label: "",
-      amount: "",
-      entry_date: new Date().toISOString().slice(0, 10),
-      category: "Actual cost",
-    });
-    await reloadLines();
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this actual cost line?")) return;
-    setSaving(true);
-    const res = await deleteProjectCostLine(id, projectId);
-    setSaving(false);
-    if (!res.ok) {
-      alert(res.error || "Failed to delete");
-      return;
-    }
-    await reloadLines();
-  };
-
   if (loading) {
     return (
       <div className="text-sm text-gray-500 p-6">Loading cost center…</div>
@@ -305,11 +284,15 @@ export function ProjectCostClient({ projectId }: Props) {
     >
       <p className="text-sm text-gray-500 mb-4 flex flex-wrap items-center gap-2">
         <Icon className="w-4 h-4" />
-        Period {period} · estimated from task hours × rates · real costs sync to{" "}
+        Period {period} · estimated from task hours × rates · real costs below
+        are the same lines as{" "}
+        <Link href="/app/resources?tab=project" className="text-blue-600 hover:underline">
+          Resources
+        </Link>
+        {" "}(and HR if assigned to a person) — accounting posts each once to{" "}
         <span className="font-medium text-gray-800">
           {stagePillarLabel(project?.stage)}
         </span>{" "}
-        financials
         <Link
           href={
             pillar === "identified"
@@ -388,91 +371,23 @@ export function ProjectCostClient({ projectId }: Props) {
         </div>
       ) : null}
 
-      {/* Real cost lines */}
-      <div className="border border-gray-200 rounded-xl overflow-hidden mb-6">
-        <div className="px-3 py-2 bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500 font-semibold flex items-center justify-between">
-          <span>Real costs (admin)</span>
-          <span className="normal-case font-medium text-gray-700">
-            {formatEuro(analysis.realCost)}
-          </span>
-        </div>
-        <div className="p-3 border-b border-gray-100 grid gap-2 sm:grid-cols-5">
-          <input
-            type="text"
-            placeholder="Label"
-            value={form.label}
-            onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-            className="sm:col-span-2 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
-          />
-          <input
-            type="number"
-            step="0.01"
-            placeholder="Amount €"
-            value={form.amount}
-            onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
-          />
-          <input
-            type="date"
-            value={form.entry_date}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, entry_date: e.target.value }))
-            }
-            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
-          />
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void handleAddLine()}
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold px-3 py-2 hover:bg-gray-800 disabled:opacity-50"
-          >
-            {saving ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Plus className="w-3.5 h-3.5" />
-            )}
-            Add
-          </button>
-        </div>
-        {costLines.length === 0 ? (
-          <p className="px-3 py-4 text-[13px] text-gray-500">
-            No actual cost lines yet. Add vendor invoices, tools, travel, etc. —
-            they sync into {stagePillarLabel(project?.stage)} costs in
-            accounting.
-          </p>
-        ) : (
-          <ul className="divide-y divide-gray-50">
-            {costLines.map((line) => (
-              <li
-                key={line.id}
-                className="flex items-center justify-between gap-3 px-3 py-2.5 text-[13px]"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900 truncate">
-                    {line.label}
-                  </p>
-                  <p className="text-[11px] text-gray-400">
-                    {line.entry_date} · {line.category}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="tabular-nums font-semibold text-red-600">
-                    −{formatEuro(line.amount)}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => void handleDelete(line.id)}
-                    className="p-1.5 text-gray-400 hover:text-red-600"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className="mb-6">
+        <ProjectFinanceLinesPanel
+          kind="cost"
+          projectId={projectId}
+          lines={costLines}
+          pillarLabel={stagePillarLabel(project?.stage)}
+          onSave={async (input) => {
+            const res = await saveProjectCostLine(input);
+            if (res.ok) await reloadLines();
+            return res;
+          }}
+          onDelete={async (id, pid) => {
+            const res = await deleteProjectCostLine(id, pid);
+            if (res.ok) await reloadLines();
+            return res;
+          }}
+        />
       </div>
 
       <div className="border border-gray-200 rounded-xl overflow-hidden">

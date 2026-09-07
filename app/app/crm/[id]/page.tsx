@@ -6,15 +6,10 @@ import { createClient } from "@/utils/supabase/client";
 import { Workspace, Section } from "@/components/frappe-ui/Workspace";
 import { ArrowLeft, Save, Trash } from "lucide-react";
 import Link from "next/link";
-
-const SERVICES_OPTIONS = [
-  "Advance Analytics", "Brand Guidelines", "Brand Strategy", "CRM & Advocacy",
-  "Campaign Planning", "Marketing Strategy", "Messaging & Communitions",
-  "Paid Ads", "SEO", "Social Media Content", "Video Production",
-  "Visual Identity", "Website Design", "Website Development",
-  "[Package] MVB", "[Package] Startup Launch", "[Package] Growth Program",
-  "[Package] Full-Service Partnership", "Graphic Design"
-];
+import { CompanyContextPanel } from "@/components/crm/CompanyContextPanel";
+import { InviteContactAsMember } from "@/components/crm/InviteContactAsMember";
+import { CompanyLogoEditor } from "@/components/crm/CompanyLogo";
+import { ContextBankPanel } from "@/components/context-bank/ContextBankPanel";
 
 type CompanyOption = { id: string; name: string; company: string | null };
 
@@ -25,6 +20,7 @@ export default function EditCustomerPage() {
 
   const [recordKind, setRecordKind] = useState<"company" | "contact">("contact");
   const [parentCompanyId, setParentCompanyId] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [originalStatus, setOriginalStatus] = useState("Prospect");
   const [formData, setFormData] = useState({
@@ -33,70 +29,77 @@ export default function EditCustomerPage() {
     company: "",
     position: "",
     linkedin: "",
+    website: "",
     industry: "",
-    start_date: "",
-    project_type: "",
-    contract_value: "",
     notes: "",
     status: "Prospect",
     source: "",
     source_category: "Activation",
     role: "Decision Maker",
     lead_status: "Reached out",
-    contract_type: "One-off",
     subscriber_status: "Active"
   });
   
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
-      const supabase = createClient();
-      const [{ data, error }, { data: companyRows }] = await Promise.all([
-        (supabase as any)
+      if (!id) return;
+      setFetching(true);
+      try {
+        const supabase = createClient();
+        const { data, error } = await (supabase as any)
           .from("crm_customers")
-          .select("*")
+          .select(
+            "id, name, email, company, position, linkedin, website, industry, notes, status, source, source_category, role, lead_status, subscriber_status, record_kind, parent_company_id, logo_url"
+          )
           .eq("id", id)
-          .single(),
-        (supabase as any)
-          .from("crm_customers")
-          .select("id, name, company")
-          .eq("record_kind", "company")
-          .neq("id", id)
-          .order("company", { ascending: true }),
-      ]);
-      setCompanies(companyRows || []);
-      
-      if (data) {
-        setFormData({
-          name: data.name || "",
-          email: data.email || "",
-          company: data.company || "",
-          position: data.position || "",
-          linkedin: data.linkedin || "",
-          industry: data.industry || "",
-          start_date: data.start_date || "",
-          project_type: data.project_type || "",
-          contract_value: data.contract_value || "",
-          notes: data.notes || "",
-          status: data.status || "Prospect",
-          source: data.source || "",
-          source_category: data.source_category || "Activation",
-          role: data.role || "Decision Maker",
-          lead_status: data.lead_status || "Reached out",
-          contract_type: data.contract_type || "One-off",
-          subscriber_status: data.subscriber_status || "Active"
-        });
-        setOriginalStatus(data.status || "Prospect");
-        setRecordKind(data.record_kind === "company" ? "company" : "contact");
-        setParentCompanyId(data.parent_company_id || "");
-        setSelectedServices(data.services_package || []);
+          .maybeSingle();
+
+        if (error) {
+          console.error(error);
+        }
+
+        if (data) {
+          setFormData({
+            name: data.name || "",
+            email: data.email || "",
+            company: data.company || "",
+            position: data.position || "",
+            linkedin: data.linkedin || "",
+            website: data.website || "",
+            industry: data.industry || "",
+            notes: data.notes || "",
+            status: data.status || "Prospect",
+            source: data.source || "",
+            source_category: data.source_category || "Activation",
+            role: data.role || "Decision Maker",
+            lead_status: data.lead_status || "Reached out",
+            subscriber_status: data.subscriber_status || "Active"
+          });
+          setOriginalStatus(data.status || "Prospect");
+          setRecordKind(data.record_kind === "company" ? "company" : "contact");
+          setParentCompanyId(data.parent_company_id || "");
+          setLogoUrl(data.logo_url || null);
+
+          if (data.record_kind !== "company") {
+            const { data: companyRows } = await (supabase as any)
+              .from("crm_customers")
+              .select("id, name, company")
+              .eq("record_kind", "company")
+              .neq("id", id)
+              .order("company", { ascending: true });
+            setCompanies(companyRows || []);
+          } else {
+            setCompanies([]);
+          }
+        }
+      } finally {
+        setFetching(false);
       }
-      setFetching(false);
     }
-    if (id) fetchData();
+    void fetchData();
   }, [id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -108,12 +111,6 @@ export default function EditCustomerPage() {
     if (value === "company") {
       setParentCompanyId("");
     }
-  };
-
-  const toggleService = (service: string) => {
-    setSelectedServices(prev => 
-      prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
-    );
   };
 
   const handleSave = async () => {
@@ -131,9 +128,6 @@ export default function EditCustomerPage() {
     const payload = {
       ...formData,
       company: companyName || null,
-      start_date: formData.start_date || null,
-      contract_value: formData.contract_value ? Number(formData.contract_value) : null,
-      services_package: selectedServices,
       record_kind: recordKind,
       parent_company_id: isCompany ? null : parentCompanyId || null,
       updated_at: new Date().toISOString()
@@ -189,7 +183,7 @@ export default function EditCustomerPage() {
       }
     }
 
-    router.push(`/app/crm/directory`);
+    router.push(`/app/crm`);
   };
 
   const handleDelete = async () => {
@@ -206,7 +200,7 @@ export default function EditCustomerPage() {
     if (error) {
       alert("Error deleting record: " + error.message);
     } else {
-      router.push(`/app/crm/directory`);
+      router.push(`/app/crm`);
     }
   };
 
@@ -219,9 +213,9 @@ export default function EditCustomerPage() {
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
           <div className="flex items-center gap-4">
-            <Link href="/app/crm/directory" className="text-gray-400 hover:text-gray-900 transition-colors">
+            <a href="/app/crm" className="text-gray-400 hover:text-gray-900 transition-colors">
               <ArrowLeft size={20} />
-            </Link>
+            </a>
             <div>
               <h2 className="text-2xl font-bold text-gray-900">Edit CRM Record</h2>
               <p className="text-sm text-gray-500 mt-1">{formData.name}</p>
@@ -239,13 +233,20 @@ export default function EditCustomerPage() {
             <button 
               onClick={handleSave} 
               disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent-hover transition-colors flex items-center gap-2"
             >
               <Save size={16} />
               {loading ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </div>
+
+        {recordKind === "company" ? <CompanyContextPanel companyId={id} /> : null}
+        {recordKind === "company" ? (
+          <div className="mb-8">
+            <ContextBankPanel companyId={id} />
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
@@ -317,55 +318,52 @@ export default function EditCustomerPage() {
                   <label className="block text-[12px] font-medium text-gray-700 mb-1">LinkedIn URL</label>
                   <input type="text" name="linkedin" value={formData.linkedin} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
                 </div>
-              </div>
-            </Section>
-
-            <Section title="Project & Contract">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Project Type</label>
-                  <input type="text" name="project_type" value={formData.project_type} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Start Date</label>
-                  <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Contract Value ($)</label>
-                  <input type="number" name="contract_value" value={formData.contract_value} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="0.00" />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Contract Type</label>
-                  <select name="contract_type" value={formData.contract_type} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                    <option value="Retainer">Retainer</option>
-                    <option value="One-off">One-off</option>
-                  </select>
-                </div>
-              </div>
-            </Section>
-
-            <Section title="Services / Packages">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {SERVICES_OPTIONS.map(service => (
-                  <label key={service} className="flex items-start gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 border border-transparent hover:border-gray-200 transition-colors">
-                    <input 
-                      type="checkbox" 
-                      className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      checked={selectedServices.includes(service)}
-                      onChange={() => toggleService(service)}
+                {recordKind === "company" && (
+                  <div className="md:col-span-2">
+                    <label className="block text-[12px] font-medium text-gray-700 mb-1">Website</label>
+                    <input type="text" name="website" value={formData.website} onChange={handleChange} placeholder="https://client.com" className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-3" />
+                    <CompanyLogoEditor
+                      companyId={id}
+                      label={formData.name || formData.company || "Company"}
+                      logoUrl={logoUrl}
+                      website={formData.website || null}
                     />
-                    <span className="text-[12px] text-gray-700 leading-tight">{service}</span>
-                  </label>
-                ))}
+                  </div>
+                )}
               </div>
             </Section>
-            
+
+            <p className="text-[12px] text-gray-500">
+              Deal value, service, and retainer dates live on the Work pipeline card
+              (prospects) or the project / SOW (leads and live). CRM stays identity only.
+            </p>
+
             <Section title="Notes">
               <textarea name="notes" value={formData.notes} onChange={handleChange} rows={4} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Additional details..."></textarea>
             </Section>
           </div>
 
           <div className="space-y-6">
+            {recordKind === "contact" ? (
+              <Section title="Portal access">
+                <InviteContactAsMember
+                  companyId={parentCompanyId || null}
+                  contactId={id}
+                  contactName={formData.name}
+                  contactEmail={formData.email}
+                />
+                {parentCompanyId ? (
+                  <p className="mt-3">
+                    <Link
+                      href={`/app/crm/access?company=${encodeURIComponent(parentCompanyId)}&contact=${encodeURIComponent(id)}`}
+                      className="text-[12px] text-blue-700 hover:underline"
+                    >
+                      Manage access
+                    </Link>
+                  </p>
+                ) : null}
+              </Section>
+            ) : null}
             <Section title="CRM Status">
               <div className="space-y-4">
                 <div>

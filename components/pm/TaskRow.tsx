@@ -8,6 +8,7 @@ import {
   TaskStatusBadge,
 } from "@/components/pm/PmBadges";
 import type { PmTaskStatus } from "@/lib/pm/types";
+import { ClientVisibleToggle } from "@/components/client/ClientVisibleToggle";
 
 export type TaskRowProfile = {
   /** people.id from HR roster */
@@ -28,8 +29,11 @@ export type TaskRowTask = {
   is_gate?: boolean;
   cycle_key?: string | null;
   source?: string | null;
+  waiting_on?: "us" | "them" | null;
+  last_evidence?: string | null;
   default_role?: string | null;
   phase_label?: string | null;
+  client_visible?: boolean;
 };
 
 export type TaskRowProps = {
@@ -45,6 +49,7 @@ export type TaskRowProps = {
   onDelete: (taskId: string) => void;
   onDuplicate: (taskId: string) => void;
   onMovePhase: (taskId: string, phaseLabel: string) => void;
+  onClientVisibleChange?: (taskId: string, visible: boolean) => void;
   onDragStart: (taskId: string) => void;
   onDragOver: (taskId: string) => void;
   onDrop: (taskId: string) => void;
@@ -71,6 +76,7 @@ export function TaskRow({
   onDelete,
   onDuplicate,
   onMovePhase,
+  onClientVisibleChange,
   onDragStart,
   onDragOver,
   onDrop,
@@ -124,8 +130,14 @@ export function TaskRow({
   };
 
   return (
-    <li
-      className="group relative flex items-center gap-1.5 px-2 py-1.5 text-sm hover:bg-gray-50/80"
+    <div
+      className={`group relative flex items-center gap-1.5 px-2 py-1.5 text-sm hover:bg-surface-raised/80 ${
+        task.status === "blocked"
+          ? "bg-amber-50/70"
+          : isDone
+            ? "opacity-60"
+            : ""
+      }`}
       draggable={false}
       onDragOver={(e) => {
         e.preventDefault();
@@ -176,6 +188,19 @@ export function TaskRow({
       {task.is_gate ? <GateIcon cleared={isDone} /> : null}
       {task.cycle_key ? <RecurringIcon /> : null}
       {task.source === "email" ? <EmailSourceIcon /> : null}
+      {task.waiting_on === "us" || task.waiting_on === "them" ? (
+        <span
+          data-row-control
+          title={task.waiting_on === "us" ? "Waiting on us" : "Waiting on them"}
+          className={`shrink-0 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+            task.waiting_on === "us"
+              ? "bg-sky-50 text-sky-800 border border-sky-200"
+              : "bg-violet-50 text-violet-800 border border-violet-200"
+          }`}
+        >
+          {task.waiting_on}
+        </span>
+      ) : null}
 
       {editingTitle ? (
         <input
@@ -202,7 +227,7 @@ export function TaskRow({
         <span
           title="Click to open · double-click to rename"
           className={`flex-1 min-w-0 truncate text-left ${
-            isDone ? "text-gray-400 line-through" : "text-gray-900"
+            isDone ? "text-text-muted line-through" : "text-text-primary"
           }`}
           onDoubleClick={(e) => {
             e.stopPropagation();
@@ -220,6 +245,14 @@ export function TaskRow({
       ) : null}
 
       <TaskStatusBadge status={task.status} />
+
+      {onClientVisibleChange ? (
+        <ClientVisibleToggle
+          visible={task.client_visible !== false}
+          disabled={disabled}
+          onChange={(next) => onClientVisibleChange(task.id, next)}
+        />
+      ) : null}
 
       <div ref={assigneeRef} className="relative shrink-0" data-row-control>
         <button
@@ -358,6 +391,6 @@ export function TaskRow({
           </div>
         ) : null}
       </div>
-    </li>
+    </div>
   );
 }

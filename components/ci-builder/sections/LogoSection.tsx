@@ -128,7 +128,7 @@ export function LogoSection({
                   }`}
                 >
                   {/* Image slot */}
-                  <div className="h-44 p-6 flex items-center justify-center relative border-b border-[var(--ci-border,#eaeaea)]">
+                  <div className="h-44 p-6 flex items-center justify-center relative border-b border-[var(--ci-border,#eaeaea)] overflow-hidden">
                     <EditableImage
                       assetId={logo.assetId}
                       onSelectAsset={(ast) => updateLogoVariant(itemKey, { assetId: ast.id })}
@@ -137,8 +137,8 @@ export function LogoSection({
                       compatibleKind="logo"
                       isAdmin={isAdmin}
                       onAddAssetRecord={onAddAssetRecord}
-                      className="w-full h-full flex items-center justify-center"
-                      imageClassName={`max-w-full max-h-full ${logo.fit === "cover" ? "object-cover" : "object-contain"}`}
+                      className="w-full h-full"
+                      imageClassName={logo.fit === "cover" ? "object-cover" : "object-contain"}
                     />
 
                     {isAdmin && (

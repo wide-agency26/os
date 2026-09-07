@@ -9,6 +9,7 @@ import {
   runFigmaImportPipeline,
 } from "@/lib/ci-builder/figma/pipeline";
 import { applyImportResult } from "@/lib/ci-builder/import/apply-import-result";
+import { parseColorVariablesDump } from "@/lib/ci-builder/figma/normalize/colors";
 
 /**
  * GET ?guidelineId=… — check if linked Figma file has a newer version
@@ -84,10 +85,19 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const guidelineId = String(body.guidelineId || "").trim();
   const force = Boolean(body.force);
+  const moduleKeyRaw = body.moduleKey;
+  const variablesDump = parseColorVariablesDump(
+    body.variablesDump ?? body.dump ?? null
+  );
 
   if (!guidelineId) {
     return NextResponse.json({ error: "guidelineId required" }, { status: 400 });
   }
+
+  const { isCanvasModuleKey, figmaSectionTypesForModule } = await import(
+    "@/lib/ci-builder/figma/module-import-spec"
+  );
+  const moduleKey = isCanvasModuleKey(moduleKeyRaw) ? moduleKeyRaw : null;
 
   const supabase = await createClient();
   const { data: guideline } = await (supabase as any)
@@ -134,15 +144,22 @@ export async function POST(req: NextRequest) {
       existingSections: existingSecs || [],
       supabase: admin,
       runAiSuggest: true,
+      variablesDump,
     });
+
+    const replaceTypes = moduleKey ? figmaSectionTypesForModule(moduleKey) : undefined;
+    const skipThemeMerge = Boolean(moduleKey && moduleKey !== "color" && moduleKey !== "type");
 
     const applied = await applyImportResult(supabase, pipeline.parsed, {
       guidelineId,
       existingTheme: guideline.theme,
       mode: "additive",
       source: "figma",
+      replaceSectionTypes: replaceTypes,
+      skipThemeMerge,
       rawPayload: {
         sync: true,
+        moduleKey: moduleKey || null,
         previousVersion: guideline.figma_file_version,
         currentVersion: pipeline.summary.version,
         stats: pipeline.stats,
@@ -150,13 +167,23 @@ export async function POST(req: NextRequest) {
       createdBy: gate.user.id,
     });
 
+    const nextTheme = {
+      ...(applied.theme || {}),
+      figmaSync: {
+        lastSyncedAt: new Date().toISOString(),
+        fileKey: guideline.figma_file_key,
+        status: "ok" as const,
+        message: null,
+      },
+    };
+
     await (supabase as any)
       .from("ci_guidelines")
       .update({
         figma_file_name: pipeline.summary.fileName,
         figma_file_version: pipeline.summary.version,
         figma_last_imported_at: new Date().toISOString(),
-        theme: applied.theme,
+        theme: nextTheme,
       })
       .eq("id", guidelineId);
 
@@ -177,12 +204,13 @@ export async function POST(req: NextRequest) {
       ok: true,
       synced: true,
       skipped: false,
+      moduleKey: moduleKey || null,
       diff,
       stats: pipeline.stats,
       report: pipeline.parsed.report,
       sections: secs || applied.sections,
       assets: asts || applied.assets,
-      theme: applied.theme,
+      theme: nextTheme,
     });
   } catch (err: any) {
     console.error("Figma sync error:", err);

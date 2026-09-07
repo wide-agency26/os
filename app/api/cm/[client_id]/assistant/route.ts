@@ -5,6 +5,11 @@ import {
   clientAssistantSystemPrompt,
   CLIENT_ASSISTANT_MODEL,
 } from "@/lib/ai/client-assistant";
+import {
+  GATEWAY_CREDENTIALS_HINT,
+  hasGatewayCredentials,
+  resolveLanguageModel,
+} from "@/lib/ai/gateway-json";
 
 export const maxDuration = 60;
 
@@ -24,9 +29,9 @@ export async function POST(
   const gate = await requireSuperadmin();
   if (!gate.ok) return jsonError("Founder access required.", 403);
 
-  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {
+  if (!hasGatewayCredentials()) {
     return jsonError(
-      "AI is not configured. Set AI_GATEWAY_API_KEY locally (it is automatic on Vercel).",
+      GATEWAY_CREDENTIALS_HINT,
       400
     );
   }
@@ -45,7 +50,7 @@ export async function POST(
   const modelMessages = await convertToModelMessages(messages);
 
   const result = streamText({
-    model: CLIENT_ASSISTANT_MODEL,
+    model: resolveLanguageModel(CLIENT_ASSISTANT_MODEL),
     system: clientAssistantSystemPrompt(clientLabel),
     messages: modelMessages,
     tools: buildClientAssistantTools(gate.supabase, client_id),

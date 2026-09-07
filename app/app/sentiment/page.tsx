@@ -8,7 +8,7 @@ import { listSentimentReports } from "@/app/actions/sentiment";
 export default async function SentimentPage({
   searchParams,
 }: {
-  searchParams: Promise<{ brand?: string; url?: string; bd?: string }>;
+  searchParams: Promise<{ brand?: string; url?: string; bd?: string; project?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
@@ -35,6 +35,7 @@ export default async function SentimentPage({
         initialBrand={sp.brand || ""}
         initialUrl={sp.url || ""}
         bdRecordId={sp.bd || null}
+        projectId={sp.project || null}
         recent={recent.reports}
       />
     </Workspace>

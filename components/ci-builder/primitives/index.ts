@@ -5,3 +5,5 @@ export * from "./EditableListItem";
 export * from "./AddItemButton";
 export * from "./AssetPickerModal";
 export * from "./CopyableValue";
+export * from "./AssetDownloads";
+export * from "./FontFilesField";

@@ -1,63 +1,102 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeft, X } from "lucide-react";
 import { SectionRenderer } from "@/components/ci-builder/sections";
-import { CITheme, CISection, CIAsset, cssFontStack } from "@/lib/ci-builder/types";
+import { withModuleBreakers } from "@/components/ci-builder/sections/ModuleBreaker";
+import { CITheme, CISection, CIAsset, ColorSwatch, CoverHeaderId } from "@/lib/ci-builder/types";
+import {
+  appearanceFromBackground,
+  ciThemeCssVars,
+  isCoverHeaderItemVisible,
+  isCoverTitleVisible,
+  resolveColorChapterLayout,
+  resolveCoverTitle,
+  resolveCoverSubtitle,
+  withCoverHeaderItem,
+} from "@/lib/ci-builder/theme-css";
+import { GuidelineCoverBlock, type CoverStat, CoverItemToggle } from "./GuidelineCoverBlock";
 import {
   CI_MODULES,
   getSubModule,
   sortSectionsByCatalog,
+  type CiModuleId,
 } from "@/lib/ci-builder/modules-catalog";
 import { scrollToSectionAnchor } from "@/lib/ci-builder/scroll";
+import { isFormatColorSection } from "@/lib/ci-builder/color-cleanup";
+import { sectionHasClientValue } from "@/lib/ci-builder/section-value";
+import { polishClientFacingSections } from "@/lib/ci-builder/polish-client-content";
+import { isCompleteHex, toHexColor } from "@/lib/ci-builder/color-utils";
+import { groupSwatchesByFamily } from "@/lib/ci-builder/color-families";
+import { pickBrandMark } from "@/lib/ci-builder/brand-mark";
+import { breakerStyleFromTheme } from "@/lib/ci-builder/breaker-type";
+import { CiFontLoader } from "@/components/ci-builder/CiFontLoader";
+import { DeferredPaint } from "@/components/ci-builder/DeferredPaint";
+import { CiMediaImage } from "@/components/ci-builder/CiMediaImage";
+import { BrandBookModuleBlock } from "@/components/ci-builder/BrandBookModuleBlock";
+import { collectPresentationPalette } from "@/components/ci-builder/SectionPresentation";
+import "./brand-book.css";
 
 export interface BrandBookPresentationProps {
   brandName: string;
   theme: CITheme | null | undefined;
   sections: Partial<CISection>[];
   assets: Partial<CIAsset>[];
-  /** Optional admin / client chrome rendered above the sticky brand nav */
   toolbar?: React.ReactNode;
-  /** Soft overlay actions (theme, publish) floated over the canvas */
   floatingActions?: React.ReactNode;
   className?: string;
+  printDocument?: boolean;
+  isAdmin?: boolean;
+  onUpdateTheme?: (theme: CITheme) => void;
+  onUpdateSectionData?: (sectionId: string, newData: any) => void;
+  guidelineId?: string;
+  onAddAssetRecord?: (asset: Partial<CIAsset>) => void;
 }
 
 function sectionAnchor(sec: Partial<CISection>) {
   return sec.id || sec.section_type || "";
 }
 
-function sectionLabel(sec: Partial<CISection>) {
-  const def = getSubModule(sec.section_type);
-  return (
-    sec.eyebrow_label ||
-    sec.headline ||
-    def?.defaultHeadline ||
-    sec.section_type ||
-    "Section"
-  );
+const NAV_GROUPS: { label: string; ids: CiModuleId[] }[] = [
+  {
+    label: "Identity",
+    ids: ["brand_core_strategy", "brand_voice_ai_texting", "logo_system"],
+  },
+  {
+    label: "Foundation",
+    ids: [
+      "colors_systems",
+      "typography_properties",
+      "design_tokens",
+      "ui_elements",
+    ],
+  },
+  {
+    label: "Application",
+    ids: ["imagery", "touchpoints"],
+  },
+];
+
+function clipText(value: string, max = 160) {
+  const t = value.replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
 }
 
-function themeStyle(theme: CITheme | null | undefined): React.CSSProperties {
-  const t = theme || {};
-  return {
-    "--ci-bg": t.backgroundColor || "#ffffff",
-    "--ci-text": t.textColor || "#111111",
-    "--ci-accent": t.accentColors?.[0] || "#111111",
-    "--ci-border": "color-mix(in srgb, var(--ci-text) 12%, transparent)",
-    "--ci-text-muted": "color-mix(in srgb, var(--ci-text) 55%, transparent)",
-    "--ci-font": cssFontStack(t.primaryFont || t.fontFamily, t.primaryFontFallback),
-    "--ci-font-secondary": cssFontStack(
-      t.secondaryFont || t.primaryFont || t.fontFamily,
-      t.secondaryFontFallback || t.primaryFontFallback
-    ),
-    "--ci-font-tertiary": cssFontStack(
-      t.tertiaryFont || t.secondaryFont,
-      t.tertiaryFontFallback
-    ),
-    backgroundColor: "var(--ci-bg)",
-    color: "var(--ci-text)",
-    fontFamily: "var(--ci-font)",
-  } as React.CSSProperties;
+function uniqHexes(values: (string | undefined | null)[]) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const t = (raw || "").trim();
+    if (!t) continue;
+    if (!isCompleteHex(t) && !/^#[0-9a-fA-F]{3}$/.test(t)) continue;
+    const hex = toHexColor(t);
+    if (!seen.has(hex)) {
+      seen.add(hex);
+      out.push(hex);
+    }
+  }
+  return out;
 }
 
 export function BrandBookPresentation({
@@ -68,32 +107,75 @@ export function BrandBookPresentation({
   toolbar,
   floatingActions,
   className = "",
+  printDocument = false,
+  isAdmin = false,
+  onUpdateTheme,
+  onUpdateSectionData,
+  guidelineId,
+  onAddAssetRecord,
 }: BrandBookPresentationProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const displayTitle = resolveCoverTitle(theme, brandName);
+  const lockupSub = resolveCoverSubtitle(theme, "");
+  const showTitle = isCoverTitleVisible(theme);
+  const [navOpen, setNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const visible = useMemo(
-    () => sortSectionsByCatalog(sections.filter((s) => s.is_visible !== false)),
-    [sections]
-  );
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("ci-bb-sidebar-collapsed") === "1") {
+        setSidebarCollapsed(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const toggleChapterNav = () => {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 960px)").matches) {
+      setNavOpen((v) => !v);
+      return;
+    }
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      try {
+        sessionStorage.setItem("ci-bb-sidebar-collapsed", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const visible = useMemo(() => {
+    const polished = polishClientFacingSections(sections, { theme }).sections;
+    return sortSectionsByCatalog(
+      polished.filter(
+        (s) =>
+          s.is_visible !== false &&
+          !isFormatColorSection(s.section_type) &&
+          sectionHasClientValue(s, assets)
+      )
+    );
+  }, [sections, assets, theme]);
 
   const navEntries = useMemo(() => {
-    const entries: { id: string; label: string; moduleId: string }[] = [];
-    for (const mod of CI_MODULES) {
-      const modSecs = visible.filter(
-        (sec) => getSubModule(sec.section_type)?.moduleId === mod.id
-      );
-      for (const sec of modSecs) {
-        entries.push({
-          id: sectionAnchor(sec),
-          label: sectionLabel(sec),
+    const entries: { id: string; label: string; moduleId: string }[] =
+      CI_MODULES.map((mod) => {
+        const first = visible.find(
+          (sec) => getSubModule(sec.section_type)?.moduleId === mod.id
+        );
+        return {
+          id: first ? sectionAnchor(first) : "",
+          label: mod.label,
           moduleId: mod.id,
-        });
-      }
-    }
-    for (const sec of visible.filter((s) => !getSubModule(s.section_type))) {
+        };
+      }).filter((e) => e.id);
+    const uncatalogued = visible.filter((s) => !getSubModule(s.section_type));
+    if (uncatalogued[0]) {
       entries.push({
-        id: sectionAnchor(sec),
-        label: sectionLabel(sec),
+        id: sectionAnchor(uncatalogued[0]),
+        label: "Other",
         moduleId: "other",
       });
     }
@@ -104,29 +186,66 @@ export function BrandBookPresentation({
     navEntries[0]?.id || ""
   );
 
-  const heroAsset = useMemo(() => {
-    const imagery = assets.find(
-      (a) =>
-        a.kind?.includes("imagery") ||
-        a.kind?.includes("mood") ||
-        a.kind === "photo" ||
-        a.kind === "image"
-    );
-    const logo = assets.find(
-      (a) => a.kind?.includes("logo") || a.kind === "primary_logo"
-    );
-    return imagery || logo || null;
-  }, [assets]);
+  const brandMark = useMemo(
+    () => pickBrandMark(visible, assets),
+    [visible, assets]
+  );
+
+  const adminCover = Boolean(isAdmin && onUpdateTheme && !printDocument);
+
+  const toggleCoverHeader = (id: CoverHeaderId) => {
+    if (!onUpdateTheme) return;
+    const next = !isCoverHeaderItemVisible(theme, id);
+    onUpdateTheme(withCoverHeaderItem(theme, id, next));
+  };
+
+  const stats = useMemo((): CoverStat[] => {
+    const accents = (theme?.accentColors || []).filter(Boolean).length;
+    const logos = visible.filter(
+      (s) => getSubModule(s.section_type)?.renderer === "image_slot"
+    ).length;
+    const chapters = navEntries.length;
+    const all: CoverStat[] = [];
+    if (accents) {
+      all.push({
+        id: "statAccent",
+        value: String(accents),
+        label: accents === 1 ? "Accent" : "Accents",
+        hidden: !isCoverHeaderItemVisible(theme, "statAccent"),
+      });
+    }
+    if (logos) {
+      all.push({
+        id: "statLogos",
+        value: String(logos),
+        label: logos === 1 ? "Logo slot" : "Logo slots",
+        hidden: !isCoverHeaderItemVisible(theme, "statLogos"),
+      });
+    }
+    if (chapters) {
+      all.push({
+        id: "statChapters",
+        value: String(chapters),
+        label: chapters === 1 ? "Chapter" : "Chapters",
+        hidden: !isCoverHeaderItemVisible(theme, "statChapters"),
+      });
+    }
+    return adminCover ? all : all.filter((s) => !s.hidden);
+  }, [theme, visible, navEntries.length, adminCover]);
+
+  const activeModuleLabel =
+    navEntries.find((e) => e.id === activeSectionId)?.label || "Overview";
 
   useEffect(() => {
     if (navEntries.length === 0) return;
-    if (!navEntries.some((e) => e.id === activeSectionId)) {
-      setActiveSectionId(navEntries[0].id);
+    if (!navEntries.some((e) => e.id && e.id === activeSectionId)) {
+      const first = navEntries.find((e) => e.id);
+      if (first) setActiveSectionId(first.id);
     }
   }, [navEntries, activeSectionId]);
 
   useEffect(() => {
-    if (visible.length === 0) return;
+    if (printDocument || visible.length === 0) return;
 
     const root = scrollRef.current;
     const observer = new IntersectionObserver(
@@ -134,11 +253,18 @@ export function BrandBookPresentation({
         const hit = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (hit?.target?.id) setActiveSectionId(hit.target.id);
+        const hitId = hit?.target?.id;
+        if (!hitId || hitId === "brand-book-hero") return;
+        const sec = visible.find((s) => sectionAnchor(s) === hitId);
+        const modId = getSubModule(sec?.section_type)?.moduleId;
+        const nav =
+          navEntries.find((e) => e.moduleId === modId) ||
+          navEntries.find((e) => e.id === hitId);
+        if (nav?.id) setActiveSectionId(nav.id);
       },
       {
         root: root || null,
-        rootMargin: "-25% 0px -55% 0px",
+        rootMargin: "-12% 0px -70% 0px",
         threshold: [0.1, 0.25, 0.5],
       }
     );
@@ -150,172 +276,397 @@ export function BrandBookPresentation({
     });
 
     return () => observer.disconnect();
-  }, [visible]);
+  }, [printDocument, visible, navEntries]);
 
   const scrollToSection = (anchorId: string) => {
     scrollToSectionAnchor(anchorId, scrollRef.current);
     setActiveSectionId(anchorId);
+    setNavOpen(false);
   };
+
+  const lockupLines = (showTitle ? displayTitle : brandName)
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
+  const rail = useMemo(() => {
+    const cards: {
+      id: CoverHeaderId;
+      eyebrow: string;
+      text: string;
+      chips?: { hex: string; large?: boolean }[];
+      hidden?: boolean;
+    }[] = [];
+    const core = visible.find((s) => {
+      const id = getSubModule(s.section_type)?.moduleId;
+      return id === "brand_core_strategy" || id === "brand_voice_ai_texting";
+    });
+    const body = String(
+      (core?.data as { body?: string; claim?: string } | undefined)?.body ||
+        (core?.data as { claim?: string } | undefined)?.claim ||
+        core?.description ||
+        ""
+    ).trim();
+    if (body) {
+      cards.push({
+        id: "railVoice",
+        eyebrow: core?.headline || core?.eyebrow_label || "Voice",
+        text: clipText(body),
+        hidden: !isCoverHeaderItemVisible(theme, "railVoice"),
+      });
+    }
+    const familyChips = visible
+      .filter((s) => getSubModule(s.section_type)?.renderer === "color_group")
+      .flatMap((s) => {
+        const swatches = Array.isArray(
+          (s.data as { swatches?: ColorSwatch[] } | undefined)?.swatches
+        )
+          ? ((s.data as { swatches: ColorSwatch[] }).swatches || [])
+          : [];
+        const role = String(s.section_type || "");
+        let secondaryHero = true;
+        return groupSwatchesByFamily(swatches)
+          .map((fam) => {
+            const hex = fam.hero?.hex;
+            if (!hex || (!isCompleteHex(hex) && !/^#[0-9a-fA-F]{3}$/.test(hex))) {
+              return null;
+            }
+            const large =
+              role === "color_primary" ||
+              (role === "color_secondary" && secondaryHero);
+            if (role === "color_secondary") secondaryHero = false;
+            return { hex: toHexColor(hex), large, key: `${role}:${fam.key}` };
+          })
+          .filter(Boolean) as { hex: string; large: boolean; key: string }[];
+      });
+    const seen = new Set<string>();
+    const chips = familyChips.filter((c) => {
+      const k = c.hex.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if (chips.length > 0) {
+      const large = chips.filter((c) => c.large);
+      const rest = chips.filter((c) => !c.large);
+      cards.push({
+        id: "railColor",
+        eyebrow: "Color",
+        text: "Full system — primary and secondary at full size.",
+        chips: [...large, ...rest],
+        hidden: !isCoverHeaderItemVisible(theme, "railColor"),
+      });
+    }
+    const font = theme?.primaryFont || theme?.fontFamily;
+    if (font) {
+      cards.push({
+        id: "railType",
+        eyebrow: "Type",
+        text: font,
+        hidden: !isCoverHeaderItemVisible(theme, "railType"),
+      });
+    }
+    return adminCover ? cards : cards.filter((c) => !c.hidden);
+  }, [visible, theme, adminCover]);
+
+  const year = new Date().getFullYear();
+  const accents = theme?.accentColors?.filter(Boolean) || [];
 
   return (
     <div
-      className={`relative flex flex-col overflow-hidden text-[var(--ci-text)] bg-[var(--ci-bg)] h-full min-h-0 ${className}`}
-      style={themeStyle(theme)}
+      className={`ci-brand-book ci-canvas relative flex flex-col text-[var(--ci-text)] bg-[var(--ci-bg)] ${
+        printDocument ? "print-doc h-auto overflow-visible" : "overflow-hidden h-full min-h-0"
+      } ${navOpen ? "bb-nav-open" : ""} ${
+        sidebarCollapsed ? "bb-sidebar-collapsed" : ""
+      } ${className}`}
+      style={{
+        ...ciThemeCssVars(theme),
+        ...breakerStyleFromTheme(theme, visible),
+      }}
+      data-appearance={
+        theme?.appearance || appearanceFromBackground(theme?.backgroundColor)
+      }
     >
+      <CiFontLoader theme={theme} assets={assets} sections={sections} />
       {floatingActions}
 
-      {toolbar && <div className="shrink-0 no-print">{toolbar}</div>}
+      {toolbar && !printDocument ? (
+        <div className="bb-overlay no-print ci-chrome">{toolbar}</div>
+      ) : null}
 
-      {/* Brandpad-style sticky chapter nav */}
-      <header className="sticky top-0 z-30 shrink-0 no-print border-b border-[var(--ci-border)] bg-[var(--ci-bg)]/90 backdrop-blur-md">
-        <div className="flex items-center gap-4 px-6 lg:px-12 py-3.5 max-w-[1800px] mx-auto">
+      {!printDocument && navOpen ? (
+        <button
+          type="button"
+          className="bb-nav-backdrop no-print"
+          aria-label="Close navigation"
+          onClick={() => setNavOpen(false)}
+        />
+      ) : null}
+
+      {printDocument ? null : (
+        <aside className="bb-sidebar no-print">
           <button
             type="button"
+            className="bb-brand"
             onClick={() => {
               scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+              setNavOpen(false);
             }}
-            className="text-sm font-bold tracking-tight shrink-0 hover:opacity-70 transition-opacity"
-            style={{ fontFamily: "var(--ci-font)" }}
           >
-            {brandName || "Brand"}
+            {brandMark?.public_url || brandMark?.storage_path ? (
+              <CiMediaImage
+                src={brandMark.public_url || brandMark.storage_path || ""}
+                alt=""
+                className="bb-brand-mark"
+                width={80}
+                height={80}
+                sizes="80px"
+                priority
+              />
+            ) : (
+              <span className="bb-brand-fallback" />
+            )}
+            <span>
+              <strong>
+                {lockupLines.length
+                  ? lockupLines.map((line, i) => (
+                      <span key={line}>
+                        {line}
+                        {i < lockupLines.length - 1 ? <br /> : null}
+                      </span>
+                    ))
+                  : "Brand"}
+              </strong>
+              {lockupSub ? <em>{lockupSub}</em> : null}
+            </span>
           </button>
 
-          <nav className="flex-1 flex items-center justify-end gap-1 sm:gap-2 overflow-x-auto scrollbar-none">
-            {navEntries.map((entry, idx) => {
-              const prev = navEntries[idx - 1];
-              const showModuleDivider = prev && prev.moduleId !== entry.moduleId;
-              const active = activeSectionId === entry.id;
+          <nav className="bb-nav">
+            {NAV_GROUPS.map((group) => {
+              const items = group.ids
+                .map((id) => navEntries.find((e) => e.moduleId === id))
+                .filter((e): e is (typeof navEntries)[number] => Boolean(e));
+              if (items.length === 0) return null;
               return (
-                <React.Fragment key={entry.id}>
-                  {showModuleDivider && (
-                    <span
-                      className="hidden sm:block w-px h-4 bg-[var(--ci-border)] shrink-0 mx-0.5"
-                      aria-hidden
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => scrollToSection(entry.id)}
-                    title={entry.label}
-                    className={`px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold tracking-wide whitespace-nowrap transition-colors ${
-                      active
-                        ? "text-[var(--ci-accent)]"
-                        : "text-[var(--ci-text-muted)] hover:text-[var(--ci-text)]"
-                    }`}
-                  >
-                    {entry.label}
-                  </button>
-                </React.Fragment>
+                <div key={group.label} className="bb-nav-group">
+                  <span className="bb-nav-group-label">{group.label}</span>
+                  {items.map((entry) => {
+                    const active = activeSectionId === entry.id;
+                    const colorIndex = navEntries.findIndex(
+                      (e) => e.moduleId === entry.moduleId
+                    );
+                    const color =
+                      accents[colorIndex % Math.max(accents.length, 1)] ||
+                      "var(--ci-accent)";
+                    return (
+                      <button
+                        key={entry.moduleId}
+                        type="button"
+                        className={active ? "active" : ""}
+                        onClick={() => scrollToSection(entry.id)}
+                      >
+                        <i className="bb-nav-dot" style={{ background: color }} />
+                        {entry.label}
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
+            {navEntries
+              .filter((e) => e.moduleId === "other")
+              .map((entry) => (
+                <button
+                  key={entry.moduleId}
+                  type="button"
+                  className={activeSectionId === entry.id ? "active" : ""}
+                  onClick={() => scrollToSection(entry.id)}
+                >
+                  <i className="bb-nav-dot" style={{ background: "var(--ci-accent)" }} />
+                  {entry.label}
+                </button>
+              ))}
           </nav>
-        </div>
-        <div
-          className="h-0.5 w-full origin-left transition-transform"
-          style={{
-            background: `linear-gradient(90deg, var(--ci-accent), transparent)`,
-          }}
-        />
-      </header>
+
+          <div className="bb-sidebar-footer">
+            <span className="dot" />
+            Brand book · {year}
+          </div>
+        </aside>
+      )}
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto ci-guideline-print scroll-smooth"
+        className={
+          printDocument
+            ? "bb-main ci-guideline-print overflow-visible h-auto"
+            : "bb-main flex-1 overflow-y-auto ci-guideline-print scroll-smooth min-h-0 h-full"
+        }
       >
-        {/* Full-bleed hero */}
-        <section
-          id="brand-book-hero"
-          className="relative min-h-[min(72vh,720px)] flex flex-col justify-end overflow-hidden border-b border-[var(--ci-border)]"
-        >
-          {heroAsset?.public_url || heroAsset?.storage_path ? (
-            <div className="absolute inset-0">
-              <img
-                src={heroAsset.public_url || heroAsset.storage_path || ""}
-                alt=""
-                className="h-full w-full object-cover"
-              />
-              <div
-                className="absolute inset-0"
-                style={{
-                  background:
-                    "linear-gradient(to top, color-mix(in srgb, var(--ci-bg) 92%, transparent) 0%, color-mix(in srgb, var(--ci-bg) 35%, transparent) 45%, transparent 100%)",
-                }}
-              />
+        {printDocument ? null : (
+          <header className="bb-topbar no-print">
+            <div className="bb-crumbs">
+              <button
+                type="button"
+                className="bb-nav-toggle p-1 -ml-1"
+                onClick={toggleChapterNav}
+                aria-label={
+                  sidebarCollapsed ? "Show chapter navigation" : "Hide chapter navigation"
+                }
+                title={
+                  sidebarCollapsed ? "Show chapters" : "Hide chapters for full width"
+                }
+              >
+                {navOpen ? (
+                  <X size={16} />
+                ) : sidebarCollapsed ? (
+                  <PanelLeft size={16} />
+                ) : (
+                  <PanelLeftClose size={16} />
+                )}
+              </button>
+              <span>{showTitle ? displayTitle : brandName}</span>
+              {lockupSub ? (
+                <>
+                  <span>·</span>
+                  <span>{lockupSub}</span>
+                </>
+              ) : null}
+              <span>·</span>
+              <span className="bb-crumb-current">{activeModuleLabel}</span>
             </div>
-          ) : (
-            <div
-              className="absolute inset-0 opacity-[0.07]"
-              style={{
-                backgroundImage: `
-                  radial-gradient(circle at 20% 20%, var(--ci-accent), transparent 45%),
-                  radial-gradient(circle at 80% 60%, var(--ci-text), transparent 40%)
-                `,
-              }}
-            />
-          )}
+            <div className="bb-topbar-meta">
+              <span className="bb-year-pill">{year}</span>
+            </div>
+          </header>
+        )}
 
-          <div className="relative z-10 px-6 lg:px-12 pb-16 pt-28 max-w-[1800px] mx-auto w-full">
-            <p
-              className="text-[11px] font-bold uppercase tracking-[0.22em] mb-5 text-[var(--ci-accent)]"
-              style={{ fontFamily: "var(--ci-font-tertiary)" }}
-            >
-              Brand guidelines
-            </p>
-            <h1
-              className="text-5xl sm:text-6xl lg:text-8xl font-bold tracking-tight leading-[0.95] max-w-4xl"
-              style={{ fontFamily: "var(--ci-font)" }}
-            >
-              {brandName || "Brand"}
-            </h1>
-            <p
-              className="mt-6 max-w-xl text-base sm:text-lg leading-relaxed text-[var(--ci-text-muted)]"
-              style={{ fontFamily: "var(--ci-font-secondary)" }}
-            >
-              Identity, voice, and visual system — presentation view.
-            </p>
-          </div>
+        <section id="brand-book-hero" className="bb-hero">
+          <div className="bb-hero-bg" aria-hidden />
+          <GuidelineCoverBlock
+            theme={theme}
+            fallbackTitle={brandName}
+            variant="hero"
+            stats={stats}
+            isAdmin={adminCover}
+            onToggleCoverHeader={adminCover ? toggleCoverHeader : undefined}
+          />
+          {rail.length > 0 ? (
+            <div className="bb-hero-rail">
+              {rail.map((card) => (
+                <div
+                  key={card.id}
+                  className={`bb-rail-card${card.hidden ? " bb-cover-hidden" : ""}`}
+                >
+                  <span className="bb-eyebrow">{card.eyebrow}</span>
+                  <p>{card.text}</p>
+                  {card.chips?.length ? (
+                    <div className="bb-rail-chips">
+                      {card.chips.map((chip) => (
+                        <i
+                          key={chip.hex}
+                          className={chip.large ? "bb-rail-chip-lg" : undefined}
+                          style={{ background: chip.hex }}
+                          title={chip.hex}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                  {adminCover ? (
+                    <CoverItemToggle
+                      visible={!card.hidden}
+                      label={card.eyebrow}
+                      onToggle={() => toggleCoverHeader(card.id)}
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         <main>
           {visible.length === 0 ? (
-            <div className="px-8 py-24 text-center text-sm text-[var(--ci-text-muted)]">
-              No visible sections yet. Switch to Edit to add sub-modules or import from Figma.
+            <div className="bb-section">
+              <p className="bb-desc">
+                No visible sections yet. Switch to Edit to add sub-modules or import from Figma.
+              </p>
             </div>
           ) : (
-            visible.map((sec) => (
-              <SectionRenderer
-                key={sec.id || sec.section_type}
-                section={sec}
-                assets={assets.filter(
-                  (a) => a.section_id === sec.id || a.kind === sec.section_type
-                )}
-                allAssets={assets}
-                allSections={visible}
-                isAdmin={false}
-                viewMode="presentation"
-                hidePromptActions
-              />
-            ))
+            withModuleBreakers(
+              visible,
+              (sec, _i, opts) => (
+                <DeferredPaint
+                  id={sec.id || sec.section_type}
+                  eager={printDocument}
+                >
+                <SectionRenderer
+                  section={sec}
+                  compact={opts?.compact}
+                  clustered={opts?.clustered}
+                  headlineScale={opts?.headlineScale}
+                  followOn={opts?.followOn}
+                  moduleScoped={opts?.moduleScoped}
+                  assets={assets.filter(
+                    (a) => a.section_id === sec.id || a.kind === sec.section_type
+                  )}
+                  allAssets={assets}
+                  allSections={visible}
+                  isAdmin={false}
+                  viewMode="presentation"
+                  hidePromptActions
+                  presentationEdit={
+                    Boolean(isAdmin && onUpdateSectionData) && !opts?.clustered
+                  }
+                  theme={theme}
+                  onUpdateData={onUpdateSectionData}
+                  guidelineId={guidelineId}
+                  onAddAssetRecord={onAddAssetRecord}
+                />
+                </DeferredPaint>
+              ),
+              {
+                viewMode: "presentation",
+                colorChapterLayout: resolveColorChapterLayout(theme),
+                theme,
+                allSections: visible,
+                assets,
+                palette: collectPresentationPalette({ theme, sections: visible }),
+                presentationEdit: Boolean(isAdmin && onUpdateTheme),
+                onUpdateTheme,
+                guidelineId,
+                onAddAssetRecord,
+              }
+            )
           )}
         </main>
 
-        <footer className="px-6 lg:px-12 py-14 border-t border-[var(--ci-border)] no-print">
-          <div className="max-w-[1800px] mx-auto flex items-center justify-between gap-4">
-            <p
-              className="text-xs text-[var(--ci-text-muted)]"
-              style={{ fontFamily: "var(--ci-font-secondary)" }}
-            >
-              {brandName || "Brand"} · Brand book
+        <BrandBookModuleBlock
+          blockId="footer"
+          blockLabel="Footer"
+          theme={theme}
+          assets={assets}
+          palette={collectPresentationPalette({ theme, sections: visible })}
+          presentationEdit={Boolean(isAdmin && onUpdateTheme)}
+          onUpdateTheme={onUpdateTheme}
+          guidelineId={guidelineId}
+          onAddAssetRecord={onAddAssetRecord}
+        >
+          <footer className="bb-section bb-footer no-print">
+            <p className="bb-desc">
+              {showTitle ? `${displayTitle} · Brand book` : "Brand book"}
             </p>
             <button
               type="button"
               onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
-              className="text-xs font-semibold text-[var(--ci-accent)] hover:opacity-70 transition-opacity"
+              className="mt-4 text-xs font-semibold uppercase tracking-wider text-[var(--ci-accent)]"
             >
               Back to top
             </button>
-          </div>
-        </footer>
+          </footer>
+        </BrandBookModuleBlock>
       </div>
     </div>
   );

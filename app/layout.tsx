@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -16,6 +16,28 @@ export const metadata: Metadata = {
   title: "WIDE Portal — Strategic Brand Management",
   description:
     "Agency portal for strategic brand management, style guides, file center, and operational oversight.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.png", type: "image/png", sizes: "256x256" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+    shortcut: "/favicon.ico",
+  },
+  applicationName: "WIDE Portal",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "WIDE OS",
+  },
+  formatDetection: { telephone: false },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#fafaf8",
 };
 
 export default function RootLayout({
@@ -26,9 +48,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${geistSans.variable} ${geistMono.variable} h-full`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full`}
     >
-      <body className="h-full min-h-screen bg-zinc-950 text-zinc-50 antialiased">{children}</body>
+      <body className="h-full min-h-screen bg-background text-text-primary antialiased">{children}</body>
     </html>
   );
 }

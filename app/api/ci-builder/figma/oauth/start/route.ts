@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const guidelineId = req.nextUrl.searchParams.get("guideline_id") || "";
   const returnTo =
     req.nextUrl.searchParams.get("return_to") ||
-    "/app/projects/ci-builder";
+    "/app/tools/ci";
 
   const state = crypto.randomUUID();
   const cookieStore = await cookies();

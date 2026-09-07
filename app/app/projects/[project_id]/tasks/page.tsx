@@ -8,7 +8,7 @@ export default async function ProjectTasksPage({
 }) {
   const { project_id } = await params;
   return (
-    <Workspace>
+    <Workspace wide>
       <ProjectTasksClient projectId={project_id} />
     </Workspace>
   );

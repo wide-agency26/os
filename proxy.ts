@@ -2,10 +2,23 @@
  * WIDE OS traffic controller (Next.js 16 `proxy` = legacy `middleware`).
  * Inspects JWT session + role → routes to /admin, /finance, /bd, /cm, or /client.
  */
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/utils/supabase/proxy";
+import { CANONICAL_ORIGIN, isLegacyProductionHost } from "@/lib/site-url";
+import { isMachinePath } from "@/lib/proxy-routing";
 
 export async function proxy(request: NextRequest) {
+  const host = request.headers.get("host");
+  if (
+    isLegacyProductionHost(host) &&
+    !isMachinePath(request.nextUrl.pathname)
+  ) {
+    const dest = new URL(
+      `${request.nextUrl.pathname}${request.nextUrl.search}`,
+      CANONICAL_ORIGIN
+    );
+    return NextResponse.redirect(dest, 308);
+  }
   return await updateSession(request);
 }
 

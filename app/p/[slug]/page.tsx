@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { FileQuestion, Lock } from "lucide-react";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { ProposalResponseActions } from "@/components/bd/ProposalResponseActions";
+import { ProposalResponseChrome } from "@/components/bd/ProposalResponseActions";
 import { normalizeSlides } from "@/lib/bd/slides";
+import { publicProposalDisabledReason } from "@/lib/bd/proposal-response";
 
 export const revalidate = 60;
 
@@ -46,64 +47,55 @@ export default async function PublicSlideDeckPage({
   }
 
   const slides = normalizeSlides(deck.slides);
-  const decided =
-    deck.status === "accepted" ||
-    deck.status === "declined" ||
-    deck.status === "on_hold";
-
   return (
     <div className="min-h-screen bg-[#0B0B0B] text-white">
-      <div className="sticky top-0 z-30 border-b border-white/10 bg-black/80 backdrop-blur px-4 py-3">
-        <div className="max-w-3xl mx-auto space-y-2">
+      <ProposalResponseChrome
+        linkedId={deck.id}
+        proposalType="slides"
+        appearance="dark"
+        disabledReason={publicProposalDisabledReason(deck.status)}
+      >
+        <div className="max-w-3xl mx-auto px-4 pt-8 pb-4">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-white/50">
             WIDE Proposal
           </p>
-          <h1 className="text-lg font-semibold">{deck.title}</h1>
-          <ProposalResponseActions
-            linkedId={deck.id}
-            proposalType="slides"
-            disabledReason={
-              decided
-                ? `This proposal is already marked ${deck.status}.`
-                : null
-            }
-          />
+          <h1 className="text-2xl font-semibold mt-1">{deck.title}</h1>
         </div>
-      </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-10 space-y-8">
-        {slides.map((slide, idx) => (
-          <section
-            key={slide.id}
-            className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 space-y-3"
-          >
-            <p className="text-[10px] font-bold uppercase tracking-wide text-white/40">
-              Slide {idx + 1} · {slide.kind}
-            </p>
-            <h2 className="text-2xl font-semibold tracking-tight">{slide.title}</h2>
-            {slide.body && (
-              <p className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap">
-                {slide.body}
+        <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
+          {slides.map((slide, idx) => (
+            <section
+              key={slide.id}
+              className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 space-y-3"
+            >
+              <p className="text-[10px] font-bold uppercase tracking-wide text-white/40">
+                Slide {idx + 1} · {slide.kind}
               </p>
-            )}
-            {slide.bullets.length > 0 && (
-              <ul className="list-disc pl-5 space-y-1 text-sm text-white/80">
-                {slide.bullets.map((b) => (
-                  <li key={b}>{b}</li>
-                ))}
-              </ul>
-            )}
-            {slide.portfolio?.image_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={slide.portfolio.image_url}
-                alt={slide.portfolio.title || ""}
-                className="w-full max-h-80 object-cover rounded-xl border border-white/10"
-              />
-            )}
-          </section>
-        ))}
-      </div>
+              <h2 className="text-2xl font-semibold tracking-tight">{slide.title}</h2>
+              {slide.body && (
+                <p className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap">
+                  {slide.body}
+                </p>
+              )}
+              {slide.bullets.length > 0 && (
+                <ul className="list-disc pl-5 space-y-1 text-sm text-white/80">
+                  {slide.bullets.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              )}
+              {slide.portfolio?.image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={slide.portfolio.image_url}
+                  alt={slide.portfolio.title || ""}
+                  className="w-full max-h-80 object-cover rounded-xl border border-white/10"
+                />
+              )}
+            </section>
+          ))}
+        </div>
+      </ProposalResponseChrome>
     </div>
   );
 }

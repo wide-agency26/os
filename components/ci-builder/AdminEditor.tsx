@@ -2,19 +2,34 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { CISection, CIAsset, CITheme, generateUUID, cssFontStack } from "@/lib/ci-builder/types";
+import { CISection, CIAsset, CITheme, generateUUID } from "@/lib/ci-builder/types";
+import {
+  ciThemeCssVars,
+  ensureReadableTheme,
+  themeHasReadableContrast,
+  resolveColorChapterLayout,
+} from "@/lib/ci-builder/theme-css";
+import { breakerStyleFromTheme } from "@/lib/ci-builder/breaker-type";
+import { collectImportGaps } from "@/lib/ci-builder/import-gaps";
+import { CiFontLoader } from "@/components/ci-builder/CiFontLoader";
+import { workPaths } from "@/lib/work/paths";
+import Link from "next/link";
 
 function isValidUUID(str?: string): boolean {
   if (!str) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 import { SectionRenderer } from "./sections/index";
+import { withModuleBreakers } from "./sections/ModuleBreaker";
 import { parseManifest } from "@/lib/ci-builder/parser";
 import { applyImportResult } from "@/lib/ci-builder/import/apply-import-result";
 import { CI_ADDABLE_GLOSSARY } from "@/lib/ci-builder/glossary";
 import { CI_MODULES, defaultDataForSubModule, getSubModule, sortSectionsByCatalog } from "@/lib/ci-builder/modules-catalog";
 import { scrollToSectionAnchor } from "@/lib/ci-builder/scroll";
-import { needsLegacyMigration } from "@/lib/ci-builder/migrate-legacy-sections";
+import { needsLegacyMigration, needsLogoMarksMigration } from "@/lib/ci-builder/migrate-legacy-sections";
+import { isFormatColorSection, applyColorBucketMove, isColorRoleSection, type ColorRoleSectionType } from "@/lib/ci-builder/color-cleanup";
+import { polishClientFacingSections } from "@/lib/ci-builder/polish-client-content";
+import { setCiAssetDrag } from "@/lib/ci-builder/asset-drag";
 import {
   Settings,
   Share,
@@ -31,16 +46,42 @@ import {
   Trash2,
   Printer,
   Copy,
+  PanelLeft,
+  ArrowLeft,
+  Eye,
 } from "lucide-react";
-import { ThemePanel } from "./ThemePanel";
 import { PublishModal } from "./PublishModal";
-import { ImportPanel } from "./ImportPanel";
-import { BrandBookPresentation } from "./BrandBookPresentation";
+import dynamic from "next/dynamic";
+import { GuidelineCoverBlock } from "./GuidelineCoverBlock";
+import { DeferredPaint } from "./DeferredPaint";
+import { DownloadPdfButton } from "@/components/pdf/DownloadPdfButton";
 import {
   resetCiGuideline,
   migrateCiGuidelineToSubmodules,
+  deleteCiSection,
 } from "@/app/actions/ci-builder";
 import { triggerToast, ToastContainer } from "./Toast";
+import { useTouchRecentProject } from "@/components/tools/useTouchRecentProject";
+
+const FigmaImportWizard = dynamic(
+  () => import("./FigmaImportWizard").then((m) => m.FigmaImportWizard),
+  { ssr: false }
+);
+const GuidelineClientShell = dynamic(
+  () =>
+    import("./templates/GuidelineClientShell").then(
+      (m) => m.GuidelineClientShell
+    ),
+  { ssr: false }
+);
+const ThemePanel = dynamic(
+  () => import("./ThemePanel").then((m) => m.ThemePanel),
+  { ssr: false }
+);
+const ImportPanel = dynamic(
+  () => import("./ImportPanel").then((m) => m.ImportPanel),
+  { ssr: false }
+);
 
 type AdminViewMode = "edit" | "elements" | "brand_book";
 
@@ -53,6 +94,7 @@ function themeHasFonts(theme: any): boolean {
 }
 
 export function AdminEditor({ projectId }: { projectId: string }) {
+  useTouchRecentProject("ci", projectId);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [guideline, setGuideline] = useState<any>(null);
@@ -68,12 +110,20 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const [showAddSectionDropdown, setShowAddSectionDropdown] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [pendingDeleteSection, setPendingDeleteSection] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
+  const [deletingSection, setDeletingSection] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [importReport, setImportReport] = useState<any>(null);
   const [selectedUnassigned, setSelectedUnassigned] = useState<Set<string>>(new Set());
+  const [fontLoaded, setFontLoaded] = useState<boolean | null>(null);
   const [dragSectionId, setDragSectionId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<AdminViewMode>("edit");
+  const [navOpen, setNavOpen] = useState(false);
+  const [showFigma, setShowFigma] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const [brandName, setBrandName] = useState("Brand");
 
@@ -82,8 +132,19 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const rightPaneRef = useRef<HTMLDivElement>(null);
 
   const orderedSections = useMemo(
-    () => sortSectionsByCatalog(sections),
+    () =>
+      sortSectionsByCatalog(
+        sections.filter((s) => !isFormatColorSection(s.section_type))
+      ),
     [sections]
+  );
+
+  const canvasSections = useMemo(
+    () =>
+      viewMode === "elements"
+        ? orderedSections.filter((s) => s.is_visible !== false)
+        : orderedSections,
+    [orderedSections, viewMode]
   );
 
   const unassignedCount = useMemo(
@@ -93,12 +154,23 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
   const scrollToSection = useCallback((anchorId: string) => {
     scrollToSectionAnchor(anchorId, rightPaneRef.current);
+    setNavOpen(false);
   }, []);
-  const pendingUpdatesRef = useRef<Map<string, { type: "data" | "fields"; payload: any }>>(new Map());
+  const pendingUpdatesRef = useRef<
+    Map<string, { data?: any; fields?: Record<string, any> }>
+  >(new Map());
 
   useEffect(() => {
     loadData();
   }, [projectId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("figma_connected") === "1" || params.get("figma") === "1") {
+      setShowFigma(true);
+    }
+  }, []);
 
   // Unsaved changes beforeunload warning
   useEffect(() => {
@@ -163,8 +235,11 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           .eq("guideline_id", gl.id);
         if (astErr) throw astErr;
 
-        // Adapt legacy combined sections → 9×52 submodule catalog
-        if (secs && needsLegacyMigration(secs)) {
+        // Adapt legacy combined sections → catalog + logo_marks (schema v2)
+        if (
+          secs &&
+          (needsLegacyMigration(secs) || needsLogoMarksMigration(secs))
+        ) {
           setMigrating(true);
           const mig = await migrateCiGuidelineToSubmodules(projectId);
           setMigrating(false);
@@ -178,7 +253,41 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           }
         }
 
-        if (secs) setSections(sortSectionsByCatalog(secs));
+        if (secs) {
+          const polished = polishClientFacingSections(secs, {
+            guidelineId: gl.id,
+            theme: gl.theme,
+          });
+          if (polished.changed) {
+            const before = new Map(
+              (secs as Partial<CISection>[]).map((s) => [
+                s.id,
+                JSON.stringify({ d: s.description, data: s.data }),
+              ])
+            );
+            secs = polished.sections;
+            await Promise.all(
+              polished.sections
+                .filter((s) => {
+                  if (!s.id) return false;
+                  return (
+                    before.get(s.id) !==
+                    JSON.stringify({ d: s.description, data: s.data })
+                  );
+                })
+                .map((s) =>
+                  (supabase as any)
+                    .from("ci_sections")
+                    .update({
+                      description: s.description ?? null,
+                      data: s.data || {},
+                    })
+                    .eq("id", s.id)
+                )
+            );
+          }
+          setSections(sortSectionsByCatalog(secs));
+        }
         if (asts) setAssets(asts);
       }
       
@@ -213,16 +322,17 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     try {
       for (const [sectionId, update] of updatesToProcess.entries()) {
         if (!sectionId) continue;
-        if (update.type === "data") {
+        if (update.data !== undefined) {
           const { error } = await (supabase as any)
             .from("ci_sections")
-            .update({ data: update.payload })
+            .update({ data: update.data })
             .eq("id", sectionId);
           if (error) throw error;
-        } else if (update.type === "fields") {
+        }
+        if (update.fields && Object.keys(update.fields).length > 0) {
           const { error } = await (supabase as any)
             .from("ci_sections")
-            .update(update.payload)
+            .update(update.fields)
             .eq("id", sectionId);
           if (error) throw error;
         }
@@ -243,7 +353,15 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
   const scheduleDebouncedSave = (sectionId: string, type: "data" | "fields", payload: any) => {
     setSaveStatus("saving");
-    pendingUpdatesRef.current.set(sectionId, { type, payload });
+    const prev = pendingUpdatesRef.current.get(sectionId) || {};
+    if (type === "data") {
+      pendingUpdatesRef.current.set(sectionId, { ...prev, data: payload });
+    } else {
+      pendingUpdatesRef.current.set(sectionId, {
+        ...prev,
+        fields: { ...prev.fields, ...payload },
+      });
+    }
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -259,6 +377,62 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   const handleUpdateSectionData = (sectionId: string, newData: any) => {
     setSections(prev => prev.map(s => s.id === sectionId ? { ...s, data: newData } : s));
     scheduleDebouncedSave(sectionId, "data", newData);
+  };
+
+  const handleMoveColorSwatches = (
+    fromSectionId: string,
+    swatchIds: string[],
+    toSectionType: string
+  ) => {
+    if (!isColorRoleSection(toSectionType)) return;
+    const toType = toSectionType as ColorRoleSectionType;
+    const result = applyColorBucketMove(sections, {
+      fromSectionId,
+      swatchIds,
+      toType,
+      createDest: () => {
+        const catalog = getSubModule(toType);
+        const glossary = CI_ADDABLE_GLOSSARY.find((e) => e.section_type === toType);
+        return {
+          id: generateUUID(),
+          guideline_id: guideline?.id,
+          section_type: toType,
+          eyebrow_label:
+            glossary?.eyebrow_label || catalog?.eyebrow || toType,
+          headline:
+            glossary?.default_headline || catalog?.defaultHeadline || toType,
+          position: sections.length,
+          is_visible: true,
+          data: defaultDataForSubModule(toType),
+        };
+      },
+    });
+    if (!result) return;
+
+    setSections(result.sections);
+    scheduleDebouncedSave(result.fromId, "data", result.fromData);
+    if (result.createdDest) {
+      const created = result.sections.find((s) => s.id === result.destId);
+      if (created && guideline?.id) {
+        setSaveStatus("saving");
+        void (supabase as any)
+          .from("ci_sections")
+          .insert(created)
+          .then(({ error }: { error: { message?: string } | null }) => {
+            if (error) {
+              console.error("Error creating color palette section:", error);
+              setSaveStatus("error");
+              setSaveErrorMsg(error.message || "Failed to create palette");
+              return;
+            }
+            setSaveStatus("saved");
+          });
+      }
+    } else {
+      scheduleDebouncedSave(result.destId, "data", result.destData);
+    }
+    triggerToast(`Moved to ${result.label}`);
+    requestAnimationFrame(() => scrollToSection(result.destId));
   };
 
   const handleEditSectionFields = (sectionId: string, fields: Partial<CISection>) => {
@@ -303,6 +477,59 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     }
   };
 
+  const requestDeleteSection = (sec: Partial<CISection>) => {
+    if (!sec.id || !isValidUUID(sec.id)) return;
+    const def = getSubModule(sec.section_type);
+    const label =
+      sec.eyebrow_label ||
+      sec.headline ||
+      def?.defaultHeadline ||
+      sec.section_type ||
+      "this section";
+    setPendingDeleteSection({ id: sec.id, label: String(label) });
+  };
+
+  const requestDeleteSectionById = (sectionId: string) => {
+    const sec = sections.find((s) => s.id === sectionId);
+    if (sec) requestDeleteSection(sec);
+    else setPendingDeleteSection({ id: sectionId, label: "this section" });
+  };
+
+  const confirmDeleteSection = async () => {
+    if (!pendingDeleteSection) return;
+    const { id } = pendingDeleteSection;
+    setDeletingSection(true);
+    pendingUpdatesRef.current.delete(id);
+    const prevSections = sections;
+    const prevAssets = assets;
+    setSections((prev) => prev.filter((s) => s.id !== id));
+    setAssets((prev) =>
+      prev.map((a) => (a.section_id === id ? { ...a, section_id: null } : a))
+    );
+    try {
+      const result = await deleteCiSection(projectId, id);
+      if (!result.ok) {
+        setSections(prevSections);
+        setAssets(prevAssets);
+        setSaveStatus("error");
+        setSaveErrorMsg(result.error || "Failed to delete section");
+        triggerToast(result.error || "Failed to delete section");
+        return;
+      }
+      setSaveStatus("saved");
+      triggerToast("Section deleted");
+      setPendingDeleteSection(null);
+    } catch (err: any) {
+      setSections(prevSections);
+      setAssets(prevAssets);
+      setSaveStatus("error");
+      setSaveErrorMsg(err.message || "Failed to delete section");
+      triggerToast(err.message || "Failed to delete section");
+    } finally {
+      setDeletingSection(false);
+    }
+  };
+
   const handleAddSection = async (entry: any) => {
     if (!guideline?.id) return;
     const realId = generateUUID();
@@ -337,13 +564,14 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   };
 
   const handleUpdateTheme = async (newTheme: CITheme) => {
-    setGuideline((prev: any) => ({ ...prev, theme: newTheme }));
+    const readable = ensureReadableTheme(newTheme);
+    setGuideline((prev: any) => ({ ...prev, theme: readable }));
     if (guideline?.id) {
       setSaveStatus("saving");
       try {
         const { error } = await (supabase as any)
           .from("ci_guidelines")
-          .update({ theme: newTheme })
+          .update({ theme: readable })
           .eq("id", guideline.id);
         if (error) throw error;
         setSaveStatus("saved");
@@ -514,28 +742,19 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     }
   };
 
-  const applyThemeToCSS = () => {
-    if (!guideline?.theme) return {};
-    const t = guideline.theme as CITheme;
-    return {
-      "--ci-bg": t.backgroundColor || "#ffffff",
-      "--ci-text": t.textColor || "#111111",
-      "--ci-accent": t.accentColors?.[0] || "#111111",
-      "--ci-border": "#eaeaea",
-      "--ci-font": cssFontStack(t.primaryFont || t.fontFamily, t.primaryFontFallback),
-      "--ci-font-secondary": cssFontStack(
-        t.secondaryFont || t.primaryFont || t.fontFamily,
-        t.secondaryFontFallback || t.primaryFontFallback
-      ),
-      "--ci-font-tertiary": cssFontStack(
-        t.tertiaryFont || t.secondaryFont,
-        t.tertiaryFontFallback
-      ),
-      backgroundColor: "var(--ci-bg)",
-      color: "var(--ci-text)",
-      fontFamily: "var(--ci-font)",
-    } as React.CSSProperties;
-  };
+  const applyThemeToCSS = () => ({
+    ...ciThemeCssVars(guideline?.theme),
+    ...breakerStyleFromTheme(guideline?.theme, orderedSections),
+  });
+  const themeUnreadable = Boolean(
+    guideline?.theme && !themeHasReadableContrast(guideline.theme)
+  );
+  const importGaps = collectImportGaps({
+    theme: guideline?.theme,
+    sections: orderedSections,
+    assets,
+    fontLoaded,
+  });
 
   if (loading) {
     return (
@@ -568,7 +787,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         [
           { id: "edit" as const, label: "Edit" },
           { id: "elements" as const, label: "Elements" },
-          { id: "brand_book" as const, label: "Brand book" },
+          { id: "brand_book" as const, label: "Client view" },
         ] as const
       ).map((tab) => (
         <button
@@ -579,7 +798,10 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               ? "bg-gray-900 text-white"
               : "text-gray-600 hover:text-gray-900"
           }`}
-          onClick={() => setViewMode(tab.id)}
+          onClick={() => {
+            void flushPendingSaves();
+            setViewMode(tab.id);
+          }}
         >
           {tab.label}
         </button>
@@ -587,38 +809,83 @@ export function AdminEditor({ projectId }: { projectId: string }) {
     </div>
   );
 
-  // Brand book = presentation-only surface (no edit chrome / left rail)
+  const openClientPreview = () => {
+    void (async () => {
+      await flushPendingSaves();
+      window.open(
+        `/app/projects/${projectId}/ci-builder/client-preview`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    })();
+  };
+
+  const viewAsClientButton = (
+    <button
+      type="button"
+      onClick={openClientPreview}
+      className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+      title="Open the client hub in a new tab — sidebar and layout they will see"
+    >
+      <Eye size={14} /> View as client
+    </button>
+  );
+
+  // Client view = Greenpoint / Foundry / Multipage from theme.clientTemplate
   if (viewMode === "brand_book") {
+    const clientTheme: CITheme = {
+      ...(guideline?.theme || {}),
+      clientTemplate: guideline?.theme?.clientTemplate || "greenpoint",
+    };
     return (
       <div className="relative h-full min-h-0">
         <ToastContainer />
-        <BrandBookPresentation
+        <GuidelineClientShell
           brandName={brandName}
-          theme={guideline?.theme}
+          theme={clientTheme}
           sections={orderedSections}
           assets={assets}
+          mode="standalone"
+          slug={guideline?.slug || undefined}
           toolbar={
-            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-black/5 bg-white/95 backdrop-blur-sm">
-              <p className="text-[11px] text-gray-500 font-medium">
-                Presentation preview · theme colors apply live
-              </p>
+            <div className="flex flex-wrap items-center justify-end gap-2 px-2 py-2 rounded-xl border border-gray-200 bg-white/95 shadow-sm backdrop-blur-md ci-chrome">
+              {themeUnreadable ? (
+                <p className="text-[11px] text-amber-800 px-2">
+                  Page colors were too similar — Theme is on the right.
+                </p>
+              ) : null}
               <div className="flex flex-wrap items-center justify-end gap-2">
+              <select
+                className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-medium text-gray-800"
+                value={clientTheme.clientTemplate || "greenpoint"}
+                title="Client template"
+                onChange={(e) =>
+                  handleUpdateTheme({
+                    ...clientTheme,
+                    clientTemplate: e.target.value as CITheme["clientTemplate"],
+                  })
+                }
+              >
+                <option value="greenpoint">Template: Greenpoint</option>
+                <option value="foundry">Template: Foundry</option>
+                <option value="multipage">Template: Multipage</option>
+              </select>
               {viewModeToggle}
+              {viewAsClientButton}
               <button
                 type="button"
                 onClick={() => setShowThemePanel(true)}
-                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
-                title="Theme colors update this brand book live"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800"
+                title="Theme colors and template settings"
               >
                 <Settings size={14} /> Theme
               </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
-                onClick={() => window.print()}
+              <DownloadPdfButton
+                body={{ kind: "ci", projectId }}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
               >
                 <Printer size={14} /> PDF
-              </button>
+              </DownloadPdfButton>
               {guideline?.status === "published" ? (
                 <button
                   type="button"
@@ -677,6 +944,10 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           <ThemePanel
             guideline={guideline}
             discoveredFonts={discoveredFonts}
+            fallbackTitle={brandName}
+            assets={assets}
+            sections={orderedSections}
+            fontLoaded={fontLoaded}
             onClose={() => setShowThemePanel(false)}
             onUpdate={handleUpdateTheme}
           />
@@ -705,13 +976,33 @@ export function AdminEditor({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="flex h-full bg-white text-sm">
+    <div className="flex h-full bg-white text-sm relative min-w-0">
+      {navOpen && (
+        <button
+          type="button"
+          aria-label="Close modules"
+          className="lg:hidden fixed inset-0 z-[75] bg-black/30"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
       
       {/* LEFT PANE: Admin Controls */}
-      <div className="w-64 border-r border-gray-200 flex flex-col shrink-0">
+      <div
+        className={`w-[min(20rem,90vw)] border-r border-gray-200 flex flex-col shrink-0 bg-white z-[80] transition-transform duration-200 fixed inset-y-0 left-0 lg:static lg:z-auto lg:w-64 lg:translate-x-0 ${
+          navOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1">
             <h2 className="font-semibold text-gray-800">CI Builder</h2>
+            <button
+              type="button"
+              className="lg:hidden p-1.5 rounded-md text-gray-400 hover:bg-gray-100"
+              onClick={() => setNavOpen(false)}
+              aria-label="Close modules"
+            >
+              <X className="w-4 h-4" />
+            </button>
 
             {/* Top Bar Save Status Indicator */}
             {saveStatus === "saving" && (
@@ -735,7 +1026,15 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          <p className="text-xs text-gray-500 mb-4">Edit brand guideline structure and assets.</p>
+          <p className="text-xs text-gray-500 mb-1">
+            {brandName !== "Brand" ? brandName : "Edit brand guideline structure and assets."}
+          </p>
+          <Link
+            href={workPaths.toolsCi}
+            className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-800 mb-4"
+          >
+            <ArrowLeft className="w-3 h-3" /> All projects
+          </Link>
 
           {guideline?.id && (
             <ImportPanel
@@ -749,7 +1048,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                 lastImportedAt: guideline.figma_last_imported_at || null,
               }}
               onJsonFile={handleJsonFile}
-              onFigmaImported={handleFigmaImported}
+              onConnectFigma={() => setShowFigma(true)}
             />
           )}
         </div>
@@ -771,7 +1070,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
           ) : (
             CI_MODULES.map((mod) => {
               const modSections = sortSectionsByCatalog(
-                sections.filter((sec) => {
+                canvasSections.filter((sec) => {
                   const def = getSubModule(sec.section_type);
                   return def?.moduleId === mod.id;
                 })
@@ -784,11 +1083,18 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                   </div>
                   {modSections.map((sec) => {
                     const def = getSubModule(sec.section_type);
+                    const sameType = canvasSections.filter(
+                      (s) => s.section_type === sec.section_type
+                    );
+                    const dupSuffix =
+                      sameType.length > 1
+                        ? ` (${sameType.findIndex((s) => s.id === sec.id) + 1})`
+                        : "";
                     const label =
-                      sec.eyebrow_label ||
-                      sec.headline ||
-                      def?.defaultHeadline ||
-                      sec.section_type;
+                      (sec.eyebrow_label ||
+                        sec.headline ||
+                        def?.defaultHeadline ||
+                        sec.section_type) + dupSuffix;
                     return (
                       <div
                         key={sec.id}
@@ -831,6 +1137,21 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                         >
                           {label}
                         </button>
+                        {viewMode === "edit" && (
+                          <button
+                            type="button"
+                            title="Delete section"
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              requestDeleteSection(sec);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            draggable={false}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -838,21 +1159,35 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               );
             })
           )}
-          {sections.some((s) => !getSubModule(s.section_type)) && (
+          {canvasSections.some((s) => !getSubModule(s.section_type)) && (
             <div className="mb-3">
               <div className="px-1 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">
                 Other
               </div>
-              {sortSectionsByCatalog(sections.filter((s) => !getSubModule(s.section_type))).map(
+              {sortSectionsByCatalog(canvasSections.filter((s) => !getSubModule(s.section_type))).map(
                 (sec) => (
-                  <button
+                  <div
                     key={sec.id}
-                    type="button"
-                    onClick={() => scrollToSection(sec.id || sec.section_type || "")}
-                    className="block w-full text-left p-1.5 rounded hover:bg-gray-100 text-xs text-gray-700 truncate"
+                    className="flex items-center gap-1 group"
                   >
-                    {sec.eyebrow_label || sec.section_type}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollToSection(sec.id || sec.section_type || "")}
+                      className="flex-1 text-left p-1.5 rounded hover:bg-gray-100 text-xs text-gray-700 truncate"
+                    >
+                      {sec.eyebrow_label || sec.section_type}
+                    </button>
+                    {viewMode === "edit" && (
+                      <button
+                        type="button"
+                        title="Delete section"
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+                        onClick={() => requestDeleteSection(sec)}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 )
               )}
             </div>
@@ -921,20 +1256,37 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
       </div>
 
-      {/* RIGHT PANE: Live Preview / Full Visual Editor */}
-      <div ref={rightPaneRef} className="flex-1 overflow-y-auto relative bg-[#f9f9f9] flex flex-col min-w-0 scroll-smooth">
-        <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-4 py-2.5 shrink-0 no-print">
+      {/* RIGHT PANE: chrome stays OS-colored; canvas takes the brand theme */}
+      <div className="flex-1 relative flex flex-col min-w-0">
+        <div className="ci-chrome sticky top-0 z-20 bg-white border-b border-gray-200 px-3 py-2.5 shrink-0 no-print">
           <div className="flex flex-wrap items-center gap-2">
-            {viewModeToggle}
-
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
-              onClick={() => window.print()}
-              title="Save as PDF — continuous document (browser Print → Save as PDF)"
+              className="lg:hidden inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 min-h-11 rounded-lg border border-gray-200 hover:bg-gray-50"
+              onClick={() => setNavOpen(true)}
+            >
+              <PanelLeft size={14} /> Modules
+            </button>
+            {guideline?.id ? (
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => setShowFigma(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                <Layers size={14} /> Connect to Figma
+              </button>
+            ) : null}
+            {viewModeToggle}
+            {viewAsClientButton}
+
+            <DownloadPdfButton
+              body={{ kind: "ci", projectId }}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              title="Download a PDF of the live brand book"
             >
               <Printer size={14} /> PDF / Print
-            </button>
+            </DownloadPdfButton>
 
             {(viewMode === "edit" || viewMode === "elements") && (
               <>
@@ -952,7 +1304,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                 <button
                   type="button"
                   onClick={() => setShowThemePanel(true)}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800"
                 >
                   <Settings size={14} /> Theme
                 </button>
@@ -1030,12 +1382,37 @@ export function AdminEditor({ projectId }: { projectId: string }) {
               <Trash2 size={14} /> Reset guideline
             </button>
           </div>
+          {themeUnreadable ? (
+            <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+              Imported page colors were too similar to read. The canvas is using a
+              readable pair — open <span className="font-semibold">Theme</span> and
+              pick Light / Dark, or choose contrasting background and text.
+            </p>
+          ) : null}
         </div>
 
-        <div 
-          className="min-h-full transition-colors duration-300 flex-1 ci-guideline-print"
+        <div
+          ref={rightPaneRef}
+          className="flex-1 overflow-y-auto min-h-0 scroll-smooth ci-canvas"
           style={applyThemeToCSS()}
         >
+        <div className="min-h-full transition-colors duration-300 flex-1 ci-guideline-print">
+          <CiFontLoader
+            theme={guideline?.theme}
+            assets={assets}
+            sections={orderedSections}
+            onStatus={setFontLoaded}
+          />
+          {importGaps.length > 0 ? (
+            <div className="max-w-6xl mx-auto px-8 pt-4">
+              <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                {importGaps[0].message}
+                {importGaps.length > 1
+                  ? ` (+${importGaps.length - 1} more in Theme)`
+                  : ""}
+              </p>
+            </div>
+          ) : null}
           {/* Unassigned Assets Queue */}
           {(viewMode === "edit" || viewMode === "elements") && unassignedCount > 0 && (
             <div
@@ -1048,7 +1425,9 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                     <Layers className="w-5 h-5" /> 
                     Unassigned Assets Queue ({unassignedCount})
                   </h2>
-                  <p className="text-sm text-amber-700 mt-1">Select items to assign them to a section.</p>
+                  <p className="text-sm text-amber-700 mt-1">
+                    Drag onto a logo slot, or select and assign below.
+                  </p>
                 </div>
                 
                 {selectedUnassigned.size > 0 && (
@@ -1100,8 +1479,14 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                   const isMissing = asset.metadata?.is_missing_file;
                   return (
                     <div 
-                      key={asset.id} 
+                      key={asset.id}
+                      draggable={viewMode === "edit"}
+                      onDragStart={(e) => {
+                        if (viewMode !== "edit" || !asset.id) return;
+                        setCiAssetDrag(e, asset.id);
+                      }}
                       className={`relative bg-white border rounded-xl overflow-hidden group transition-all
+                        ${viewMode === "edit" ? "cursor-grab active:cursor-grabbing" : ""}
                         ${isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-amber-300'}`}
                     >
                       <div className="absolute top-2 left-2 z-10">
@@ -1129,6 +1514,8 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                             src={asset.public_url || asset.storage_path} 
                             alt={asset.label || 'Asset'}
                             className="max-w-full max-h-full object-contain p-2"
+                            loading="lazy"
+                            decoding="async"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNjY2MiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0PjxjaXJjbGUgY3g9IjguNSIgY3k9IjguNSIgcj0iMS41Ij48L2NpcmNsZT48cG9seWxpbmUgcG9pbnRzPSIyMSAxNSAxNiAxMCA1IDIxIj48L3BvbHlsaW5lPjwvc3ZnPg==';
                             }}
@@ -1141,6 +1528,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                         <div className="text-[10px] text-gray-500 truncate mb-2" title={asset.storage_path || ''}>{asset.storage_path}</div>
                         
                         <select 
+                          draggable={false}
                           className="text-xs border border-gray-200 rounded p-1.5 w-full bg-gray-50 text-gray-900 cursor-pointer hover:bg-white"
                           value=""
                           onChange={async (e) => {
@@ -1174,17 +1562,39 @@ export function AdminEditor({ projectId }: { projectId: string }) {
             </div>
           )}
 
+          {viewMode === "elements" || viewMode === "edit" ? (
+            <GuidelineCoverBlock
+              theme={guideline?.theme}
+              fallbackTitle={brandName}
+              variant="compact"
+              isAdmin={viewMode === "edit"}
+              onUpdateTheme={viewMode === "edit" ? handleUpdateTheme : undefined}
+            />
+          ) : null}
+
           {orderedSections.length === 0 && unassignedCount === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400 min-h-[500px]">
-              <p>Upload a manifest.json or click &quot;+ Add Section&quot; to build the guideline</p>
+            <div className="h-full flex flex-col items-center justify-center text-center px-6 min-h-[500px]">
+              <p className="text-sm text-gray-500 max-w-sm">
+                Import a Figma file, drop a JSON manifest, or add a sub-module to start this guideline.
+              </p>
+              {guideline?.id ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFigma(true)}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-gray-900 text-white px-4 py-2.5 text-sm font-semibold hover:bg-gray-800"
+                >
+                  <Layers size={16} /> Connect to Figma
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="pb-32">
-              {orderedSections.map(section => (
-                <SectionRenderer 
-                  key={section.id} 
-                  section={section} 
-                  assets={assets.filter(a => a.section_id === section.id || a.kind === section.section_type)} 
+              {withModuleBreakers(canvasSections, (section, _i, opts) => (
+                <DeferredPaint id={section.id || section.section_type}>
+                <SectionRenderer
+                  section={section}
+                  compact={opts?.compact}
+                  assets={assets.filter(a => a.section_id === section.id || a.kind === section.section_type)}
                   allAssets={assets}
                   allSections={orderedSections}
                   isAdmin={viewMode === "edit"}
@@ -1193,18 +1603,54 @@ export function AdminEditor({ projectId }: { projectId: string }) {
                   onEditSectionFields={handleEditSectionFields}
                   onAddAssetRecord={handleAddAssetRecord}
                   onDeleteAssetRecord={handleDeleteAssetRecord}
+                  onDeleteSection={
+                    viewMode === "edit" ? requestDeleteSectionById : undefined
+                  }
+                  onMoveColorSwatches={
+                    viewMode === "edit" ? handleMoveColorSwatches : undefined
+                  }
                   guidelineId={guideline?.id}
                 />
-              ))}
+                </DeferredPaint>
+              ), {
+                viewMode: viewMode === "elements" ? "elements" : undefined,
+                assets,
+                colorChapterLayout: resolveColorChapterLayout(guideline?.theme),
+                theme: guideline?.theme,
+                allSections: orderedSections,
+              })}
             </div>
           )}
         </div>
+        </div>
       </div>
+
+      {showFigma && guideline?.id ? (
+        <FigmaImportWizard
+          guidelineId={guideline.id}
+          projectId={projectId}
+          linkedFigma={{
+            fileKey: guideline.figma_file_key || null,
+            fileName: guideline.figma_file_name || null,
+            version: guideline.figma_file_version || null,
+            lastImportedAt: guideline.figma_last_imported_at || null,
+          }}
+          onClose={() => setShowFigma(false)}
+          onImported={(result) => {
+            void handleFigmaImported(result);
+            setShowFigma(false);
+          }}
+        />
+      ) : null}
 
       {showThemePanel && (
         <ThemePanel 
           guideline={guideline}
           discoveredFonts={discoveredFonts}
+          fallbackTitle={brandName}
+          assets={assets}
+          sections={orderedSections}
+          fontLoaded={fontLoaded}
           onClose={() => setShowThemePanel(false)}
           onUpdate={handleUpdateTheme}
         />
@@ -1229,9 +1675,53 @@ export function AdminEditor({ projectId }: { projectId: string }) {
         />
       )}
 
+      {pendingDeleteSection && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="ci-chrome bg-white text-gray-900 rounded-2xl p-6 shadow-2xl max-w-md w-full space-y-4 border border-gray-100">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <h4 className="font-semibold text-gray-900 text-sm">Delete this section?</h4>
+            </div>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Remove <span className="font-semibold text-gray-900">{pendingDeleteSection.label}</span> from
+              this guideline. Bound files stay in Unassigned so you can attach them again. This cannot
+              be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={deletingSection}
+                onClick={() => setPendingDeleteSection(null)}
+                className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingSection}
+                onClick={() => void confirmDeleteSection()}
+                className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {deletingSection ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Deleting…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" /> Delete section
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showResetConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white text-gray-900 rounded-2xl p-6 shadow-2xl max-w-md w-full space-y-4 border border-gray-100">
+          <div className="ci-chrome bg-white text-gray-900 rounded-2xl p-6 shadow-2xl max-w-md w-full space-y-4 border border-gray-100">
             <div className="flex items-center gap-3 text-red-600">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5" />
@@ -1291,7 +1781,7 @@ export function AdminEditor({ projectId }: { projectId: string }) {
 
       {importReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+          <div className="ci-chrome bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col text-gray-900">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-800">
                 {importReport.format === 'unknown' ? 'Unrecognized Format' : 'Manifest Import Report'}

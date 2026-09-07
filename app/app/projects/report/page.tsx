@@ -4,22 +4,25 @@ import { useState, useEffect, useMemo, Suspense, type ElementType } from "react"
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace } from "@/components/frappe-ui/Workspace";
-import { WebsiteReportDashboard } from "@/components/reports/WebsiteReportDashboard";
-import { AdsReportShell } from "@/components/reports/AdsReportShell";
-import { SocialReportShell } from "@/components/reports/SocialReportShell";
+import {
+  AdsReportShell,
+  SeoReportView,
+  SocialReportShell,
+  WebsiteReportDashboard,
+} from "@/components/reports/lazy-dashboards";
 import {
   GeneralReportView,
   GENERAL_CHANNEL_ICONS,
 } from "@/components/reports/GeneralReportView";
-import { SeoReportView } from "@/components/reports/SeoReportView";
 import { DatasetSourceBadge } from "@/components/reports/DatasetSourceBadge";
+import { DataFreshnessBar } from "@/components/reports/DataFreshnessBar";
 import {
   ReportsHubShell,
   type ReportsProjectOption,
 } from "@/components/reports/ReportsHubShell";
+import { pickInitialProjectId, ts } from "@/lib/tools/recent-projects";
 import {
   BarChart3,
-  Database,
   FileSpreadsheet,
   Loader2,
   Globe2,
@@ -30,11 +33,14 @@ import {
   Eye,
   EyeOff,
   Save,
+  Filter,
+  Sparkles,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 import { type ColumnSchema } from "@/lib/data-hub/column-detector";
 import { isFounder } from "@/lib/rbac";
-import { isWebsiteDataset } from "@/lib/reports/ga4-website";
+import { isWebsiteDataset, pickPrimaryWebsiteDataset } from "@/lib/reports/ga4-website";
 import { isMetaAdsDataset } from "@/lib/reports/meta-ads";
 import { isGoogleAdsDataset } from "@/lib/reports/google-ads";
 import {
@@ -47,6 +53,9 @@ import {
   publishConfigVersion,
   type ReportPublishStatus,
 } from "@/lib/reports/publish";
+import type { FreshnessConnection, FreshnessStream } from "@/lib/reports/freshness";
+import { DownloadPdfButton } from "@/components/pdf/DownloadPdfButton";
+import { ReportSharePanel } from "@/components/reports/ReportSharePanel";
 
 const CATEGORIES: {
   id: ReportCategory;
@@ -74,12 +83,16 @@ interface DatasetInfo {
   created_at?: string | null;
   is_current?: boolean | null;
   supersedes_id?: string | null;
+  source_type?: string | null;
+  synced_at?: string | null;
+  external_account_label?: string | null;
 }
 
 interface ProjectOption {
   id: string;
   title: string;
   company?: string;
+  lastEditedAt?: number;
 }
 
 function projectLabel(p: ProjectOption) {
@@ -115,6 +128,14 @@ function CentralReportHub() {
   const [datasetColumns, setDatasetColumns] = useState<ColumnSchema[]>([]);
   const [loadedDatasets, setLoadedDatasets] = useState<LoadedDataset[]>([]);
   const [previousLoadedDatasets, setPreviousLoadedDatasets] = useState<LoadedDataset[]>([]);
+  const [igCalendarLinks, setIgCalendarLinks] = useState<
+    {
+      scheduled_date: string;
+      published_permalink: string;
+      visual_asset_url?: string | null;
+      hook_angle?: string | null;
+    }[]
+  >([]);
 
   const [channelPresence, setChannelPresence] = useState<Record<string, boolean>>({
     Social: false,
@@ -127,6 +148,9 @@ function CentralReportHub() {
   const [publishStatus, setPublishStatus] = useState<ReportPublishStatus>("none");
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
+  const [freshnessStreams, setFreshnessStreams] = useState<FreshnessStream[]>([]);
+  const [freshnessConnections, setFreshnessConnections] = useState<FreshnessConnection[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const supabase = createClient();
 
@@ -155,13 +179,14 @@ function CentralReportHub() {
           `
           id,
           title,
+          updated_at,
           crm_customers!client_id (
             company,
             name
           )
         `
         )
-        .order("title");
+        .order("updated_at", { ascending: false });
 
       if (userRole === "client") {
         projectQuery = projectQuery.eq("client_id", user.id);
@@ -175,12 +200,16 @@ function CentralReportHub() {
             id: p.id,
             title: p.title,
             company: cust?.company || cust?.name || undefined,
+            lastEditedAt: ts(p.updated_at),
           };
         });
         setProjects(mapped);
         const fromUrl = searchParams.get("project");
-        const initial =
-          fromUrl && mapped.some((p) => p.id === fromUrl) ? fromUrl : mapped[0].id;
+        const initial = pickInitialProjectId(
+          mapped.map((p) => p.id),
+          fromUrl,
+          "reports"
+        );
         setSelectedProjectId(initial);
       } else {
         setLoading(false);
@@ -214,6 +243,37 @@ function CentralReportHub() {
       }
     }
     setChannelPresence(presence);
+  }
+
+  async function loadFreshness(projectId: string) {
+    const [{ data: ds }, { data: conns }] = await Promise.all([
+      (supabase as any)
+        .from("datasets")
+        .select(
+          "id, name, category, subcategory, source_type, synced_at, created_at, external_account_label, row_count, is_current"
+        )
+        .eq("project_id", projectId),
+      (supabase as any)
+        .from("project_data_connections")
+        .select("provider, status, last_error, last_synced_at, external_account_label")
+        .eq("project_id", projectId)
+        .neq("status", "revoked"),
+    ]);
+    const streams: FreshnessStream[] = ((ds || []) as DatasetInfo[])
+      .filter((d) => d.is_current !== false)
+      .map((d) => ({
+        id: d.id,
+        name: d.name,
+        category: d.category,
+        subcategory: d.subcategory ?? null,
+        sourceType: d.source_type,
+        syncedAt: d.synced_at,
+        createdAt: d.created_at,
+        externalAccountLabel: d.external_account_label,
+        rowCount: d.row_count,
+      }));
+    setFreshnessStreams(streams);
+    setFreshnessConnections((conns || []) as FreshnessConnection[]);
   }
 
   async function fetchRowsForDataset(
@@ -273,6 +333,9 @@ function CentralReportHub() {
         subcategory:
           d.subcategory || detectSubcategory(d.name, d.columns) || null,
         createdAt: d.created_at,
+        sourceType: d.source_type,
+        syncedAt: d.synced_at,
+        externalAccountLabel: d.external_account_label,
         rowCount: d.row_count,
         columns: d.columns || [],
         rows,
@@ -305,11 +368,32 @@ function CentralReportHub() {
     setDatasets([]);
     setLoadedDatasets([]);
     setPreviousLoadedDatasets([]);
+    setIgCalendarLinks([]);
 
     await refreshChannelPresence(projectId);
+    await loadFreshness(projectId);
+
+    if (category === "Social" || category === "General") {
+      const { data: livePosts } = await (supabase as any)
+        .from("content_posts")
+        .select("scheduled_date, published_permalink, visual_asset_url, hook_angle")
+        .eq("project_id", projectId)
+        .eq("status_production", "live")
+        .not("published_permalink", "is", null);
+      setIgCalendarLinks(
+        ((livePosts || []) as any[])
+          .filter((p) => typeof p.published_permalink === "string" && p.published_permalink)
+          .map((p) => ({
+            scheduled_date: String(p.scheduled_date).slice(0, 10),
+            published_permalink: String(p.published_permalink),
+            visual_asset_url: p.visual_asset_url || null,
+            hook_angle: p.hook_angle || null,
+          }))
+      );
+    }
 
     const selectCols =
-      "id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id";
+      "id, name, category, subcategory, columns, row_count, created_at, is_current, supersedes_id, source_type, synced_at, external_account_label";
 
     async function finalize(listRaw: DatasetInfo[]) {
       const list = listRaw.filter((d) => d.is_current !== false);
@@ -421,6 +505,30 @@ function CentralReportHub() {
     setLoading(false);
   }
 
+  async function handleReportRefresh(providers?: string[]) {
+    if (!selectedProjectId) return;
+    setRefreshing(true);
+    setPublishMessage(null);
+    try {
+      const res = await fetch("/api/reports/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: selectedProjectId,
+          providers: providers?.length ? providers : "all",
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Sync failed");
+      setPublishMessage(json.message || "Synced.");
+      await loadProjectData(selectedProjectId, selectedCategory);
+    } catch (err) {
+      setPublishMessage(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   async function loadDatasetRows(datasetId: string, columns: ColumnSchema[]) {
     const coercedRows = await fetchRowsForDataset(datasetId, columns);
     setDatasetColumns(columns);
@@ -514,20 +622,23 @@ function CentralReportHub() {
     name: selectedDataset?.name,
     createdAt: selectedDataset?.created_at,
     rowCount: selectedDataset?.row_count ?? datasetRows.length,
+    sourceType: selectedDataset?.source_type,
+    syncedAt: selectedDataset?.synced_at,
+    externalAccountLabel: selectedDataset?.external_account_label,
   };
 
   function emptyCopy(category: ReportCategory) {
     switch (category) {
       case "Ads":
-        return "Upload a Meta Ads CSV in the Data Hub under category Ads.";
+        return "Upload a Meta Ads CSV in Sources under Ads, or connect Meta Ads.";
       case "Social":
-        return "Upload LinkedIn / YouTube CSVs or Instagram Meta HTML (Profiles Reached, Posts) in the Data Hub under Social.";
+        return "Connect Instagram or upload LinkedIn / YouTube files in Sources.";
       case "Website":
-        return "Upload a GA4 CSV in the Data Hub under category Website.";
+        return "Connect Google Analytics on Sources, or upload a GA4 CSV.";
       case "SEO":
-        return "Upload a Google Search Console CSV in the Data Hub under category SEO.";
+        return "Connect Search Console on Sources, or upload a GSC CSV.";
       default:
-        return "Connect channel data in the Data Hub to populate this view.";
+        return "Connect channel data in Sources to populate this view.";
     }
   }
 
@@ -591,20 +702,37 @@ function CentralReportHub() {
     }
 
     if (selectedCategory === "Social") {
-      return <SocialReportShell datasets={loadedDatasets} previousDatasets={previousLoadedDatasets} />;
+      return (
+        <SocialReportShell
+          datasets={loadedDatasets}
+          previousDatasets={previousLoadedDatasets}
+          igCalendarLinks={igCalendarLinks}
+        />
+      );
     }
 
     if (selectedCategory === "Website") {
-      if (!hasData) return null;
-      if (
-        isWebsiteDataset(datasetColumns, datasetRows) ||
-        datasetColumns.length > 0
-      ) {
+      const webDs = pickPrimaryWebsiteDataset(loadedDatasets);
+      if (!webDs && !hasData) return null;
+      const webRows = webDs?.rows ?? datasetRows;
+      const webCols = webDs?.columns ?? datasetColumns;
+      if (isWebsiteDataset(webCols, webRows) || webCols.length > 0) {
         return (
           <WebsiteReportDashboard
-            rows={datasetRows}
-            datasetName={selectedDatasetName}
-            datasetMeta={datasetMeta}
+            rows={webRows}
+            datasetName={webDs?.name ?? selectedDatasetName}
+            datasetMeta={
+              webDs
+                ? {
+                    name: webDs.name,
+                    createdAt: webDs.createdAt,
+                    rowCount: webDs.rowCount,
+                    sourceType: webDs.sourceType,
+                    syncedAt: webDs.syncedAt,
+                    externalAccountLabel: webDs.externalAccountLabel,
+                  }
+                : datasetMeta
+            }
           />
         );
       }
@@ -653,12 +781,28 @@ function CentralReportHub() {
             <BarChart3 size={20} />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Report Viewer</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Report</h2>
             <p className="text-gray-500 text-[13px]">
               {isAdmin
-                ? "Project-scoped live dashboards across General, Social, Ads, Website, and SEO."
+                ? "Dashboards across General, Social, Ads, Website, and SEO."
                 : "View your project reports."}
             </p>
+            {isAdmin && selectedProjectId ? (
+              <div className="mt-1 flex gap-3 text-[12px]">
+                <Link
+                  href={`/app/projects/funnel?project=${selectedProjectId}`}
+                  className="inline-flex items-center gap-1 text-gray-500 hover:text-slate-900"
+                >
+                  <Filter size={12} /> Configure funnel
+                </Link>
+                <Link
+                  href={`/app/projects/insights?project=${selectedProjectId}`}
+                  className="inline-flex items-center gap-1 text-gray-500 hover:text-slate-900"
+                >
+                  <Sparkles size={12} /> AI insights
+                </Link>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -690,6 +834,16 @@ function CentralReportHub() {
             )}
             {isAdmin && selectedProjectId && (
               <div className="flex flex-wrap items-end gap-2 self-end">
+                <DownloadPdfButton
+                  body={{
+                    kind: "report",
+                    projectId: selectedProjectId,
+                    category: selectedCategory,
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg text-[13px] font-medium hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <Download size={14} /> Download PDF
+                </DownloadPdfButton>
                 <div className="text-right mr-1 hidden sm:block">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                     Client visibility
@@ -746,6 +900,12 @@ function CentralReportHub() {
         }
       />
 
+      {isAdmin && selectedProjectId ? (
+        <div className="mb-4">
+          <ReportSharePanel projectId={selectedProjectId} />
+        </div>
+      ) : null}
+
       {publishMessage && isAdmin && (
         <div
           className={`mb-3 text-[12px] px-3 py-2 rounded-lg border ${
@@ -778,11 +938,24 @@ function CentralReportHub() {
               meta={datasetMeta}
               channelLabel={selectedCategory === "Website" ? "Website" : undefined}
               channelClassName="bg-blue-50 text-blue-700"
+              projectId={selectedProjectId}
+              isStaff={isAdmin}
+              onSync={() => void handleReportRefresh(["google_analytics"])}
             />
           </div>
         )}
 
       {selectedProjectId && (
+        <>
+          <DataFreshnessBar
+            streams={freshnessStreams}
+            connections={freshnessConnections}
+            projectId={selectedProjectId}
+            isStaff={isAdmin}
+            refreshing={refreshing}
+            onRefresh={() => void handleReportRefresh()}
+            onSyncProvider={(provider) => void handleReportRefresh([provider])}
+          />
         <div className="mb-6">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2 px-0.5">
             Report type
@@ -832,6 +1005,7 @@ function CentralReportHub() {
             })}
           </div>
         </div>
+        </>
       )}
 
       {loading ? (
@@ -852,10 +1026,10 @@ function CentralReportHub() {
             </p>
             <p className="text-[12px] text-gray-500 mb-3">{emptyCopy(selectedCategory)}</p>
             <Link
-              href="/app/projects/report-data"
+              href={`/app/projects/report-data?project=${selectedProjectId}`}
               className="text-[13px] text-blue-600 hover:underline font-medium"
             >
-              Open Data Hub →
+              Open Sources →
             </Link>
           </div>
         ) : contentReady ? (

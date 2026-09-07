@@ -54,7 +54,8 @@ function emptyForm(
   year: number,
   startMonth = 1,
   endMonth = 1,
-  spanKind: SpanKind = "recurring"
+  spanKind: SpanKind = "recurring",
+  openEnded?: boolean
 ): FormState {
   return {
     comp_model: "hourly_invoice",
@@ -66,7 +67,7 @@ function emptyForm(
     year,
     startMonth,
     endMonth: spanKind === "one_off" ? startMonth : endMonth,
-    openEnded: false,
+    openEnded: openEnded ?? spanKind === "recurring",
     notes: "",
     salary: emptySalaryBreakdown(),
     spanKind,
@@ -152,10 +153,11 @@ export function PersonCompensationPanel({ personId }: Props) {
   const startCreate = (
     startMonth = new Date().getMonth() + 1,
     endMonth = startMonth,
-    spanKind: SpanKind = "recurring"
+    spanKind: SpanKind = "recurring",
+    openEnded?: boolean
   ) => {
     setRangeAnchor(null);
-    setForm(emptyForm(year, startMonth, endMonth, spanKind));
+    setForm(emptyForm(year, startMonth, endMonth, spanKind, openEnded));
     setEditing(true);
   };
 
@@ -184,7 +186,7 @@ export function PersonCompensationPanel({ personId }: Props) {
     const a = Math.min(rangeAnchor, month);
     const b = Math.max(rangeAnchor, month);
     const spanKind: SpanKind = a === b ? "one_off" : "recurring";
-    startCreate(a, b, spanKind);
+    startCreate(a, b, spanKind, false);
   };
 
   const handleSave = async () => {
@@ -321,8 +323,7 @@ export function PersonCompensationPanel({ personId }: Props) {
     setEditing(false);
     setRangeAnchor(null);
     await load();
-    // Keep accounting Actual in sync with org-level payroll changes
-    void runSyncHrAndOverheadLedger();
+    await runSyncHrAndOverheadLedger();
   };
 
   const handleSaveWithGuard = async () => {
@@ -354,7 +355,7 @@ export function PersonCompensationPanel({ personId }: Props) {
     }
     setEditing(false);
     await load();
-    void runSyncHrAndOverheadLedger();
+    await runSyncHrAndOverheadLedger();
   };
 
   const selectionHint =
@@ -404,7 +405,7 @@ export function PersonCompensationPanel({ personId }: Props) {
           {!editing ? (
             <button
               type="button"
-              onClick={() => startCreate(1, 3, "recurring")}
+              onClick={() => startCreate()}
               className="px-3 py-1.5 bg-blue-600 text-white rounded text-[12px] font-medium hover:bg-blue-700 inline-flex items-center gap-1.5"
             >
               <Plus size={14} />
@@ -525,6 +526,7 @@ export function PersonCompensationPanel({ personId }: Props) {
                   spanKind: "recurring",
                   frequency: f.frequency === "one_off" ? "monthly" : f.frequency,
                   endMonth: Math.max(f.startMonth, f.endMonth),
+                  openEnded: true,
                 }))
               }
               className={[

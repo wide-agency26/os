@@ -10,6 +10,7 @@ import {
   updatePmTaskStatus,
   updatePmTaskAssignee,
   updatePmTaskContent,
+  updatePmTaskClientContent,
   updatePmTaskTitle,
   deletePmTask,
   duplicatePmTask,
@@ -17,12 +18,6 @@ import {
 } from "@/app/actions/pm";
 import { blocksToPlainSummary } from "@/lib/pm/blocknote";
 import type { PmTaskStatus } from "@/lib/pm/types";
-import {
-  Building2,
-  Briefcase,
-  BookOpen,
-  ArrowRight,
-} from "lucide-react";
 
 /**
  * Resolve HR roster person(s) for the signed-in portal user.
@@ -66,7 +61,13 @@ async function resolveMyPersonIds(
   return [...ids];
 }
 
-export function MyWeekClient({ userId }: { userId: string }) {
+export function MyWeekClient({
+  userId,
+  embedded,
+}: {
+  userId: string;
+  embedded?: boolean;
+}) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<TaskRowProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,7 +108,7 @@ export function MyWeekClient({ userId }: { userId: string }) {
       .select(
         `id, title, status, is_gate, phase_label, cycle_key, last_activity_at,
          project_id, assignee_id, assignee_person_id, default_role, source,
-         description, content_blocks, task_template_id, sort_order,
+         description, content_blocks, client_content_blocks, task_template_id, sort_order,
          project:project_id ( title, client:client_id ( company, name ) )`
       )
       .in("status", ["todo", "in_progress", "blocked"])
@@ -178,66 +179,44 @@ export function MyWeekClient({ userId }: { userId: string }) {
   }, [tasks]);
 
   const setStatus = (taskId: string, status: PmTaskStatus) => {
+    const prev = tasks.find((t) => t.id === taskId);
+    const prevStatus = prev?.status;
     patchTaskLocal(taskId, { status });
     startTransition(async () => {
-      await updatePmTaskStatus(taskId, status);
-      if (status === "done" || status === "cancelled") {
-        setTasks((prev) => prev.filter((t) => t.id !== taskId));
-        if (openTaskId === taskId) setOpenTaskId(null);
+      try {
+        const res = await updatePmTaskStatus(taskId, status);
+        if (!res.ok) {
+          if (prevStatus) patchTaskLocal(taskId, { status: prevStatus });
+          console.error(res.error || "Could not update task status");
+          return;
+        }
+        if (status === "done" || status === "cancelled") {
+          setTasks((list) => list.filter((t) => t.id !== taskId));
+          if (openTaskId === taskId) setOpenTaskId(null);
+        }
+      } catch (err) {
+        if (prevStatus) patchTaskLocal(taskId, { status: prevStatus });
+        console.error(err);
       }
     });
   };
 
   return (
     <div>
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">My Week</h2>
-        <p className="text-gray-500 mt-1">
-          What needs you now — across every project you&apos;re on.
-        </p>
-      </div>
+      {embedded ? null : (
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-gray-900">My Week</h2>
+          <p className="text-gray-500 mt-1">
+            What needs you now — across every project you&apos;re on.
+          </p>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
-        <Link
-          href="/app/company-overview"
-          className="flex items-center gap-3 border border-gray-200 rounded-lg px-4 py-3 hover:bg-gray-50"
-        >
-          <Building2 className="w-5 h-5 text-gray-700" />
-          <div className="flex-1">
-            <div className="text-sm font-medium text-gray-900">Company Overview</div>
-            <div className="text-xs text-gray-500">Birds-eye rollup</div>
-          </div>
-          <ArrowRight className="w-4 h-4 text-gray-400" />
-        </Link>
-        <Link
-          href="/app/projects"
-          className="flex items-center gap-3 border border-gray-200 rounded-lg px-4 py-3 hover:bg-gray-50"
-        >
-          <Briefcase className="w-5 h-5 text-gray-700" />
-          <div className="flex-1">
-            <div className="text-sm font-medium text-gray-900">Clients</div>
-            <div className="text-xs text-gray-500">Client list</div>
-          </div>
-          <ArrowRight className="w-4 h-4 text-gray-400" />
-        </Link>
-        <Link
-          href="/app/playbooks"
-          className="flex items-center gap-3 border border-gray-200 rounded-lg px-4 py-3 hover:bg-gray-50"
-        >
-          <BookOpen className="w-5 h-5 text-gray-700" />
-          <div className="flex-1">
-            <div className="text-sm font-medium text-gray-900">Playbooks</div>
-            <div className="text-xs text-gray-500">Services & packages</div>
-          </div>
-          <ArrowRight className="w-4 h-4 text-gray-400" />
-        </Link>
-      </div>
-
-      <h3 className="text-sm font-medium text-gray-900 mb-3">Task queue</h3>
+          <h3 className="text-[13px] font-semibold text-text-primary mb-3">Task queue</h3>
       {loading ? (
-        <p className="text-sm text-gray-500">Loading…</p>
+        <p className="text-sm text-text-secondary">Loading…</p>
       ) : tasks.length === 0 ? (
-        <p className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg px-4 py-6">
+        <p className="text-sm text-text-secondary border border-dashed border-border rounded-lg px-4 py-6">
           Nothing assigned to you yet. Open a project, assign a playbook, and set
           yourself as assignee on tasks.
         </p>
@@ -246,16 +225,16 @@ export function MyWeekClient({ userId }: { userId: string }) {
           {grouped.map((group) => (
             <section
               key={group.projectId || group.label}
-              className="border border-gray-200 rounded-lg overflow-visible"
+              className="border border-border rounded-lg overflow-visible"
             >
-              <header className="bg-gray-50 px-3 py-2 flex items-center justify-between gap-2">
+              <header className="bg-surface-raised px-3 py-2 flex items-center justify-between gap-2">
                 <Link
                   href={`/app/projects/${group.projectId}/tasks`}
-                  className="text-sm font-medium text-gray-800 hover:underline"
+                  className="text-sm font-medium text-text-primary hover:underline"
                 >
                   {group.label}
                 </Link>
-                <span className="text-[11px] text-gray-400">
+                <span className="text-[11px] text-text-muted">
                   {group.items.length} task{group.items.length === 1 ? "" : "s"}
                 </span>
               </header>
@@ -344,6 +323,12 @@ export function MyWeekClient({ userId }: { userId: string }) {
             patchTaskLocal(id, { content_blocks: blocks });
             startTransition(async () => {
               await updatePmTaskContent(id, blocks, blocksToPlainSummary(blocks));
+            });
+          }}
+          onClientContentSave={(id, blocks: Block[]) => {
+            patchTaskLocal(id, { client_content_blocks: blocks });
+            startTransition(async () => {
+              await updatePmTaskClientContent(id, blocks);
             });
           }}
         />

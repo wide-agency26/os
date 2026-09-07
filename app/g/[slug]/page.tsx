@@ -3,8 +3,30 @@ import { PublicGuidelineClient } from "./PublicGuidelineClient";
 import Link from "next/link";
 import { ArrowLeft, ShieldAlert, FileQuestion, Lock } from "lucide-react";
 import type { CITheme, CISection, CIAsset } from "@/lib/ci-builder/types";
+import type { Metadata } from "next";
+import { brandMarkUrl } from "@/lib/ci-builder/brand-mark";
 
 export const revalidate = 60;
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const result = await loadPublishedGuidelineBySlug(slug);
+  if (result.state !== "success") {
+    return { title: "Brand guideline" };
+  }
+  const icon = brandMarkUrl(
+    result.sections as Partial<CISection>[],
+    result.assets as Partial<CIAsset>[]
+  );
+  return {
+    title: result.brandName,
+    icons: icon ? { icon } : undefined,
+  };
+}
 
 export default async function PublicGuidelinePage({
   params,
@@ -91,6 +113,7 @@ export default async function PublicGuidelinePage({
   return (
     <PublicGuidelineClient
       mode="standalone"
+      slug={slug}
       brandName={result.brandName}
       theme={result.theme as CITheme}
       sections={result.sections as Partial<CISection>[]}

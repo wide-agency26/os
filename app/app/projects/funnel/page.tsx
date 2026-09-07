@@ -8,6 +8,7 @@ import {
   reportsProjectLabel,
   type ReportsProjectOption,
 } from "@/components/reports/ReportsHubShell";
+import { pickInitialProjectId, ts } from "@/lib/tools/recent-projects";
 import { createClient } from "@/utils/supabase/client";
 import { isFounder } from "@/lib/rbac";
 import { Loader2, Lock, Save } from "lucide-react";
@@ -45,19 +46,20 @@ function FunnelConfigInner() {
 
       const { data } = await supabase
         .from("projects")
-        .select("id, title, crm_customers(company, name)")
-        .order("title");
+        .select("id, title, updated_at, crm_customers(company, name)")
+        .order("updated_at", { ascending: false });
       const mapped: ReportsProjectOption[] = (data || []).map((p: any) => {
         const cust = Array.isArray(p.crm_customers) ? p.crm_customers[0] : p.crm_customers;
         return {
           id: p.id,
           title: p.title,
           company: cust?.company || cust?.name,
+          lastEditedAt: ts(p.updated_at),
         };
       });
       setProjects(mapped);
       const fromUrl = searchParams.get("project");
-      const next = fromUrl && mapped.some((p) => p.id === fromUrl) ? fromUrl : mapped[0]?.id || "";
+      const next = pickInitialProjectId(mapped.map((p) => p.id), fromUrl, "reports");
       setProjectId(next);
       setLoading(false);
     })();

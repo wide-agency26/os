@@ -238,12 +238,12 @@ export function LedgerEntryForm({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="ledger-entry-form-title"
-        className="w-full max-w-lg rounded-xl bg-white shadow-xl border border-gray-200 max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg rounded-t-2xl sm:rounded-xl bg-white shadow-xl border border-gray-200 max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 id="ledger-entry-form-title" className="text-[15px] font-bold text-gray-900">
@@ -293,7 +293,7 @@ export function LedgerEntryForm({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="text-[12px] font-medium text-gray-700">Category</span>
               <input
@@ -318,7 +318,7 @@ export function LedgerEntryForm({
             </label>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="text-[12px] font-medium text-gray-700">Month</span>
               <select

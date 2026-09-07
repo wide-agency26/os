@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { formatEuro, type LedgerPillar } from "@/lib/accounting/types";
 
 type MonthlyPoint = {
@@ -16,30 +16,12 @@ type ScorecardProps = {
   revenue: number;
   cost: number;
   profit: number;
-  monthlySeries: MonthlyPoint[];
+  monthlySeries?: MonthlyPoint[];
   pillarStyle: LedgerPillar;
   defaultExpanded?: boolean;
-};
-
-const PILLAR_STYLES: Record<
-  LedgerPillar,
-  { accent: string; badge: string; bar: string }
-> = {
-  actual: {
-    accent: "border-l-4 border-l-blue-500",
-    badge: "bg-blue-50 text-blue-700 border-blue-200",
-    bar: "bg-blue-500",
-  },
-  identified: {
-    accent: "border-l-4 border-l-amber-500",
-    badge: "bg-amber-50 text-amber-700 border-amber-200",
-    bar: "bg-amber-500",
-  },
-  unidentified: {
-    accent: "border-l-4 border-l-gray-400",
-    badge: "bg-gray-100 text-gray-600 border-gray-200",
-    bar: "bg-gray-400",
-  },
+  size?: "featured" | "compact";
+  selected?: boolean;
+  onSelect?: () => void;
 };
 
 export function Scorecard({
@@ -50,89 +32,117 @@ export function Scorecard({
   monthlySeries,
   pillarStyle,
   defaultExpanded = false,
+  size = "compact",
+  selected = false,
+  onSelect,
 }: ScorecardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const style = PILLAR_STYLES[pillarStyle];
-  const maxVal = Math.max(1, ...monthlySeries.flatMap((m) => [m.revenue, m.cost]));
+  const featured = size === "featured";
+  const selectable = Boolean(onSelect);
+  const maxVal = Math.max(
+    1,
+    ...(monthlySeries || []).flatMap((m) => [m.revenue, m.cost])
+  );
+
+  const edge =
+    pillarStyle === "actual"
+      ? "border-l-gray-950"
+      : pillarStyle === "identified"
+        ? "border-l-gray-500"
+        : "border-l-gray-300";
+
+  function handleClick() {
+    if (onSelect) onSelect();
+    else setExpanded((v) => !v);
+  }
 
   return (
     <div
-      className={`rounded-lg border border-gray-200 bg-white ${style.accent} overflow-hidden`}
+      className={`rounded-lg border bg-white overflow-hidden border-l-4 ${edge} ${
+        selected ? "border-gray-900 shadow-sm" : "border-gray-200"
+      }`}
     >
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+        onClick={handleClick}
+        className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] font-bold text-gray-900">{title}</span>
+        <div className="flex items-center justify-between gap-2">
           <span
-            className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border ${style.badge}`}
-          >
-            {pillarStyle}
-          </span>
-        </div>
-        {expanded ? (
-          <ChevronUp size={16} className="text-gray-400" />
-        ) : (
-          <ChevronDown size={16} className="text-gray-400" />
-        )}
-      </button>
-
-      <div className="grid grid-cols-3 gap-2 px-4 pb-4">
-        <div>
-          <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-            <TrendingUp size={11} /> Revenue
-          </div>
-          <p className="text-[17px] font-semibold text-green-600 tabular-nums">
-            {formatEuro(revenue)}
-          </p>
-        </div>
-        <div>
-          <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-            <TrendingDown size={11} /> Cost
-          </div>
-          <p className="text-[17px] font-semibold text-red-500 tabular-nums">
-            {formatEuro(cost)}
-          </p>
-        </div>
-        <div>
-          <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-            <Wallet size={11} /> Profit
-          </div>
-          <p
-            className={`text-[17px] font-semibold tabular-nums ${
-              profit >= 0 ? "text-gray-900" : "text-red-600"
+            className={`font-semibold text-gray-900 ${
+              featured ? "text-[13px] uppercase tracking-wide" : "text-[13px]"
             }`}
           >
-            {formatEuro(profit)}
-          </p>
+            {title}
+          </span>
+          {selectable ? (
+            <span className="text-[11px] font-medium text-gray-400">
+              {selected ? "Open" : "View"}
+            </span>
+          ) : expanded ? (
+            <ChevronUp size={16} className="text-gray-400" />
+          ) : (
+            <ChevronDown size={16} className="text-gray-400" />
+          )}
         </div>
-      </div>
+        <p
+          className={`mt-2 font-semibold tabular-nums text-gray-950 ${
+            featured ? "text-3xl tracking-tight" : "text-xl"
+          }`}
+        >
+          {formatEuro(profit)}
+        </p>
+        <p className="text-[11px] text-gray-500 mt-0.5">Profit</p>
+        <div className={`grid grid-cols-2 gap-3 ${featured ? "mt-4" : "mt-3"}`}>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              In
+            </p>
+            <p className="text-[15px] font-semibold text-gray-900 tabular-nums">
+              {formatEuro(revenue)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Out
+            </p>
+            <p className="text-[15px] font-semibold text-gray-600 tabular-nums">
+              {formatEuro(cost)}
+            </p>
+          </div>
+        </div>
+      </button>
 
-      {expanded && (
+      {!selectable && expanded && monthlySeries && monthlySeries.length > 0 && (
         <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-4">
           <div className="flex items-center gap-3 mb-3 text-[10px] text-gray-500">
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block" /> Revenue
+              <span className="w-2 h-2 rounded-sm bg-gray-900 inline-block" /> In
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-sm bg-red-400 inline-block" /> Cost
+              <span className="w-2 h-2 rounded-sm bg-gray-400 inline-block" /> Out
             </span>
           </div>
           <div className="flex items-end gap-1.5 h-24">
             {monthlySeries.map((m) => (
-              <div key={m.month} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full">
+              <div
+                key={m.month}
+                className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full"
+              >
                 <div className="flex items-end gap-[2px] h-full w-full justify-center">
                   <div
-                    className="w-2 rounded-sm bg-emerald-500/80"
-                    style={{ height: `${Math.max(2, (m.revenue / maxVal) * 100)}%` }}
-                    title={`${m.label} revenue: ${formatEuro(m.revenue)}`}
+                    className="w-2 rounded-sm bg-gray-900/80"
+                    style={{
+                      height: `${Math.max(2, (m.revenue / maxVal) * 100)}%`,
+                    }}
+                    title={`${m.label} in: ${formatEuro(m.revenue)}`}
                   />
                   <div
-                    className="w-2 rounded-sm bg-red-400/80"
-                    style={{ height: `${Math.max(2, (m.cost / maxVal) * 100)}%` }}
-                    title={`${m.label} cost: ${formatEuro(m.cost)}`}
+                    className="w-2 rounded-sm bg-gray-400/80"
+                    style={{
+                      height: `${Math.max(2, (m.cost / maxVal) * 100)}%`,
+                    }}
+                    title={`${m.label} out: ${formatEuro(m.cost)}`}
                   />
                 </div>
                 <span className="text-[9px] text-gray-400">{m.label}</span>

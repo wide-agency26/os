@@ -3,12 +3,6 @@
 import { Workspace } from "@/components/frappe-ui/Workspace";
 import {
   Plus,
-  Users,
-  UserPlus,
-  PauseCircle,
-  UserX,
-  Layers,
-  Wallet,
   ArrowRight,
   Crown,
 } from "lucide-react";
@@ -18,31 +12,50 @@ import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import {
   formatMoney,
+  isFounderPerson,
+  monthlyOverheadAmount,
   rosterStatusPill,
   type PersonRow,
 } from "@/lib/hr/types";
+import {
+  EmptyState,
+  PageHeader,
+  Panel,
+  buttonClass,
+} from "@/components/frappe-ui/primitives";
 
 type FullyLoadedRow = {
   person_id: string;
+  monthly_compensation: number | null;
+  monthly_overhead: number | null;
   monthly_fully_loaded: number | null;
   currency: string | null;
 };
+
+function overlapsToday(from: string, to: string | null): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (from > today) return false;
+  if (to && to < today) return false;
+  return true;
+}
 
 export default function HrDashboardPage() {
   const router = useRouter();
   const [people, setPeople] = useState<PersonRow[]>([]);
   const [fullyLoaded, setFullyLoaded] = useState<FullyLoadedRow[]>([]);
+  const [companyOverheadRunRate, setCompanyOverheadRunRate] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       const supabase = createClient();
-      const [{ data: peopleRows }, { data: costRows }] = await Promise.all([
-        (supabase as any)
-          .from("people")
-          .select(
-            `
+      const [{ data: peopleRows }, { data: costRows }, { data: resourceRows }] =
+        await Promise.all([
+          (supabase as any)
+            .from("people")
+            .select(
+              `
             id,
             full_name,
             primary_email,
@@ -51,17 +64,38 @@ export default function HrDashboardPage() {
             roster_status,
             co_founder_track,
             hourly_rate_cost,
+            wishlist_hourly_rate,
             engagement_types ( id, key, label, assignable_to_tasks ),
             person_skills ( skill_id, skills ( id, label ) )
           `
-          )
-          .order("full_name", { ascending: true }),
-        (supabase as any)
-          .from("hr_person_fully_loaded_cost")
-          .select("person_id, monthly_fully_loaded, currency"),
-      ]);
+            )
+            .order("full_name", { ascending: true }),
+          (supabase as any)
+            .from("hr_person_fully_loaded_cost")
+            .select(
+              "person_id, monthly_compensation, monthly_overhead, monthly_fully_loaded, currency"
+            ),
+          (supabase as any)
+            .from("person_overhead_costs")
+            .select("amount, frequency, effective_from, effective_to")
+            .is("person_id", null)
+            .is("project_id", null),
+        ]);
       setPeople(peopleRows || []);
       setFullyLoaded(costRows || []);
+      const companyOh = (resourceRows || []).reduce(
+        (sum: number, row: {
+          amount: number | null;
+          frequency: string;
+          effective_from: string;
+          effective_to: string | null;
+        }) => {
+          if (!overlapsToday(row.effective_from, row.effective_to)) return sum;
+          return sum + monthlyOverheadAmount(row.amount, row.frequency);
+        },
+        0
+      );
+      setCompanyOverheadRunRate(companyOh);
       setLoading(false);
     }
     void load();
@@ -73,19 +107,26 @@ export default function HrDashboardPage() {
     const paused = people.filter((p) => p.roster_status === "paused");
     const offboarded = people.filter((p) => p.roster_status === "offboarded");
     const assignable = active.filter((p) => p.engagement_types?.assignable_to_tasks);
-    const runRate = fullyLoaded.reduce(
-      (sum, r) => sum + Number(r.monthly_fully_loaded || 0),
+    const payroll = fullyLoaded.reduce(
+      (sum, r) => sum + Number(r.monthly_compensation || 0),
       0
     );
+    const personOverhead = fullyLoaded.reduce(
+      (sum, r) => sum + Number(r.monthly_overhead || 0),
+      0
+    );
+    const overhead = personOverhead + companyOverheadRunRate;
     return {
       activeCount: active.length,
       pipelineCount: pipeline.length,
       pausedCount: paused.length,
       offboardedCount: offboarded.length,
       assignableCount: assignable.length,
-      runRate,
+      payroll,
+      overhead,
+      runRate: payroll + overhead,
     };
-  }, [people, fullyLoaded]);
+  }, [people, fullyLoaded, companyOverheadRunRate]);
 
   const sortedPeople = useMemo(() => {
     const rank: Record<string, number> = {
@@ -101,71 +142,69 @@ export default function HrDashboardPage() {
     });
   }, [people]);
 
-  const scorecards = [
-    { label: "Active people", value: stats.activeCount, icon: Users, color: "text-green-600 bg-green-50" },
-    { label: "Pipeline", value: stats.pipelineCount, icon: UserPlus, color: "text-blue-600 bg-blue-50" },
-    { label: "Paused", value: stats.pausedCount, icon: PauseCircle, color: "text-amber-600 bg-amber-50" },
-    { label: "Offboarded", value: stats.offboardedCount, icon: UserX, color: "text-gray-500 bg-gray-100" },
-    { label: "Assignable", value: stats.assignableCount, icon: Layers, color: "text-purple-600 bg-purple-50" },
+  const scorecards: {
+    label: string;
+    value: string | number;
+    sub?: string;
+  }[] = [
+    { label: "Active", value: stats.activeCount },
+    { label: "Pipeline", value: stats.pipelineCount },
+    { label: "Paused", value: stats.pausedCount },
+    { label: "Offboarded", value: stats.offboardedCount },
+    { label: "Assignable", value: stats.assignableCount },
     {
       label: "Monthly run-rate",
       value: loading ? "—" : formatMoney(stats.runRate),
-      icon: Wallet,
-      color: "text-indigo-600 bg-indigo-50",
+      sub: loading
+        ? undefined
+        : `Payroll ${formatMoney(stats.payroll)} · Overhead ${formatMoney(stats.overhead)}`,
     },
   ];
 
   return (
     <Workspace wide>
-      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">HR</h2>
-          <p className="text-[13px] text-gray-500 mt-1">
-            Roster health, capacity, and cost run-rate.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/app/hr/pipeline"
-            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
-          >
-            Pipeline
-          </Link>
-          <Link
-            href="/app/hr/roster"
-            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
-          >
-            Full roster
-          </Link>
-          <Link
-            href="/app/hr/new"
-            className="px-3 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Plus size={16} />
-            Add person
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="HR"
+        subtitle="Roster health, capacity, and cost run-rate."
+        actions={
+          <>
+            <Link href="/app/hr/pipeline" className={buttonClass("secondary")}>
+              Pipeline
+            </Link>
+            <Link href="/app/hr/roster" className={buttonClass("secondary")}>
+              Full roster
+            </Link>
+            <Link href="/app/hr/new" className={buttonClass("primary")}>
+              <Plus size={14} strokeWidth={1.75} />
+              Add person
+            </Link>
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
-        {scorecards.map((s) => (
-          <div key={s.label} className="border border-gray-200 rounded-lg p-4 bg-white">
-            <div className={`w-8 h-8 rounded-md flex items-center justify-center mb-3 ${s.color}`}>
-              <s.icon size={16} />
+      <Panel className="overflow-hidden mb-8">
+        <div className="flex divide-x divide-border overflow-x-auto">
+          {scorecards.map((s) => (
+            <div key={s.label} className="flex-1 min-w-[6.5rem] px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+                {s.label}
+              </p>
+              <p className="text-lg font-semibold text-text-primary tabular-nums mt-1">
+                {loading ? "—" : s.value}
+              </p>
+              {s.sub ? (
+                <p className="text-[11px] text-text-muted mt-0.5 leading-snug">{s.sub}</p>
+              ) : null}
             </div>
-            <div className="text-xl font-bold text-gray-900 tabular-nums">
-              {loading ? "—" : s.value}
-            </div>
-            <div className="text-[12px] text-gray-500 mt-0.5">{s.label}</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </Panel>
 
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-[13px] font-bold text-gray-900">People</h3>
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">People</h3>
         <Link
           href="/app/hr/roster"
-          className="text-[12px] text-blue-600 hover:underline flex items-center gap-1"
+          className="text-[12px] text-text-primary hover:underline flex items-center gap-1"
         >
           View full roster
           <ArrowRight size={12} />
@@ -173,21 +212,16 @@ export default function HrDashboardPage() {
       </div>
 
       {loading ? (
-        <div className="p-10 text-center text-[13px] text-gray-500 border border-gray-200 rounded-lg">
+        <div className="p-10 text-center text-[13px] text-text-secondary border border-border rounded-lg">
           Loading roster…
         </div>
       ) : sortedPeople.length === 0 ? (
-        <div className="p-10 text-center space-y-3 border border-dashed border-gray-300 rounded-lg">
-          <UserPlus className="mx-auto text-gray-300" size={32} />
-          <p className="text-[14px] font-medium text-gray-800">No people yet</p>
-          <Link
-            href="/app/hr/new"
-            className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded text-[13px] font-medium"
-          >
-            <Plus size={14} />
+        <EmptyState>
+          No people yet.{" "}
+          <Link href="/app/hr/new" className="font-medium text-text-primary hover:underline">
             Add first person
           </Link>
-        </div>
+        </EmptyState>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {sortedPeople.map((p) => {
@@ -200,17 +234,17 @@ export default function HrDashboardPage() {
                 key={p.id}
                 type="button"
                 onClick={() => router.push(`/app/hr/${p.id}`)}
-                className="text-left border border-gray-200 rounded-lg p-4 bg-white hover:border-gray-300 hover:shadow-sm transition-all"
+                className="text-left border border-border rounded-lg p-4 bg-surface hover:border-text-muted transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 truncate flex items-center gap-1.5">
+                    <p className="font-semibold text-text-primary truncate flex items-center gap-1.5">
                       {p.full_name}
                       {p.co_founder_track && (
-                        <Crown size={12} className="text-violet-600 shrink-0" />
+                        <Crown size={12} strokeWidth={1.75} className="text-text-muted shrink-0" />
                       )}
                     </p>
-                    <p className="text-[12px] text-gray-500 mt-0.5 truncate">
+                    <p className="text-[12px] text-text-secondary mt-0.5 truncate">
                       {p.engagement_types?.label || "—"}
                     </p>
                   </div>
@@ -223,7 +257,7 @@ export default function HrDashboardPage() {
                   </span>
                 </div>
 
-                <div className="mt-3 space-y-1 text-[12px] text-gray-500">
+                <div className="mt-3 space-y-1 text-[12px] text-text-secondary">
                   {p.primary_email && <p className="truncate">{p.primary_email}</p>}
                   {p.phone && <p className="truncate">{p.phone}</p>}
                 </div>
@@ -233,7 +267,7 @@ export default function HrDashboardPage() {
                     {skillLabels.map((label) => (
                       <span
                         key={label}
-                        className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[11px]"
+                        className="px-1.5 py-0.5 rounded-md bg-surface-raised text-text-secondary text-[11px]"
                       >
                         {label}
                       </span>
@@ -241,11 +275,18 @@ export default function HrDashboardPage() {
                   </div>
                 )}
 
-                {p.hourly_rate_cost != null && (
-                  <p className="mt-3 text-[12px] font-medium text-gray-700">
+                {p.hourly_rate_cost != null && Number(p.hourly_rate_cost) > 0 ? (
+                  <p className="mt-3 text-[12px] font-medium text-text-primary">
                     {formatMoney(p.hourly_rate_cost)} / hr
+                    {isFounderPerson(p) && p.wishlist_hourly_rate != null && Number(p.wishlist_hourly_rate) > 0
+                      ? ` · wishlist ${formatMoney(p.wishlist_hourly_rate)}`
+                      : isFounderPerson(p)
+                        ? " · wishlist —"
+                        : ""}
                   </p>
-                )}
+                ) : isFounderPerson(p) ? (
+                  <p className="mt-3 text-[12px] text-text-secondary">Wishlist rate not set</p>
+                ) : null}
               </button>
             );
           })}

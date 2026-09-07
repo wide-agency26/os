@@ -12,6 +12,8 @@ export interface EditableTextProps {
   className?: string;
   tag?: React.ElementType;
   style?: React.CSSProperties;
+  /** chip: no dashed-border overlay — used inside pill tags */
+  variant?: "text" | "chip";
 }
 
 export function EditableText({
@@ -22,7 +24,8 @@ export function EditableText({
   placeholder = "Click to edit text...",
   className = "",
   tag: Tag = "div",
-  style
+  style,
+  variant = "text",
 }: EditableTextProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -42,8 +45,14 @@ export function EditableText({
     }
   }, [isEditing]);
 
+  const wrapClass = multiline ? "whitespace-pre-wrap" : "";
+
   if (!isAdmin) {
-    return <Tag className={className} style={style}>{value || placeholder}</Tag>;
+    return (
+      <Tag className={`${wrapClass} ${className}`.trim()} style={style}>
+        {value || placeholder}
+      </Tag>
+    );
   }
 
   const handleSave = () => {
@@ -72,15 +81,16 @@ export function EditableText({
   };
 
   if (isEditing) {
-    // Keep typography sizing from style, but never inherit light theme text onto white fields.
+    const { color: _ignoredColor, backgroundColor: _ignoredBg, ...restStyle } =
+      style || {};
     const editStyle: React.CSSProperties = {
-      ...(style || {}),
+      ...restStyle,
       color: "#111827",
       backgroundColor: "#ffffff",
     };
 
     return (
-      <div className="relative inline-block w-full z-20" onClick={(e) => e.stopPropagation()}>
+      <div className={`relative z-20 ${variant === "chip" ? "inline-block" : "inline-block w-full"}`} onClick={(e) => e.stopPropagation()}>
         {multiline ? (
           <textarea
             ref={inputRef as React.RefObject<HTMLTextAreaElement>}
@@ -101,7 +111,7 @@ export function EditableText({
             onKeyDown={handleKeyDown}
             onBlur={handleSave}
             placeholder={placeholder}
-            className="w-full p-1.5 border-2 border-blue-500 rounded bg-white text-gray-900 shadow-md outline-none font-normal text-base placeholder:text-gray-400"
+            className={`${variant === "chip" ? "min-w-[8rem]" : "w-full"} p-1.5 border-2 border-blue-500 rounded bg-white text-gray-900 shadow-md outline-none font-normal text-base placeholder:text-gray-400`}
             style={editStyle}
           />
         )}
@@ -114,7 +124,7 @@ export function EditableText({
           </button>
           <button
             onMouseDown={(e) => { e.preventDefault(); handleCancel(); }}
-            className="flex items-center gap-1 px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
+            className="flex items-center gap-1 px-2 py-1 rounded font-medium bg-[var(--ci-surface)] text-[var(--ci-text)] hover:opacity-80"
           >
             <X className="w-3.5 h-3.5" /> Cancel
           </button>
@@ -128,7 +138,11 @@ export function EditableText({
 
   return (
     <Tag
-      className={`group relative cursor-pointer border border-transparent hover:border-dashed hover:border-blue-400 hover:bg-blue-50/30 rounded px-1 -mx-1 transition-all ${className}`}
+      className={
+        variant === "chip"
+          ? `group relative cursor-pointer inline-flex items-center ${className}`
+          : `group relative cursor-pointer border border-transparent hover:border-dashed hover:border-blue-400 rounded px-1 -mx-1 transition-all ${wrapClass} ${className}`
+      }
       style={style}
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
@@ -136,9 +150,17 @@ export function EditableText({
       }}
       title="Click to edit"
     >
-      <span>{value || <span className="opacity-40 italic">{placeholder}</span>}</span>
+      <span className={wrapClass}>
+        {value || <span className="opacity-40 italic">{placeholder}</span>}
+      </span>
       
-      <span className="inline-flex items-center ml-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600 text-white p-0.5 rounded shadow-sm align-middle text-[10px]">
+      <span
+        className={`inline-flex items-center ml-1.5 opacity-0 group-hover:opacity-100 transition-opacity align-middle text-[10px] ${
+          variant === "chip"
+            ? "text-current"
+            : "bg-blue-600 text-white p-0.5 rounded shadow-sm"
+        }`}
+      >
         <Pencil className="w-3 h-3" />
       </span>
 

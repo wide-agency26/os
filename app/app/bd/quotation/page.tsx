@@ -5,6 +5,7 @@ import { createClient } from "@/utils/supabase/server";
 import { isFounder } from "@/lib/rbac";
 import { hasLexwareCredentials } from "@/lib/bd/lexware";
 import { mergeQuotation } from "@/lib/bd/quotation";
+import { workPaths } from "@/lib/work/paths";
 
 export default async function QuotationHubPage() {
   const supabase = await createClient();
@@ -62,7 +63,7 @@ export default async function QuotationHubPage() {
             return (
               <li key={r.id}>
                 <Link
-                  href={`/app/bd/quotation/${r.id}`}
+                  href={workPaths.quoteId(r.id)}
                   className="block rounded-xl border border-gray-200 bg-white px-4 py-3 hover:border-gray-400"
                 >
                   <p className="font-semibold text-gray-950">

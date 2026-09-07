@@ -8,7 +8,7 @@ export default async function ProjectReviewPage({
 }) {
   const { project_id } = await params;
   return (
-    <Workspace>
+    <Workspace wide>
       <ProjectReviewQueueClient projectId={project_id} />
     </Workspace>
   );

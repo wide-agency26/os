@@ -13,6 +13,8 @@ import {
   ReportsHubShell,
   type ReportsProjectOption,
 } from "@/components/reports/ReportsHubShell";
+import { pickInitialProjectId, ts } from "@/lib/tools/recent-projects";
+import { SourcesConnections } from "@/components/reports/SourcesConnections";
 import {
   detectColumns,
   TYPE_BADGES,
@@ -21,7 +23,8 @@ import {
   type DetectionResult,
 } from "@/lib/data-hub/column-detector";
 import { dataHubCategoriesForUpload } from "@/lib/reports/categories";
-import { parseUploadFile, isAcceptedUploadName } from "@/lib/data-hub/parse-workbook";
+import { parseUploadAction } from "@/app/actions/parse-upload";
+import { isAcceptedUploadName } from "@/lib/data-hub/upload-names";
 import {
   detectSubcategory,
   subcategoryLabel,
@@ -29,6 +32,7 @@ import {
   type DatasetSubcategory,
 } from "@/lib/data-hub/subcategory";
 import { isFounder } from "@/lib/rbac";
+import { csvBlockedMessage } from "@/lib/reports/sync/providers";
 
 const CATEGORIES = dataHubCategoriesForUpload();
 const CATEGORY_HINTS: Record<string, string> = {
@@ -70,6 +74,7 @@ interface ProjectOption {
   id: string;
   title: string;
   company?: string;
+  lastEditedAt?: number;
 }
 
 interface DatasetMeta {
@@ -81,6 +86,9 @@ interface DatasetMeta {
   columns: ColumnSchema[];
   row_count: number;
   created_at: string;
+  source_type?: string | null;
+  synced_at?: string | null;
+  is_current?: boolean | null;
   projects?: { title: string; crm_customers?: { company?: string; name?: string } | { company?: string; name?: string }[] | null };
 }
 
@@ -162,13 +170,14 @@ function DataHubInner() {
         `
         id,
         title,
+        updated_at,
         crm_customers!client_id (
           company,
           name
         )
       `
       )
-      .order("title");
+      .order("updated_at", { ascending: false });
 
     if (data) {
       const mapped: ProjectOption[] = data.map((p: any) => {
@@ -177,12 +186,12 @@ function DataHubInner() {
           id: p.id,
           title: p.title,
           company: cust?.company || cust?.name || undefined,
+          lastEditedAt: ts(p.updated_at),
         };
       });
       setProjects(mapped);
       const fromUrl = searchParams.get("project");
-      const next =
-        fromUrl && mapped.some((p) => p.id === fromUrl) ? fromUrl : mapped[0]?.id || "";
+      const next = pickInitialProjectId(mapped.map((p) => p.id), fromUrl, "reports");
       setHubProjectId(next);
       if (next) {
         setProjectFilter(next);
@@ -213,6 +222,9 @@ function DataHubInner() {
         columns,
         row_count,
         created_at,
+        source_type,
+        synced_at,
+        is_current,
         projects (
           title,
           crm_customers!client_id (
@@ -309,7 +321,14 @@ function DataHubInner() {
     }
 
     try {
-      const sheets = await parseUploadFile(file);
+      const form = new FormData();
+      form.set("file", file);
+      const parsed = await parseUploadAction(form);
+      if (!parsed.ok) {
+        setError(parsed.error);
+        return;
+      }
+      const sheets = parsed.sheets;
       const baseName = file.name.replace(/\.(csv|tsv|txt|xlsx|xls|html|htm)$/i, "");
 
       const pending: PendingSheet[] = sheets.map((sheet, idx) => {
@@ -338,12 +357,13 @@ function DataHubInner() {
       setDatasetName(firstActive.datasetName);
       setDetectedSubcategory(firstActive.subcategory);
       setSelectedCategory(firstActive.category);
+      if (hubProjectId) setSelectedProjectId(hubProjectId);
       setWizardStep(1);
     } catch (err: any) {
       setError(err?.message || "Failed to parse file.");
       setWizardStep(0);
     }
-  }, []);
+  }, [hubProjectId]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -486,11 +506,33 @@ function DataHubInner() {
       return;
     }
 
-    const sheets = syncActiveSheet().filter((s) => s.selected);
-    if (!sheets.length) {
-      setError("Select at least one sheet to import.");
-      return;
-    }
+        const sheets = syncActiveSheet().filter((s) => s.selected);
+        if (!sheets.length) {
+          setError("Select at least one sheet to import.");
+          return;
+        }
+        try {
+          const res = await fetch(
+            `/api/reports/sources?projectId=${encodeURIComponent(selectedProjectId)}`
+          );
+          const json = await res.json();
+          const connected = ((json.connections || []) as { provider: string; status: string; external_account_id?: string | null; external_account_label?: string | null }[])
+            .filter((c) => c.status === "connected" && c.external_account_id)
+            .map((c) => ({ provider: c.provider, label: c.external_account_label }));
+          for (const s of sheets) {
+            const blocked = csvBlockedMessage(
+              s.subcategory === "unknown" ? null : s.subcategory,
+              connected
+            );
+            if (blocked) {
+              setError(blocked);
+              setUploading(false);
+              return;
+            }
+          }
+        } catch {
+          /* if sources API is down, still allow upload */
+        }
     for (const s of sheets) {
       if (!s.datasetName.trim()) {
         setError(`Give sheet “${s.sheetName}” a dataset name before importing.`);
@@ -531,6 +573,7 @@ function DataHubInner() {
             created_by: user.id,
             is_current: true,
             supersedes_id: null,
+            source_type: "upload",
           })
           .select("id")
           .single();
@@ -547,6 +590,7 @@ function DataHubInner() {
             .select("id")
             .eq("project_id", selectedProjectId)
             .eq("subcategory", sub)
+            .eq("name", sheet.datasetName.trim())
             .eq("is_current", true)
             .neq("id", ds.id);
           const priorIds = (priors || []).map((p: { id: string }) => p.id);
@@ -732,9 +776,9 @@ function DataHubInner() {
           <Database size={20} />
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Data Hub</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Sources</h2>
           <p className="text-gray-500 text-[13px]">
-            Upload platform CSVs tagged to the selected project — feeds Report Viewer, Funnel, and Insights.
+            Connect what we can, upload the rest, then open Report.
           </p>
         </div>
       </div>
@@ -758,14 +802,21 @@ function DataHubInner() {
         </div>
       )}
 
-      {/* ── Closed: upload + list ── */}
+      {/* ── Closed: connections first, then file upload ── */}
       {wizardStep === 0 && (
         <>
+          <SourcesConnections
+            projectId={hubProjectId}
+            highlight={searchParams.get("highlight")}
+            onUpload={() => fileInputRef.current?.click()}
+            onChanged={() => void fetchDatasets()}
+          />
+
           <div
-            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all mb-8 cursor-pointer ${
+            className={`border-2 border-dashed rounded-xl p-6 text-center transition-all mb-8 cursor-pointer ${
               dragOver
-                ? "border-blue-500 bg-blue-50 scale-[1.01]"
-                : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"
+                ? "border-slate-500 bg-slate-50 scale-[1.01]"
+                : "border-gray-300 hover:border-slate-400 hover:bg-gray-50"
             }`}
             onDragOver={(e) => {
               e.preventDefault();
@@ -787,13 +838,11 @@ function DataHubInner() {
                 <Upload className="text-blue-600" size={24} />
               </div>
               <p className="text-[15px] font-semibold text-gray-800 mb-1">
-                Drop CSV, Excel, or HTML here, or click to browse
+                Or drop a CSV, Excel, or HTML file
               </p>
               <p className="text-[12px] text-gray-500 max-w-md mx-auto">
-                Name sheets with prefixes: <span className="font-medium">Li -</span>,{" "}
-                <span className="font-medium">YT -</span>,{" "}
-                <span className="font-medium">Web -</span> — or upload Instagram Meta HTML
-                (Profiles Reached, Posts) for Social → Instagram
+                Use this for LinkedIn, Google Ads, YouTube, and one-off client dumps. Live
+                connections cannot be replaced with a file until you disconnect them.
               </p>
             </div>
           </div>
@@ -801,7 +850,7 @@ function DataHubInner() {
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <Layers size={16} />
-              Your Datasets
+              All versions
               <span className="text-[12px] font-normal text-gray-500 ml-1">
                 ({filteredDatasets.length})
               </span>
@@ -1095,13 +1144,21 @@ function DataHubInner() {
                   setError("Select a project before continuing.");
                   return;
                 }
+                const sheets = syncActiveSheet().filter((s) => s.selected);
+                const needsReview = sheets.some((s) => s.subcategory === "unknown");
                 setPendingSheets(syncActiveSheet());
                 setError(null);
-                setWizardStep(2);
+                if (needsReview) {
+                  setWizardStep(2);
+                } else {
+                  void handleImport();
+                }
               }}
               className="px-5 py-2 bg-blue-600 text-white rounded-lg text-[13px] font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Review sheets →
+              {pendingSheets.filter((s) => s.selected).some((s) => s.subcategory === "unknown")
+                ? "Review sheets →"
+                : "Import"}
             </button>
           </div>
         </div>
@@ -1470,8 +1527,8 @@ function DataHubInner() {
 
       {/* ── Edit existing dataset modal ── */}
       {editingDataset && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white text-gray-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-100">
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+          <div className="bg-white text-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-3xl max-h-[100dvh] sm:max-h-[90vh] overflow-hidden flex flex-col border border-gray-100">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
               <div>
                 <h3 className="text-lg font-bold text-gray-900">Edit dataset</h3>

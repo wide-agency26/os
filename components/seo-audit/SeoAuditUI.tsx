@@ -34,7 +34,7 @@ export function SeoAuditLauncher({
         setMessage(res.error || "Audit failed");
         return;
       }
-      if (res.id) router.push(`/app/seo-audit/${res.id}`);
+      if (res.id) router.push(`/app/seo`);
     });
   }
 
@@ -104,7 +104,7 @@ export function SeoAuditLauncher({
             >
               <div className="min-w-0">
                 <Link
-                  href={`/app/seo-audit/${a.id}`}
+                  href="/app/seo"
                   className="text-sm font-semibold text-gray-900 hover:underline truncate block"
                 >
                   {a.title || a.normalized_url}

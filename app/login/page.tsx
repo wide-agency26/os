@@ -3,6 +3,8 @@
 import { useState, Suspense, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { homePathForRole } from "@/lib/routing";
+import { isClient } from "@/lib/rbac";
+import { clientPortalHomeHref } from "@/app/actions/client-access";
 
 import { useSearchParams } from "next/navigation";
 import { WideLogo } from "@/components/brand/WideLogo";
@@ -20,6 +22,8 @@ function LoginForm() {
   useEffect(() => {
     const q = searchParams.get("error");
     if (q) setError(decodeURIComponent(q));
+    const prefill = searchParams.get("email");
+    if (prefill) setEmail(prefill);
   }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -82,11 +86,18 @@ function LoginForm() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, must_change_password")
         .eq("id", authData.user.id)
         .maybeSingle();
 
-      const dest = homePathForRole(profile?.role);
+      if (profile?.must_change_password) {
+        window.location.assign("/login/set-password");
+        return;
+      }
+
+      const dest = isClient(profile?.role)
+        ? await clientPortalHomeHref()
+        : homePathForRole(profile?.role);
       // Hard nav so proxy + cookies settle cleanly after auth
       window.location.assign(dest);
     } catch {
@@ -138,7 +149,7 @@ function LoginForm() {
         </div>
 
         {/* Login Card */}
-        <div className="bg-surface rounded-2xl border border-border p-8">
+        <div className="bg-surface rounded-2xl border border-border p-5 sm:p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Error & Success Messages */}
             {error && (
@@ -305,14 +316,16 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center text-text-muted text-sm">
-          Loading…
-        </div>
-      }
-    >
-      <LoginForm />
-    </Suspense>
+    <div className="theme-login min-h-full">
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center text-text-muted text-sm">
+            Loading…
+          </div>
+        }
+      >
+        <LoginForm />
+      </Suspense>
+    </div>
   );
 }

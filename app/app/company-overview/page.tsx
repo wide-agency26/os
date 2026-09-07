@@ -1,5 +1,5 @@
-import { CompanyOverviewClient } from "@/components/pm/CompanyOverviewClient";
+import { redirect } from "next/navigation";
 
-export default function CompanyOverviewPage() {
-  return <CompanyOverviewClient />;
+export default function CompanyOverviewRedirect() {
+  redirect("/app/home");
 }

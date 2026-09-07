@@ -48,6 +48,12 @@ export default function PlaybooksPage() {
         <p className="text-sm text-gray-500 mt-1">
           Reusable service task templates and package assemblies
         </p>
+        <Link
+          href="/app/playbooks/strategy"
+          className="inline-block mt-3 text-[13px] font-medium text-blue-700 hover:underline"
+        >
+          Strategy catalog — copy, type maps, module defaults →
+        </Link>
       </div>
 
       {loading ? (

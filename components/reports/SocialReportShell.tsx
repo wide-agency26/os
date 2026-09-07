@@ -35,7 +35,9 @@ import { availableYtMonths, buildYouTubeBundle } from "@/lib/reports/youtube-org
 import {
   availableIgMonths,
   buildInstagramBundle,
+  enrichIgBundleWithCalendarLinks,
   hasInstagramData,
+  type IgCalendarLink,
 } from "@/lib/reports/instagram-organic";
 import {
   isLinkedInOrganicSub,
@@ -51,6 +53,8 @@ interface SocialReportShellProps {
   datasets: LoadedDataset[];
   /** Prior uploads superseded by the current ones — used for static snapshot compare. */
   previousDatasets?: LoadedDataset[];
+  /** Live calendar Instagram permalinks to fix profile-only export rows. */
+  igCalendarLinks?: IgCalendarLink[];
 }
 
 function NoticeBanner({ text }: { text: string }) {
@@ -155,13 +159,17 @@ function SocialOverallBlended({ datasets }: { datasets: LoadedDataset[] }) {
 export function SocialReportShell({
   datasets,
   previousDatasets = [],
+  igCalendarLinks = [],
 }: SocialReportShellProps) {
   const [tab, setTab] = useState<SocialTab>("overall");
 
   const igHasData = useMemo(() => {
-    const bundle = buildInstagramBundle(pickInstagramPayloads(datasets));
+    const bundle = enrichIgBundleWithCalendarLinks(
+      buildInstagramBundle(pickInstagramPayloads(datasets)),
+      igCalendarLinks
+    );
     return hasInstagramData(bundle);
-  }, [datasets]);
+  }, [datasets, igCalendarLinks]);
 
   const tabs: ReportSubTab[] = [
     {
@@ -225,13 +233,16 @@ export function SocialReportShell({
 
   const igBundle = useMemo(
     () =>
-      buildFilteredInstagramBundle(datasets, {
-        mode: "all",
-        months: [],
-        customStart: "",
-        customEnd: "",
-      }),
-    [datasets]
+      enrichIgBundleWithCalendarLinks(
+        buildFilteredInstagramBundle(datasets, {
+          mode: "all",
+          months: [],
+          customStart: "",
+          customEnd: "",
+        }),
+        igCalendarLinks
+      ),
+    [datasets, igCalendarLinks]
   );
 
   const previousLiBundle = useMemo(
@@ -289,6 +300,9 @@ export function SocialReportShell({
               : first.name,
           createdAt: first.createdAt,
           rowCount: igDs.reduce((s, d) => s + d.rowCount, 0),
+          sourceType: first.sourceType,
+          syncedAt: first.syncedAt,
+          externalAccountLabel: first.externalAccountLabel,
         }
       : undefined;
   }, [datasets]);

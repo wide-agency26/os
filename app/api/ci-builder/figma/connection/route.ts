@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAgencyStaff } from "@/lib/auth-guards";
 import { createClient } from "@/utils/supabase/server";
+import { createAdminClient } from "@/utils/supabase/admin";
 import {
   getFigmaConnectionForUser,
   publicConnectionInfo,
@@ -39,9 +40,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const me = await getFigmaMe(token);
-    const supabase = await createClient();
-    const { error } = await (supabase as any).from("ci_figma_connections").upsert(
+    const me = await getFigmaMe(token, true);
+    const admin = createAdminClient();
+    const { error } = await (admin as any).from("ci_figma_connections").upsert(
       {
         user_id: gate.user.id,
         figma_user_id: String(me.id),

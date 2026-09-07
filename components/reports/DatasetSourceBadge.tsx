@@ -1,76 +1,82 @@
 "use client";
 
-import { AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, RefreshCw } from "lucide-react";
 import { formatUploadedAt } from "@/lib/reports/ga4-website";
+import {
+  isFileStale,
+  isLiveStale,
+  relativeAge,
+} from "@/lib/reports/freshness";
+import Link from "next/link";
 
-/** Datasets older than this (days) show a “needs refresh” badge */
 export const DATASET_STALE_DAYS = 30;
 
 export interface DatasetSourceInfo {
   name?: string;
   createdAt?: string | null;
   rowCount?: number;
+  sourceType?: string | null;
+  syncedAt?: string | null;
+  externalAccountLabel?: string | null;
+  providerLabel?: string | null;
 }
 
 export function isDatasetStale(
   createdAt?: string | null,
   staleDays = DATASET_STALE_DAYS
 ): boolean {
-  if (!createdAt) return false;
-  const t = new Date(createdAt).getTime();
-  if (isNaN(t)) return false;
-  const ageMs = Date.now() - t;
-  return ageMs > staleDays * 24 * 60 * 60 * 1000;
+  return isFileStale(createdAt, staleDays);
 }
 
 export function datasetAgeLabel(createdAt?: string | null): string | null {
   if (!createdAt) return null;
-  const t = new Date(createdAt).getTime();
-  if (isNaN(t)) return null;
-  const days = Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000));
-  if (days <= 0) return "today";
-  if (days === 1) return "1 day ago";
-  if (days < 30) return `${days} days ago`;
-  const months = Math.floor(days / 30);
-  if (months === 1) return "1 month ago";
-  return `${months} months ago`;
+  return relativeAge(createdAt);
 }
 
 interface DatasetSourceBadgeProps {
   meta?: DatasetSourceInfo | null;
-  /** Optional channel chip e.g. "Ads · Meta" */
   channelLabel?: string;
   channelClassName?: string;
   className?: string;
   staleDays?: number;
+  projectId?: string;
+  isStaff?: boolean;
+  onSync?: () => void;
 }
 
-/**
- * Standardized provenance line:
- * Data Source: [name] | Uploaded On: [date]  (+ stale refresh badge when old)
- */
 export function DatasetSourceBadge({
   meta,
   channelLabel,
   channelClassName = "bg-blue-50 text-blue-700",
   className = "",
   staleDays = DATASET_STALE_DAYS,
+  projectId,
+  isStaff = false,
+  onSync,
 }: DatasetSourceBadgeProps) {
-  if (!meta?.name && !meta?.createdAt) return null;
+  if (!meta?.name && !meta?.createdAt && !meta?.syncedAt) return null;
 
-  const stale = isDatasetStale(meta?.createdAt, staleDays);
-  const age = datasetAgeLabel(meta?.createdAt);
+  const live = meta?.sourceType === "sync";
+  const asOf = meta?.syncedAt || meta?.createdAt;
+  const stale = live ? isLiveStale(asOf, 24) : isFileStale(asOf, staleDays);
+  const age = asOf ? relativeAge(asOf) : null;
+  const sourceLine = live
+    ? `Synced from ${meta?.providerLabel || meta?.externalAccountLabel || meta?.name || "live source"}`
+    : `Uploaded file`;
+  const account = live && meta?.externalAccountLabel ? ` (${meta.externalAccountLabel})` : "";
 
   return (
     <div className={`space-y-2 ${className}`}>
       <div className="flex flex-wrap items-center gap-2 text-[12px] text-gray-600">
-        <FileSpreadsheet size={13} className="text-indigo-500 shrink-0" />
+        <FileSpreadsheet size={13} className="text-slate-500 shrink-0" />
         <span className="min-w-0 break-words">
-          <span className="text-gray-500">Data Source:</span>{" "}
-          <strong className="text-gray-800">{meta?.name || "Untitled dataset"}</strong>
+          <strong className="text-gray-800">
+            {sourceLine}
+            {account}
+          </strong>
           <span className="text-gray-300 mx-1.5">|</span>
-          <span className="text-gray-500">Uploaded On:</span>{" "}
-          <strong className="text-gray-800">{formatUploadedAt(meta?.createdAt)}</strong>
+          <span className="text-gray-500">{live ? "Synced" : "Uploaded"}:</span>{" "}
+          <strong className="text-gray-800">{formatUploadedAt(asOf)}</strong>
           {age ? <span className="text-gray-400"> ({age})</span> : null}
         </span>
         {channelLabel ? (
@@ -85,9 +91,32 @@ export function DatasetSourceBadge({
         <div className="inline-flex items-start gap-2 text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-600" />
           <span>
-            <strong className="font-semibold">Needs refresh.</strong> This dataset was uploaded{" "}
-            {age || "a while ago"}. Re-export from the source and upload a fresh CSV in the Data
-            Hub so reports stay accurate.
+            {live ? (
+              <>
+                <strong className="font-semibold">Needs sync.</strong> Last update was {age}.{" "}
+                {isStaff && onSync ? (
+                  <button type="button" onClick={onSync} className="underline font-medium inline-flex items-center gap-1">
+                    <RefreshCw size={11} /> Sync now
+                  </button>
+                ) : (
+                  "Ask your agency to refresh."
+                )}
+              </>
+            ) : (
+              <>
+                <strong className="font-semibold">Needs refresh.</strong> This file is {age}.{" "}
+                {isStaff && projectId ? (
+                  <Link
+                    href={`/app/projects/report-data?project=${projectId}`}
+                    className="underline font-medium"
+                  >
+                    Replace in Sources
+                  </Link>
+                ) : (
+                  "Ask your agency to replace the file."
+                )}
+              </>
+            )}
           </span>
         </div>
       )}

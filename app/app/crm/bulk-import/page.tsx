@@ -106,7 +106,7 @@ export default function BulkImportCustomersPage() {
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
           <div className="flex items-center gap-4">
-            <Link href="/app/crm/directory" className="text-gray-400 hover:text-gray-900 transition-colors">
+            <Link href="/app/crm" className="text-gray-400 hover:text-gray-900 transition-colors">
               <ArrowLeft size={20} />
             </Link>
             <div>
@@ -144,7 +144,7 @@ export default function BulkImportCustomersPage() {
                 <button 
                   disabled={!file || loading}
                   onClick={handleImport}
-                  className="px-4 py-2 bg-blue-600 text-white rounded text-[13px] font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                 >
                   <Upload size={16} />
                   {loading ? "Importing..." : "Start Import"}

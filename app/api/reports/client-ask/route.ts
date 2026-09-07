@@ -1,7 +1,8 @@
-import { generateText } from "ai";
 import {
+  GATEWAY_CREDENTIALS_HINT,
   GATEWAY_JSON_MODEL,
   hasGatewayCredentials,
+  generateTextFromGateway,
 } from "@/lib/ai/gateway-json";
 import { createClient } from "@/utils/supabase/server";
 import { isFounder } from "@/lib/rbac";
@@ -92,7 +93,9 @@ export async function POST(req: Request) {
 
     if (!hasGatewayCredentials()) {
       return NextResponse.json(
-        { error: "AI Gateway is not configured (AI_GATEWAY_API_KEY)." },
+        {
+          error: GATEWAY_CREDENTIALS_HINT,
+        },
         { status: 503 }
       );
     }
@@ -105,7 +108,7 @@ export async function POST(req: Request) {
       report_context: body.reportContext || {},
     };
 
-    const { text } = await generateText({
+    const text = await generateTextFromGateway({
       model: GATEWAY_JSON_MODEL,
       system: SYSTEM,
       prompt: `Question: ${question}\n\nContext:\n${JSON.stringify(context, null, 2)}`,
@@ -115,7 +118,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      answer: (text || "").trim() || "I could not generate an answer from the available report data.",
+      answer: text || "I could not generate an answer from the available report data.",
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Ask AI failed" }, { status: 500 });

@@ -5,6 +5,7 @@ import { isFounder } from "@/lib/rbac";
 import { Workspace } from "@/components/frappe-ui/Workspace";
 import { SentimentReportView } from "@/components/sentiment/SentimentUI";
 import { getSentimentReport } from "@/app/actions/sentiment";
+import { workPaths } from "@/lib/work/paths";
 
 export default async function SentimentDetailPage({
   params,
@@ -46,7 +47,7 @@ export default async function SentimentDetailPage({
           ← All reports
         </Link>
         {report.bd_record_id && (
-          <Link href={`/app/bd/${report.bd_record_id}`} className="text-violet-700">
+          <Link href={workPaths.pipelineId(report.bd_record_id)} className="text-violet-700">
             Open BD record
           </Link>
         )}

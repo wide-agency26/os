@@ -1,53 +1,37 @@
 "use client";
 
 import React from "react";
-import { Clock, ShieldCheck, LogOut } from "lucide-react";
+import { Clock, LogOut } from "lucide-react";
 import { performSignOut } from "@/lib/auth/sign-out";
+import { Button } from "@/components/frappe-ui/primitives";
 
 interface PendingAccessCardProps {
   companyName: string;
 }
 
 export function PendingAccessCard({ companyName }: PendingAccessCardProps) {
-  const handleSignOut = () => {
-    void performSignOut();
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6 text-gray-900 font-sans">
-      <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 p-8 shadow-xl text-center">
-        <div className="w-14 h-14 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4 border border-amber-200/80 shadow-sm animate-pulse">
-          <Clock className="w-7 h-7" />
-        </div>
-
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-amber-100/70 text-amber-800 mb-3">
-          Pending Approval
-        </span>
-
-        <h1 className="text-xl font-bold text-gray-900 mb-2">Access Request Under Review</h1>
-
-        <p className="text-xs text-gray-600 leading-relaxed mb-6">
-          Your request to access brand guidelines and project assets for{" "}
-          <strong className="text-gray-900 font-semibold">{companyName}</strong> is currently pending review by the WIDE Team.
+    <div className="min-h-[100dvh] bg-background flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-surface rounded-lg border border-border p-8 text-center">
+        <Clock className="w-6 h-6 text-text-primary mx-auto mb-4" />
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-800 mb-2">
+          Pending approval
         </p>
-
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-500 text-left space-y-2 mb-6">
-          <div className="flex items-center gap-2 font-semibold text-gray-700">
-            <ShieldCheck className="w-4 h-4 text-blue-600" />
-            <span>Why is review required?</span>
-          </div>
-          <p className="leading-relaxed">
-            To safeguard proprietary design tokens and brand guidelines, access requests are verified by a WIDE administrator before publishing.
-          </p>
+        <h1 className="text-xl font-semibold text-text-primary mb-2">
+          Access request under review
+        </h1>
+        <p className="text-[13px] text-text-secondary leading-relaxed mb-6">
+          Your request to access work for{" "}
+          <strong className="text-text-primary font-medium">{companyName}</strong> is waiting
+          on a WIDE administrator.
+        </p>
+        <div className="bg-surface-raised border border-border rounded-lg p-4 text-[13px] text-text-secondary text-left mb-6">
+          Access is verified before brand files and reports are shown.
         </div>
-
-        <button
-          onClick={handleSignOut}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition-colors w-full"
-        >
+        <Button variant="secondary" onClick={() => void performSignOut()} className="w-full">
           <LogOut className="w-3.5 h-3.5" />
-          <span>Sign Out</span>
-        </button>
+          Sign out
+        </Button>
       </div>
     </div>
   );

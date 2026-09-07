@@ -101,11 +101,8 @@ export function ClientIntakeChart({ customers }: { customers: CustomerRow[] }) {
         <div className="px-4 pb-4 border-t border-gray-100">
           {!hasValue ? (
             <p className="text-sm text-gray-500 py-6 text-center">
-              No contract values yet. Chart uses{" "}
-              <code className="text-xs bg-gray-100 px-1 rounded">start_date</code>{" "}
-              +{" "}
-              <code className="text-xs bg-gray-100 px-1 rounded">contract_value</code>{" "}
-              on CRM clients — fill those to see seasonality.
+              No project deal values yet. Chart uses project start + deal value
+              (SOW / contract), not CRM.
             </p>
           ) : months.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">

@@ -9,15 +9,6 @@ import Link from "next/link";
 
 type CompanyOption = { id: string; name: string; company: string | null };
 
-const SERVICES_OPTIONS = [
-  "Advance Analytics", "Brand Guidelines", "Brand Strategy", "CRM & Advocacy",
-  "Campaign Planning", "Marketing Strategy", "Messaging & Communitions",
-  "Paid Ads", "SEO", "Social Media Content", "Video Production",
-  "Visual Identity", "Website Design", "Website Development",
-  "[Package] MVB", "[Package] Startup Launch", "[Package] Growth Program",
-  "[Package] Full-Service Partnership", "Graphic Design"
-];
-
 export default function NewCustomerPage() {
   return (
     <Suspense fallback={<Workspace><div className="p-8 text-gray-500 text-sm">Loading…</div></Workspace>}>
@@ -29,7 +20,7 @@ export default function NewCustomerPage() {
 function NewCustomerForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [recordKind, setRecordKind] = useState<"company" | "contact">("contact");
+  const [recordKind, setRecordKind] = useState<"company" | "contact">("company");
   const [parentCompanyId, setParentCompanyId] = useState("");
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [formData, setFormData] = useState({
@@ -39,21 +30,19 @@ function NewCustomerForm() {
     position: "",
     linkedin: "",
     industry: "",
-    start_date: "",
-    project_type: "",
-    contract_value: "",
     notes: "",
     status: "Prospect",
     source: "",
     source_category: "Activation",
     role: "Decision Maker",
     lead_status: "Reached out",
-    contract_type: "One-off",
     subscriber_status: "Active"
   });
   
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [extraPeople, setExtraPeople] = useState<
+    { name: string; email: string }[]
+  >([{ name: "", email: "" }]);
 
   useEffect(() => {
     const kind = searchParams.get("kind");
@@ -86,12 +75,6 @@ function NewCustomerForm() {
     }
   };
 
-  const toggleService = (service: string) => {
-    setSelectedServices(prev => 
-      prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
-    );
-  };
-
   const handleSave = async () => {
     if (!formData.name) {
       alert("Please provide the Name.");
@@ -107,9 +90,6 @@ function NewCustomerForm() {
     const payload = {
       ...formData,
       company: companyName || null,
-      start_date: formData.start_date || null,
-      contract_value: formData.contract_value ? Number(formData.contract_value) : null,
-      services_package: selectedServices,
       record_kind: recordKind,
       parent_company_id: isCompany ? null : parentCompanyId || null,
     };
@@ -140,6 +120,24 @@ function NewCustomerForm() {
       }
     }
 
+    if (isCompany && created?.id) {
+      const people = extraPeople
+        .map((p) => ({ name: p.name.trim(), email: p.email.trim() }))
+        .filter((p) => p.name);
+      if (people.length) {
+        await (supabase as any).from("crm_customers").insert(
+          people.map((p) => ({
+            name: p.name,
+            email: p.email || null,
+            record_kind: "contact",
+            parent_company_id: created.id,
+            company: companyName,
+            status: formData.status || "Prospect",
+          }))
+        );
+      }
+    }
+
     if (formData.status === 'Client' && formData.email) {
       try {
         const syncRes = await fetch('/api/admin/sync-client', {
@@ -160,7 +158,7 @@ function NewCustomerForm() {
     }
 
     setLoading(false);
-    router.push(`/app/crm/directory`);
+    router.push(`/app/crm`);
   };
 
   return (
@@ -168,12 +166,14 @@ function NewCustomerForm() {
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
           <div className="flex items-center gap-4">
-            <Link href="/app/crm/directory" className="text-gray-400 hover:text-gray-900 transition-colors">
+            <Link href="/app/crm" className="text-gray-400 hover:text-gray-900 transition-colors">
               <ArrowLeft size={20} />
             </Link>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">New CRM Record</h2>
-              <p className="text-sm text-gray-500 mt-1">Create a new prospect, lead, or client.</p>
+              <h2 className="text-2xl font-bold text-gray-900">New CRM record</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Company first, then the people on the deal. Optional value lands in Unidentified.
+              </p>
             </div>
           </div>
           <button 
@@ -259,46 +259,56 @@ function NewCustomerForm() {
               </div>
             </Section>
 
-            <Section title="Project & Contract">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Project Type</label>
-                  <input type="text" name="project_type" value={formData.project_type} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+            {recordKind === "company" && (
+              <Section title="People on this deal">
+                <p className="text-[11px] text-gray-500 mb-3">
+                  Add the 1–2 names from the event. They stay on the company, not as a second pipeline value.
+                </p>
+                <div className="space-y-3">
+                  {extraPeople.map((person, idx) => (
+                    <div key={idx} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        placeholder="Name"
+                        value={person.name}
+                        onChange={(e) =>
+                          setExtraPeople((prev) =>
+                            prev.map((p, i) => (i === idx ? { ...p, name: e.target.value } : p))
+                          )
+                        }
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <input
+                        type="email"
+                        placeholder="Email (optional)"
+                        value={person.email}
+                        onChange={(e) =>
+                          setExtraPeople((prev) =>
+                            prev.map((p, i) => (i === idx ? { ...p, email: e.target.value } : p))
+                          )
+                        }
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                  ))}
+                  {extraPeople.length < 2 && (
+                    <button
+                      type="button"
+                      className="text-[12px] font-semibold text-blue-700"
+                      onClick={() => setExtraPeople((prev) => [...prev, { name: "", email: "" }])}
+                    >
+                      + Add person
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Start Date</label>
-                  <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Contract Value ($)</label>
-                  <input type="number" name="contract_value" value={formData.contract_value} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="0.00" />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-medium text-gray-700 mb-1">Contract Type</label>
-                  <select name="contract_type" value={formData.contract_type} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-                    <option value="Retainer">Retainer</option>
-                    <option value="One-off">One-off</option>
-                  </select>
-                </div>
-              </div>
-            </Section>
+              </Section>
+            )}
 
-            <Section title="Services / Packages">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {SERVICES_OPTIONS.map(service => (
-                  <label key={service} className="flex items-start gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 border border-transparent hover:border-gray-200 transition-colors">
-                    <input 
-                      type="checkbox" 
-                      className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      checked={selectedServices.includes(service)}
-                      onChange={() => toggleService(service)}
-                    />
-                    <span className="text-[12px] text-gray-700 leading-tight">{service}</span>
-                  </label>
-                ))}
-              </div>
-            </Section>
-            
+            <p className="text-[12px] text-gray-500">
+              Put a rough service and value on the Work pipeline card after you create
+              this company — not here. CRM is identity only.
+            </p>
+
             <Section title="Notes">
               <textarea name="notes" value={formData.notes} onChange={handleChange} rows={4} className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Additional details..."></textarea>
             </Section>

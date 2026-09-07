@@ -5,6 +5,33 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { exchangeFigmaCode } from "@/lib/ci-builder/figma/oauth";
 import { getFigmaMe } from "@/lib/ci-builder/figma/client";
 import { FIGMA_SCOPES } from "@/lib/ci-builder/figma/oauth";
+import { workPaths } from "@/lib/work/paths";
+
+function sanitizeReturnTo(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const path = raw.split("?")[0];
+  if (!path.startsWith("/app/")) return null;
+  if (path.startsWith("//") || path.includes("://")) return null;
+  return path;
+}
+
+async function resolveCiReturnTo(
+  admin: ReturnType<typeof createAdminClient>,
+  rawReturnTo: unknown,
+  guidelineId: unknown
+): Promise<string> {
+  const safe = sanitizeReturnTo(rawReturnTo);
+  if (safe && /^\/app\/projects\/[^/]+\/ci-builder/.test(safe)) return safe;
+  if (typeof guidelineId === "string" && guidelineId) {
+    const { data } = await (admin as any)
+      .from("ci_guidelines")
+      .select("project_id")
+      .eq("id", guidelineId)
+      .maybeSingle();
+    if (data?.project_id) return workPaths.projectCi(data.project_id);
+  }
+  return safe || workPaths.toolsCi;
+}
 
 export async function GET(req: NextRequest) {
   const origin = req.nextUrl.origin;
@@ -16,18 +43,18 @@ export async function GET(req: NextRequest) {
     const cookieStore = await cookies();
     const savedState = cookieStore.get("figma_oauth_state")?.value;
     const ctxRaw = cookieStore.get("figma_oauth_ctx")?.value;
-    let returnTo = "/app/projects/ci-builder";
+    let ctx: { returnTo?: string; guidelineId?: string } = {};
     try {
-      if (ctxRaw) {
-        const ctx = JSON.parse(ctxRaw);
-        if (ctx.returnTo) returnTo = ctx.returnTo;
-      }
+      if (ctxRaw) ctx = JSON.parse(ctxRaw);
     } catch {
       /* ignore */
     }
 
     cookieStore.delete("figma_oauth_state");
     cookieStore.delete("figma_oauth_ctx");
+
+    const admin = createAdminClient();
+    const returnTo = await resolveCiReturnTo(admin, ctx.returnTo, ctx.guidelineId);
 
     if (error) {
       return NextResponse.redirect(
@@ -55,7 +82,6 @@ export async function GET(req: NextRequest) {
       ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       : null;
 
-    const admin = createAdminClient();
     const { error: upsertError } = await (admin as any)
       .from("ci_figma_connections")
       .upsert(
@@ -81,13 +107,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.redirect(
-      `${origin}${returnTo}?figma_connected=1`
-    );
+    return NextResponse.redirect(`${origin}${returnTo}?figma_connected=1`);
   } catch (err: any) {
     console.error("Figma OAuth callback error:", err);
     return NextResponse.redirect(
-      `${origin}/app/projects/ci-builder?figma_error=${encodeURIComponent(err?.message || "OAuth failed")}`
+      `${origin}${workPaths.toolsCi}?figma_error=${encodeURIComponent(err?.message || "OAuth failed")}`
     );
   }
 }

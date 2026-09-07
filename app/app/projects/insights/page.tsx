@@ -8,6 +8,7 @@ import {
   reportsProjectLabel,
   type ReportsProjectOption,
 } from "@/components/reports/ReportsHubShell";
+import { pickInitialProjectId, ts } from "@/lib/tools/recent-projects";
 import { createClient } from "@/utils/supabase/client";
 import { isFounder } from "@/lib/rbac";
 import {
@@ -70,21 +71,20 @@ function InsightsInner() {
 
       const { data } = await supabase
         .from("projects")
-        .select("id, title, crm_customers(company, name)")
-        .order("title");
+        .select("id, title, updated_at, crm_customers(company, name)")
+        .order("updated_at", { ascending: false });
       const mapped: ReportsProjectOption[] = (data || []).map((p: any) => {
         const cust = Array.isArray(p.crm_customers) ? p.crm_customers[0] : p.crm_customers;
         return {
           id: p.id,
           title: p.title,
           company: cust?.company || cust?.name,
+          lastEditedAt: ts(p.updated_at),
         };
       });
       setProjects(mapped);
       const fromUrl = searchParams.get("project");
-      setProjectId(
-        fromUrl && mapped.some((p) => p.id === fromUrl) ? fromUrl : mapped[0]?.id || ""
-      );
+      setProjectId(pickInitialProjectId(mapped.map((p) => p.id), fromUrl, "reports"));
       setLoading(false);
     })();
   }, [supabase, searchParams]);
@@ -282,7 +282,7 @@ function InsightsInner() {
             type="button"
             onClick={() => void generate()}
             disabled={generating || !projectId}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-accent text-white text-[13px] font-medium hover:bg-accent-hover disabled:opacity-50"
           >
             {generating ? (
               <Loader2 size={14} className="animate-spin" />
@@ -407,7 +407,7 @@ function InsightsInner() {
                             draft.recommended_action ?? card.recommended_action,
                         })
                       }
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[12px]"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-[12px]"
                     >
                       <Save size={12} /> Save card
                     </button>
@@ -434,7 +434,7 @@ function InsightsInner() {
         <button
           type="button"
           onClick={() => void addManual()}
-          className="inline-flex items-center gap-2 text-[13px] font-medium text-indigo-600 hover:underline"
+          className="inline-flex items-center gap-2 text-[13px] font-medium text-text-primary hover:underline"
         >
           <Plus size={14} /> Add custom manual strategic observation
         </button>

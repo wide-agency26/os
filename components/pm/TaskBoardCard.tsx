@@ -8,6 +8,7 @@ import {
 } from "@/components/pm/PmBadges";
 import type { PmTaskStatus } from "@/lib/pm/types";
 import type { TaskRowProfile, TaskRowTask } from "@/components/pm/TaskRow";
+import { ClientVisibleToggle } from "@/components/client/ClientVisibleToggle";
 
 const MOVE_COLUMNS: { key: PmTaskStatus; label: string }[] = [
   { key: "todo", label: "To do" },
@@ -24,6 +25,7 @@ export type TaskBoardCardProps = {
   onAssigneeChange: (taskId: string, assigneeId: string | null) => void;
   onStatusChange: (taskId: string, status: PmTaskStatus) => void;
   onToggleDone: (taskId: string, done: boolean) => void;
+  onClientVisibleChange?: (taskId: string, visible: boolean) => void;
 };
 
 function initials(name: string | null | undefined): string {
@@ -45,6 +47,7 @@ export function TaskBoardCard({
   onAssigneeChange,
   onStatusChange,
   onToggleDone,
+  onClientVisibleChange,
 }: TaskBoardCardProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
@@ -88,7 +91,9 @@ export function TaskBoardCard({
 
   return (
     <li
-      className="group bg-white border border-gray-200 rounded-md p-2.5 text-sm shadow-sm hover:border-gray-300 hover:shadow cursor-pointer"
+      className={`group bg-white border border-gray-200 rounded-md p-2.5 text-sm shadow-sm hover:border-gray-300 hover:shadow cursor-pointer ${
+        task.client_visible === false ? "opacity-60" : ""
+      }`}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("[data-card-control]")) return;
         onOpen(task.id);
@@ -157,6 +162,13 @@ export function TaskBoardCard({
           ) : null}
 
           <div className="flex items-center justify-between gap-2 pt-0.5">
+            {onClientVisibleChange ? (
+              <ClientVisibleToggle
+                visible={task.client_visible !== false}
+                disabled={disabled}
+                onChange={(next) => onClientVisibleChange(task.id, next)}
+              />
+            ) : null}
             <div className="flex flex-wrap gap-1" data-card-control>
               {MOVE_COLUMNS.filter((c) => c.key !== task.status).map((c) => (
                 <button

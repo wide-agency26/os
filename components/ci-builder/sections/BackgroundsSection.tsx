@@ -189,7 +189,7 @@ export function BackgroundsSection({
             {/* Group Delete Confirm Modal */}
             {deleteGroupIndex === groupIdx && (
               <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full space-y-4 border border-gray-100">
+                <div className="ci-chrome bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full space-y-4 border border-gray-100 text-gray-900">
                   <div className="flex items-center gap-3 text-red-600">
                     <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
                       <AlertTriangle className="w-5 h-5" />

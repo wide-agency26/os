@@ -2,8 +2,9 @@ import Link from "next/link";
 import { FileQuestion, Lock } from "lucide-react";
 import { loadPublishedSowBySlug } from "@/lib/sow/load-published";
 import { SowDocumentView } from "@/components/sow/SowDocumentView";
-import { ProposalResponseActions } from "@/components/bd/ProposalResponseActions";
+import { ProposalResponseChrome } from "@/components/bd/ProposalResponseActions";
 import { resolveSowTheme } from "@/lib/sow/constants";
+import { publicProposalDisabledReason } from "@/lib/bd/proposal-response";
 
 export const revalidate = 60;
 
@@ -51,15 +52,19 @@ export default async function PublicSowPage({
 
   return (
     <div className="min-h-screen" style={{ background: bg }}>
-      <div className="sticky top-0 z-30 border-b border-black/10 bg-white/80 backdrop-blur px-4 py-3">
-        <div className="max-w-3xl mx-auto">
-          <ProposalResponseActions
-            linkedId={result.sow.id}
-            proposalType="sow"
-          />
-        </div>
-      </div>
-      <SowDocumentView sow={result.sow} mode="client" />
+      <ProposalResponseChrome
+        linkedId={result.sow.id}
+        proposalType="sow"
+        disabledReason={
+          publicProposalDisabledReason(result.sow.status) ||
+          publicProposalDisabledReason(
+            result.sow.assist_context?.client_response?.status ||
+              result.sow.assist_context?.client_response?.decision
+          )
+        }
+      >
+        <SowDocumentView sow={result.sow} mode="client" />
+      </ProposalResponseChrome>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, cloneElement, isValidElement, type ReactNode } from "react";
+import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import {
   Calendar as CalendarIcon,
@@ -22,17 +23,21 @@ import { Scorecard } from "./Scorecard";
 import { LedgerEntryForm } from "./LedgerEntryForm";
 import {
   aggregateMonthly,
+  entryCompanyName,
+  entryDealLabel,
+  entryProject,
   fetchLedgerEntries,
   groupByCategory,
   groupByProjectOrSource,
   totals,
 } from "@/lib/accounting/queries";
-import { formatEuro, isAutoSource, type LedgerEntry, type LedgerPillar } from "@/lib/accounting/types";
+import { formatEuro, isAutoSource, stagePillarLabel, type LedgerEntry, type LedgerPillar } from "@/lib/accounting/types";
 import {
   deleteManualLedgerEntry,
   runAccountingHygiene,
   updateLedgerCategory,
 } from "@/app/actions/accounting";
+import { workPaths } from "@/lib/work/paths";
 
 type ViewMode = "calendar" | "table";
 type TypeView = "revenue" | "cost" | "both";
@@ -72,6 +77,7 @@ export function PillarPageShell({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [categoryDraft, setCategoryDraft] = useState("");
+  const [activityRefresh, setActivityRefresh] = useState(0);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -96,6 +102,7 @@ export function PillarPageShell({
       await runAccountingHygiene();
       setSyncing(false);
       void reload();
+      setActivityRefresh((n) => n + 1);
     })();
     // Only run once on mount, regardless of subsequent filter/reload changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -185,19 +192,21 @@ export function PillarPageShell({
             <p className="text-gray-500 mt-1 text-[13px] max-w-2xl">{description}</p>
           )}
         </div>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-3 shrink-0 flex-wrap">
           {syncing && (
             <span className="flex items-center gap-1.5 text-[12px] text-gray-400">
               <RefreshCw size={12} className="animate-spin" /> Syncing HR &amp; overhead…
             </span>
           )}
-          <button
-            type="button"
-            onClick={() => openAddForm()}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-md text-[13px] font-medium hover:bg-blue-700 transition-colors"
-          >
-            <Plus size={14} /> Add entry
-          </button>
+          {pillar === "actual" && (
+            <button
+              type="button"
+              onClick={() => openAddForm()}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-[13px] font-medium hover:bg-gray-50 transition-colors"
+            >
+              <Plus size={14} /> Adjustment
+            </button>
+          )}
         </div>
       </div>
 
@@ -257,78 +266,93 @@ export function PillarPageShell({
           <Loader2 size={16} className="animate-spin" /> Loading ledger…
         </div>
       ) : viewMode === "calendar" ? (
+        <div className="space-y-3">
+          {viewEntries.length === 0 && (
+            <div className="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-6 text-center space-y-1">
+              <p className="text-sm text-gray-600">
+                {pillar === "unidentified"
+                  ? "No prospect pipeline value in this range. Add an optional value on a CRM company — it lands here until a Lead project exists."
+                  : pillar === "identified"
+                    ? "No Lead project / SOW value in this range yet."
+                    : "No confirmed contract revenue or costs in this range yet."}
+              </p>
+              {pillar === "unidentified" && (
+                <Link href="/app/crm/new" className="text-[13px] font-semibold text-text-primary hover:underline">
+                  Add a CRM prospect
+                </Link>
+              )}
+            </div>
+          )}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
           {monthCards.map((m) => {
             const monthEntries = entriesByMonth.get(m.month) || [];
             const isOpen = expandedMonth === m.month;
             const net = m.revenue - m.cost;
             return (
-              <div
+              <button
                 key={m.month}
-                className={`col-span-1 rounded-lg border bg-white transition-all ${
+                type="button"
+                onClick={() => setExpandedMonth(isOpen ? null : m.month)}
+                className={`rounded-lg border bg-white text-left px-3 py-2.5 transition-colors ${
                   isOpen
-                    ? "border-blue-300 shadow-sm ring-1 ring-blue-100 sm:col-span-2 lg:col-span-2 xl:col-span-3"
-                    : "border-gray-200 hover:border-gray-300"
+                    ? "border-gray-950 ring-1 ring-gray-950"
+                    : monthEntries.length
+                      ? "border-gray-300 hover:border-gray-400"
+                      : "border-gray-200 hover:border-gray-300"
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={() => setExpandedMonth(isOpen ? null : m.month)}
-                  className="w-full text-left px-3 py-2.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[13px] font-bold text-gray-900">{m.label}</span>
-                    <span className="text-[10px] text-gray-400">{monthEntries.length} entries</span>
-                  </div>
-                  <div className="mt-1.5 flex items-end gap-1 h-10">
-                    <div
-                      className="w-2 rounded-sm bg-emerald-500/80"
-                      style={{ height: `${Math.max(2, (m.revenue / maxMonthVal) * 100)}%` }}
-                    />
-                    <div
-                      className="w-2 rounded-sm bg-red-400/80"
-                      style={{ height: `${Math.max(2, (m.cost / maxMonthVal) * 100)}%` }}
-                    />
-                    <div className="flex-1 text-right">
-                      <p className="text-[12px] font-semibold text-gray-900 tabular-nums">{formatEuro(net)}</p>
-                      <p className="text-[10px] text-gray-400">net</p>
-                    </div>
-                  </div>
-                </button>
-                {isOpen && (
-                  <div className="border-t border-gray-100 divide-y divide-gray-100 max-h-72 overflow-y-auto">
-                    <div className="p-2 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => openAddForm({ month: m.month })}
-                        className="flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
-                      >
-                        <Plus size={11} /> Add to {m.label}
-                      </button>
-                    </div>
-                    {monthEntries.length === 0 ? (
-                      <p className="p-3 text-[12px] text-gray-400">No entries this month.</p>
-                    ) : (
-                      monthEntries.map((entry) => (
-                        <EntryRow
-                          key={entry.id}
-                          entry={entry}
-                          editingCategoryId={editingCategoryId}
-                          categoryDraft={categoryDraft}
-                          onCategoryDraftChange={setCategoryDraft}
-                          onStartCategoryEdit={startCategoryEdit}
-                          onCommitCategoryEdit={commitCategoryEdit}
-                          onCancelCategoryEdit={cancelCategoryEdit}
-                          onEdit={openEditForm}
-                          onDelete={handleDelete}
-                        />
-                      ))
-                    )}
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] font-bold text-gray-900">{m.label}</span>
+                  <span className="text-[10px] text-gray-400">{monthEntries.length} entries</span>
+                </div>
+                {monthEntries.length > 0 && (
+                  <p className="mt-1 text-[10px] text-gray-500 truncate">
+                    {[...new Set(monthEntries.map(entryDealLabel))].slice(0, 2).join(" · ")}
+                  </p>
                 )}
-              </div>
+                <div className="mt-1.5 flex items-end gap-1 h-10">
+                  <div
+                    className="w-2 rounded-sm bg-emerald-500/80"
+                    style={{ height: `${Math.max(2, (m.revenue / maxMonthVal) * 100)}%` }}
+                  />
+                  <div
+                    className="w-2 rounded-sm bg-red-400/80"
+                    style={{ height: `${Math.max(2, (m.cost / maxMonthVal) * 100)}%` }}
+                  />
+                  <div className="flex-1 text-right">
+                    <p className="text-[12px] font-semibold text-gray-900 tabular-nums">{formatEuro(net)}</p>
+                    <p className="text-[10px] text-gray-400">net</p>
+                  </div>
+                </div>
+              </button>
             );
           })}
+        </div>
+        {expandedMonth != null && (
+          <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100 max-h-80 overflow-y-auto">
+            <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              {monthCards.find((m) => m.month === expandedMonth)?.label}
+            </p>
+            {(entriesByMonth.get(expandedMonth) || []).length === 0 ? (
+              <p className="p-3 text-[12px] text-gray-400">No entries this month.</p>
+            ) : (
+              (entriesByMonth.get(expandedMonth) || []).map((entry) => (
+                <EntryRow
+                  key={entry.id}
+                  entry={entry}
+                  editingCategoryId={editingCategoryId}
+                  categoryDraft={categoryDraft}
+                  onCategoryDraftChange={setCategoryDraft}
+                  onStartCategoryEdit={startCategoryEdit}
+                  onCommitCategoryEdit={commitCategoryEdit}
+                  onCancelCategoryEdit={cancelCategoryEdit}
+                  onEdit={openEditForm}
+                  onDelete={handleDelete}
+                />
+              ))
+            )}
+          </div>
+        )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -348,7 +372,25 @@ export function PillarPageShell({
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
                         {group.badge}
                       </span>
-                      <span className="text-[13px] font-semibold text-gray-900">{group.label}</span>
+                      {group.key.startsWith("project:") ? (
+                        <Link
+                          href={`/app/projects/${group.key.slice(8)}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[13px] font-semibold text-gray-900 hover:underline"
+                        >
+                          {group.label}
+                        </Link>
+                      ) : group.key.startsWith("crm:") && group.entries[0]?.company_id ? (
+                        <Link
+                          href={workPaths.company(group.entries[0].company_id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[13px] font-semibold text-gray-900 hover:underline"
+                        >
+                          {group.label}
+                        </Link>
+                      ) : (
+                        <span className="text-[13px] font-semibold text-gray-900">{group.label}</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-4 text-[12px]">
                       {group.revenue > 0 && (
@@ -385,7 +427,11 @@ export function PillarPageShell({
         </div>
       )}
 
-      {footerExtra}
+      {isValidElement(footerExtra)
+        ? cloneElement(footerExtra as React.ReactElement<{ refreshKey?: number }>, {
+            refreshKey: activityRefresh,
+          })
+        : footerExtra}
 
       {showForm && (
         <LedgerEntryForm
@@ -471,6 +517,42 @@ function EntryRow({
             </span>
           )}
         </div>
+        <p className="text-[10px] text-gray-500 mt-0.5 flex flex-wrap gap-x-2">
+          {(() => {
+            const project = entryProject(entry);
+            const companyName = entryCompanyName(entry);
+            const companyHref = entry.company_id
+              ? workPaths.company(entry.company_id)
+              : null;
+            return (
+              <>
+                {project ? (
+                  <Link
+                    href={`/app/projects/${project.id}`}
+                    className="font-medium text-text-primary hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {project.title || "Project"}
+                  </Link>
+                ) : null}
+                {companyHref ? (
+                  <Link
+                    href={companyHref}
+                    className="font-medium text-text-primary hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {companyName || "Work"}
+                  </Link>
+                ) : null}
+                {entry.projects?.stage || project?.stage ? (
+                  <span>{stagePillarLabel(project?.stage || entry.projects?.stage)}</span>
+                ) : entry.source === "auto_crm" ? (
+                  <span>Unidentified</span>
+                ) : null}
+              </>
+            );
+          })()}
+        </p>
         {showDate && entry.entry_date && (
           <p className="text-[10px] text-gray-400 mt-0.5">
             {new Date(entry.entry_date).toLocaleDateString(undefined, {
@@ -493,7 +575,7 @@ function EntryRow({
           <button
             type="button"
             onClick={() => onEdit(entry)}
-            className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+            className="p-1 text-text-muted hover:text-text-primary transition-colors"
             title="Edit"
           >
             <Pencil size={12} />

@@ -78,7 +78,7 @@ export function DateMonthFilter({ value, onChange }: Props) {
               type="button"
               onClick={() => toggleMonth(m)}
               title={isCurrent ? `${label} — current month` : label}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+              className={`min-h-11 sm:min-h-0 px-3 py-2 sm:px-2.5 sm:py-1 rounded-full text-[11px] font-medium border transition-colors ${
                 selected
                   ? "bg-blue-600 text-white border-blue-600"
                   : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"

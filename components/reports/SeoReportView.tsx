@@ -38,6 +38,9 @@ export function SeoReportView({ datasets, datasetMeta, isAdmin }: SeoReportViewP
           : payloads[0].name,
       createdAt: datasets.find((d) => d.name === payloads[0].name)?.createdAt,
       rowCount: payloads.reduce((s, p) => s + p.rows.length, 0),
+      sourceType: datasets.find((d) => d.name === payloads[0].name)?.sourceType,
+      syncedAt: datasets.find((d) => d.name === payloads[0].name)?.syncedAt,
+      externalAccountLabel: datasets.find((d) => d.name === payloads[0].name)?.externalAccountLabel,
     };
   }, [datasets, datasetMeta]);
 

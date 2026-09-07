@@ -1,11 +1,10 @@
 "use client";
 
-import { Workspace } from "@/components/frappe-ui/Workspace";
-import { AdminEditor } from "@/components/ci-builder/AdminEditor";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { isFounder } from "@/lib/rbac";
+import { CiCanvasApp } from "@/components/ci-builder/canvas/CiCanvasApp";
 
 export default function CIBuilderPage() {
   const params = useParams();
@@ -16,40 +15,31 @@ export default function CIBuilderPage() {
   useEffect(() => {
     async function checkAuth() {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         setLoading(false);
         return;
       }
-      
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", user.id)
         .maybeSingle();
-        
-      if (profile && isFounder(profile.role)) {
-        setIsAdmin(true);
-      }
+      if (profile && isFounder(profile.role)) setIsAdmin(true);
       setLoading(false);
     }
-    checkAuth();
+    void checkAuth();
   }, []);
 
   if (loading) {
-    return <Workspace wide><div className="p-8 text-center">Loading CI Builder...</div></Workspace>;
+    return <div className="p-8 text-center">Loading CI Builder...</div>;
   }
 
   if (!isAdmin) {
-    return <Workspace wide><div className="p-8 text-center text-red-500">Access Denied. Admins only.</div></Workspace>;
+    return <div className="p-8 text-center text-red-500">Access Denied. Admins only.</div>;
   }
 
-  return (
-    <Workspace wide>
-      <div className="flex flex-col h-[calc(100vh-64px)] -mx-2 sm:-mx-4">
-        {/* Full bleed editor within the workspace */}
-        <AdminEditor projectId={projectId} />
-      </div>
-    </Workspace>
-  );
+  return <CiCanvasApp projectId={projectId} />;
 }

@@ -243,8 +243,8 @@ export default function HrRosterDirectoryPage() {
         </div>
       </div>
 
-      <div className="flex gap-6 items-start">
-        <aside className="w-56 shrink-0 space-y-5">
+      <div className="flex flex-col md:flex-row gap-6 items-start">
+        <aside className="w-full md:w-56 shrink-0 space-y-5">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
               Status

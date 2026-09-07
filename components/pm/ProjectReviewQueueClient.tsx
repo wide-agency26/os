@@ -13,6 +13,12 @@ import {
   ingestNoteForReview,
   mergeReviewIntoTask,
 } from "@/app/actions/pm-review";
+import {
+  OVERRIDE_TRIGGERS,
+  OVERRIDE_TRIGGER_LABELS,
+  classifyReviewOutcome,
+  type OverrideTrigger,
+} from "@/lib/pm/instrument";
 
 type Props = { projectId: string };
 
@@ -33,6 +39,7 @@ export function ProjectReviewQueueClient({ projectId }: Props) {
   const [edits, setEdits] = useState<Record<string, { title: string; description: string }>>(
     {}
   );
+  const [triggers, setTriggers] = useState<Record<string, OverrideTrigger | "">>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
@@ -63,6 +70,7 @@ export function ProjectReviewQueueClient({ projectId }: Props) {
       };
     }
     setEdits(map);
+    setTriggers({});
 
     const { data: tasks } = await (supabase as any)
       .from("pm_tasks")
@@ -122,7 +130,7 @@ export function ProjectReviewQueueClient({ projectId }: Props) {
           </h2>
           <p className="text-sm text-gray-500 mt-1">
             Consent gate for email / notes → tasks. Nothing appears on the board
-            until you approve.
+            until you approve. If you change or discard a proposal, pick why.
           </p>
           {project?.pm_inbound_email ? (
             <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
@@ -182,6 +190,14 @@ export function ProjectReviewQueueClient({ projectId }: Props) {
                 title: item.proposed_title,
                 description: item.proposed_description || "",
               };
+              const outcome = classifyReviewOutcome({
+                originalTitle: item.proposed_title,
+                originalDescription: item.proposed_description,
+                nextTitle: edit.title,
+                nextDescription: edit.description,
+              });
+              const trigger = triggers[item.id] || "";
+              const needsWhy = outcome === "edit";
               return (
                 <article
                   key={item.id}
@@ -222,17 +238,52 @@ export function ProjectReviewQueueClient({ projectId }: Props) {
                       Possible duplicate of an open task — prefer Merge.
                     </p>
                   ) : null}
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {OVERRIDE_TRIGGERS.map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        disabled={pending}
+                        className={`text-[11px] rounded-full px-2 py-0.5 border ${
+                          trigger === key
+                            ? "border-gray-900 bg-gray-900 text-white"
+                            : "border-gray-200 text-gray-600"
+                        }`}
+                        onClick={() =>
+                          setTriggers((prev) => ({
+                            ...prev,
+                            [item.id]: prev[item.id] === key ? "" : key,
+                          }))
+                        }
+                      >
+                        {OVERRIDE_TRIGGER_LABELS[key]}
+                      </button>
+                    ))}
+                  </div>
+                  {needsWhy && !trigger ? (
+                    <p className="text-[11px] text-amber-800 mt-1">
+                      Pick why you changed it before approving.
+                    </p>
+                  ) : !trigger ? (
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      Discard needs a reason. Approve as-is does not.
+                    </p>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-2 items-center">
                     <button
                       type="button"
-                      disabled={pending}
-                      className="text-xs bg-gray-900 text-white rounded px-2 py-1"
+                      disabled={pending || (needsWhy && !trigger)}
+                      className="text-xs bg-gray-900 text-white rounded px-2 py-1 disabled:opacity-50"
                       onClick={() =>
                         run(() =>
-                          approveReviewItem(item.id, {
-                            title: edit.title,
-                            description: edit.description,
-                          })
+                          approveReviewItem(
+                            item.id,
+                            {
+                              title: edit.title,
+                              description: edit.description,
+                            },
+                            trigger || null
+                          )
                         )
                       }
                     >
@@ -240,9 +291,13 @@ export function ProjectReviewQueueClient({ projectId }: Props) {
                     </button>
                     <button
                       type="button"
-                      disabled={pending}
-                      className="text-xs border border-gray-300 rounded px-2 py-1"
-                      onClick={() => run(() => discardReviewItem(item.id))}
+                      disabled={pending || !trigger}
+                      className="text-xs border border-gray-300 rounded px-2 py-1 disabled:opacity-50"
+                      onClick={() =>
+                        run(() =>
+                          discardReviewItem(item.id, trigger as OverrideTrigger)
+                        )
+                      }
                     >
                       Discard
                     </button>

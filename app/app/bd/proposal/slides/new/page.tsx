@@ -8,6 +8,8 @@ import { createClient } from "@/utils/supabase/client";
 import { Workspace } from "@/components/frappe-ui/Workspace";
 import { isFounder } from "@/lib/rbac";
 import { createBdSlideDeck } from "@/app/actions/bd";
+import { workPaths } from "@/lib/work/paths";
+import { isLoseStage } from "@/lib/work/stages";
 
 type ServiceOpt = { id: string; name: string; category: string };
 type BdOpt = { id: string; label: string };
@@ -67,10 +69,12 @@ function NewSlideDeckForm() {
         }))
       );
       setRecords(
-        (recs ?? []).map((r) => ({
-          id: r.id,
-          label: `${r.company_name} · ${r.name}`,
-        }))
+        (recs ?? [])
+          .filter((r) => !isLoseStage(r.stage))
+          .map((r) => ({
+            id: r.id,
+            label: `${r.company_name} · ${r.name}`,
+          }))
       );
       setLoading(false);
     }
@@ -99,7 +103,7 @@ function NewSlideDeckForm() {
         setError(res.error || "Failed to create deck");
         return;
       }
-      router.push(`/app/bd/proposal/slides/${res.deckId}`);
+      router.push(workPaths.proposeSlide(res.deckId));
     });
   }
 
@@ -197,7 +201,7 @@ function NewSlideDeckForm() {
           Generate deck
         </button>
         <Link
-          href="/app/bd/proposal"
+          href={workPaths.propose}
           className="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium"
         >
           Cancel

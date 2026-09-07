@@ -5,6 +5,8 @@ import { isFounder } from "@/lib/rbac";
 import { Workspace } from "@/components/frappe-ui/Workspace";
 import { listBdRecords } from "@/app/actions/bd";
 import { BD_STAGE_LABELS, BD_LEGITIMACY_LABELS } from "@/lib/bd/constants";
+import { QUALIFY_STAGES } from "@/lib/work/stages";
+import { workPaths } from "@/lib/work/paths";
 
 export default async function BdQualificationIndexPage() {
   const supabase = await createClient();
@@ -29,7 +31,7 @@ export default async function BdQualificationIndexPage() {
 
   const result = await listBdRecords();
   const candidates = (result.records ?? []).filter((r) =>
-    ["prospect", "qualifying", "on_hold"].includes(r.stage)
+    QUALIFY_STAGES.includes(r.stage)
   );
 
   return (
@@ -46,7 +48,7 @@ export default async function BdQualificationIndexPage() {
           {candidates.length === 0 ? (
             <p className="text-sm text-gray-500 px-4 py-6">
               No prospects / qualifying / on-hold records.{" "}
-              <Link href="/app/bd" className="text-blue-600 underline">
+              <Link href={workPaths.board} className="text-blue-600 underline">
                 Back to board
               </Link>
             </p>
@@ -54,7 +56,7 @@ export default async function BdQualificationIndexPage() {
             candidates.map((r) => (
               <Link
                 key={r.id}
-                href={`/app/bd/qualification/${r.id}?run=1`}
+                href={`${workPaths.qualifyId(r.id)}?run=1`}
                 className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50"
               >
                 <div className="min-w-0">

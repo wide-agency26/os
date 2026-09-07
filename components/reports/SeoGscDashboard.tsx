@@ -317,17 +317,17 @@ export function SeoGscDashboard({ bundle: rawBundle, datasetMeta, isAdmin }: Seo
         <Search className="mx-auto mb-3 text-gray-400" size={32} />
         <p className="text-[14px] text-gray-600 font-medium mb-1">No SEO data yet</p>
         <p className="text-[12px] text-gray-500 mb-3 max-w-md mx-auto">
-          Upload Google Search Console exports named{" "}
+          Connect Search Console on Sources, or upload GSC exports named{" "}
           <span className="font-medium">GSC - Queries</span>,{" "}
           <span className="font-medium">GSC - Pages</span>,{" "}
-          <span className="font-medium">GSC - Dates</span>, etc. under SEO in the Data Hub.
+          <span className="font-medium">GSC - Dates</span>.
         </p>
         {isAdmin && (
           <Link
             href="/app/projects/report-data"
             className="text-[13px] text-blue-600 hover:underline font-medium inline-flex items-center gap-1"
           >
-            <Database size={14} /> Open Data Hub →
+            <Database size={14} /> Open Sources →
           </Link>
         )}
       </div>

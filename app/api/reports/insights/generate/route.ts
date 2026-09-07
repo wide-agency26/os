@@ -1,4 +1,4 @@
-import { generateJsonFromGateway, hasGatewayCredentials } from "@/lib/ai/gateway-json";
+import { generateJsonFromGateway, GATEWAY_CREDENTIALS_HINT, hasGatewayCredentials } from "@/lib/ai/gateway-json";
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
 
     if (!hasGatewayCredentials()) {
       return NextResponse.json(
-        { error: "AI Gateway is not configured (AI_GATEWAY_API_KEY)." },
+        { error: GATEWAY_CREDENTIALS_HINT },
         { status: 503 }
       );
     }

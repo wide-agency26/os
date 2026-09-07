@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 import { createClient } from "@/utils/supabase/server";
+import { resolvePortalViewer } from "@/lib/client/portal-viewer";
 import { isFounder } from "@/lib/rbac";
 import { loadSowDocument } from "@/lib/sow/load-sow";
 import { SowDocumentView } from "@/components/sow/SowDocumentView";
@@ -29,6 +30,15 @@ export default async function ClientSowDetailPage({
 
   const staff = profile && isFounder(profile.role);
   if (!staff && sow.status !== "published") notFound();
+
+  const viewer = await resolvePortalViewer(supabase as any, {
+    userId: user.id,
+    role: profile?.role ?? null,
+  });
+  if (viewer.companyIds.length && !viewer.companyIds.includes(sow.company_id)) {
+    notFound();
+  }
+  if (!staff && !viewer.companyIds.length) notFound();
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#0A0A0A]">

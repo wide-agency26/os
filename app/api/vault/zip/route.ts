@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseUrl } from "@/utils/supabase/env";
 import { getWorkspaceClientId } from "@/lib/workspace";
 import { createClient } from "@/utils/supabase/server";
+import { recordVaultDownload } from "@/app/actions/portal-activity";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function GET() {
   const workspaceId = await getWorkspaceClientId(supabase, user.id);
   const { data: files, error } = await supabase
     .from("vault_files")
-    .select("label, file_name, storage_path, external_url")
+    .select("id, label, file_name, storage_path, external_url")
     .eq("client_id", workspaceId)
     .eq("is_current", true);
 
@@ -70,6 +71,9 @@ export async function GET() {
     }
     const buf = Buffer.from(await res.arrayBuffer());
     archive.append(buf, { name: safeZipName(f.label || "", f.file_name || "", index) });
+    if (f.id) {
+      void recordVaultDownload(f.id);
+    }
     index += 1;
   }
 

@@ -9,7 +9,7 @@ export default async function ProjectLegacyErpPage({
 }) {
   const { project_id } = await params;
   return (
-    <Workspace>
+    <Workspace wide>
       <ProjectDetailDashboard projectId={project_id} />
     </Workspace>
   );

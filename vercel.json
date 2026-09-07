@@ -7,6 +7,26 @@
     {
       "path": "/api/cron/bd-quotations",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/seo-sweeper",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/seo-monthly",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/blog-scrape",
+      "schedule": "45 11 * * *"
+    },
+    {
+      "path": "/api/cron/context-digest",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/deal-finder",
+      "schedule": "0 6 * * *"
     }
   ]
 }

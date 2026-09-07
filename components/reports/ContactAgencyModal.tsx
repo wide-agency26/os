@@ -76,14 +76,14 @@ export function ContactAgencyModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 no-print">
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-4 no-print">
       <button
         type="button"
         className="absolute inset-0 bg-black/40"
         aria-label="Close"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-gray-200 p-5">
+      <div className="relative w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl border border-gray-200 p-5 max-h-[100dvh] overflow-y-auto">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <h3 className="text-[16px] font-bold text-gray-900">Contact agency strategist</h3>
@@ -124,7 +124,7 @@ export function ContactAgencyModal({
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 rows={5}
-                className="mt-1.5 w-full border border-gray-300 rounded-xl px-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-indigo-500"
+                className="mt-1.5 w-full border border-border rounded-md px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-accent"
               />
             </label>
             <p className="text-[12px] text-gray-500">
@@ -148,7 +148,7 @@ export function ContactAgencyModal({
                 type="button"
                 disabled={sending || !question.trim()}
                 onClick={() => void send()}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-semibold rounded-lg bg-indigo-600 text-white disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-semibold rounded-md bg-accent text-white disabled:opacity-50"
               >
                 {sending ? (
                   <Loader2 size={14} className="animate-spin" />

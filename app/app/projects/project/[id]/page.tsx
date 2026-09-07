@@ -162,7 +162,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
       } catch (e) {
         console.error("accounting hygiene failed", e);
       }
-      router.push("/app/projects/project");
+      router.push("/app/projects");
     }
   };
 

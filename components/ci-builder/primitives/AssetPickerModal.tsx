@@ -5,6 +5,7 @@ import { X, UploadCloud, Image as ImageIcon, Check } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { CIAsset, generateUUID } from "@/lib/ci-builder/types";
 import { BRAND_GUIDELINES_BUCKET, sanitizeStorageFileName } from "@/lib/brand-guideline/storage";
+import { filterPickerAssets } from "@/lib/ci-builder/asset-drag";
 
 export interface AssetPickerModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ export interface AssetPickerModalProps {
   availableAssets: Partial<CIAsset>[];
   compatibleKind?: string;
   onAddAssetRecord?: (asset: Partial<CIAsset>) => void;
+  accept?: "image" | "font";
 }
 
 export function AssetPickerModal({
@@ -23,7 +25,8 @@ export function AssetPickerModal({
   guidelineId,
   availableAssets = [],
   compatibleKind,
-  onAddAssetRecord
+  onAddAssetRecord,
+  accept = "image",
 }: AssetPickerModalProps) {
   const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<"existing" | "upload">("existing");
@@ -31,9 +34,10 @@ export function AssetPickerModal({
 
   if (!isOpen) return null;
 
-  const filteredAssets = compatibleKind 
-    ? availableAssets.filter(a => !a.kind || a.kind === compatibleKind || compatibleKind === 'all')
-    : availableAssets;
+  const filteredAssets = filterPickerAssets(availableAssets, {
+    accept,
+    compatibleKind,
+  });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -65,7 +69,7 @@ export function AssetPickerModal({
       const newAssetPayload: Partial<CIAsset> = {
         id: generateUUID(),
         guideline_id: guidelineId,
-        kind: compatibleKind || "general",
+        kind: accept === "font" ? "font" : compatibleKind || "general",
         storage_path: storagePath,
         public_url: publicUrl,
         label: file.name.replace(/\.[^/.]+$/, ""),
@@ -97,8 +101,8 @@ export function AssetPickerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-150">
+      <div className="ci-chrome bg-white text-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[100dvh] sm:max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50">
           <div>
@@ -107,7 +111,9 @@ export function AssetPickerModal({
               Select Asset
             </h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              {compatibleKind ? `Showing assets for: ${compatibleKind}` : "Choose an asset or upload a new one"}
+              {accept === "font"
+                ? "Upload a font file or pick one already in this guideline"
+                : "Upload, pick an imported Figma frame, or drop from Unassigned"}
             </p>
           </div>
           <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200">
@@ -176,6 +182,8 @@ export function AssetPickerModal({
                             src={imgUrl}
                             alt={ast.label || "Asset"}
                             className="max-w-full max-h-full object-contain"
+                            loading="lazy"
+                            decoding="async"
                           />
                         ) : (
                           <span className="text-xs text-gray-400">No Image</span>
@@ -201,14 +209,20 @@ export function AssetPickerModal({
               <UploadCloud className="w-12 h-12 text-blue-500 mx-auto mb-3" />
               <h4 className="text-sm font-semibold text-gray-800 mb-1">Upload a new image asset</h4>
               <p className="text-xs text-gray-500 mb-4 max-w-xs mx-auto">
-                Supports PNG, SVG, JPG, WebP. File will be uploaded to Supabase Storage and auto-selected.
+                {accept === "font"
+                  ? "WOFF2, WOFF, TTF, or OTF. Uploaded to storage and attached to this section."
+                  : "PNG, SVG, JPG, or WebP — or pick a frame already imported from Figma."}
               </p>
               
-              <label className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-5 py-2.5 rounded-lg cursor-pointer transition-colors shadow-sm">
-                {uploading ? "Uploading file..." : "Browse Local File"}
+              <label className="inline-flex items-center gap-2 bg-gray-900 hover:bg-black text-white text-xs font-medium px-5 py-2.5 rounded-lg cursor-pointer transition-colors shadow-sm">
+                {uploading ? "Uploading file..." : "Browse file"}
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={
+                    accept === "font"
+                      ? ".woff2,.woff,.ttf,.otf,font/woff2,font/woff"
+                      : "image/*"
+                  }
                   className="hidden"
                   disabled={uploading}
                   onChange={handleFileUpload}

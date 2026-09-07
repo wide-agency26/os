@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { isFounder } from "@/lib/rbac";
-import { loadSowDocument } from "@/lib/sow/load-sow";
+import { loadSowDocument, loadSowVersionFamily } from "@/lib/sow/load-sow";
 import { SowBuilder } from "@/components/sow/SowBuilder";
 import type { PmService } from "@/lib/sow/types";
 import { Workspace } from "@/components/frappe-ui/Workspace";
@@ -31,12 +31,28 @@ export default async function SowBuilderPage({
     );
   }
 
-  const { data: sow, error } = await loadSowDocument(sow_id);
+  let { data: sow, error } = await loadSowDocument(sow_id);
   if (error || !sow) notFound();
+
+  if (!sow.project_id && sow.company_id) {
+    const { ensureSowHasProject } = await import(
+      "@/app/actions/projects-commercial"
+    );
+    await ensureSowHasProject(sow_id);
+    const reloaded = await loadSowDocument(sow_id);
+    if (reloaded.data) sow = reloaded.data;
+  }
+
+  const versions = await loadSowVersionFamily(sow_id);
 
   const { data: services } = await supabase
     .from("pm_services")
     .select("id, name, category, sort_order, description, short_description")
+    .order("sort_order");
+
+  const { data: packages } = await supabase
+    .from("pm_packages")
+    .select("id, name")
     .order("sort_order");
 
   return (
@@ -44,6 +60,8 @@ export default async function SowBuilderPage({
       <SowBuilder
         initial={sow}
         services={(services ?? []) as PmService[]}
+        packages={(packages ?? []) as { id: string; name: string }[]}
+        versions={versions}
       />
     </div>
   );

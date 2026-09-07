@@ -10,6 +10,7 @@ import {
   ROSTER_STATUSES,
   legacyPersonType,
   type EngagementType,
+  type PersonKind,
   type RosterStatus,
   type Skill,
 } from "@/lib/hr/types";
@@ -26,6 +27,7 @@ export default function NewPersonPage() {
     phone: "",
     engagement_type_id: "",
     roster_status: "active" as RosterStatus,
+    kind: "human" as PersonKind,
     bio_notes: "",
     rate_notes: "",
     co_founder_track: false,
@@ -84,6 +86,23 @@ export default function NewPersonPage() {
     const skillLabels = skills
       .filter((s) => selectedSkillIds.includes(s.id))
       .map((s) => s.label);
+    const kind: PersonKind = form.kind === "bot" ? "bot" : "human";
+    let email = form.primary_email.trim() || null;
+    if (kind === "bot" && !email) {
+      const slug = form.full_name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 40);
+      email = `${slug || "agent"}@bots.wide`;
+    }
+    const engagementId =
+      kind === "bot"
+        ? engagementTypes.find((t) => t.key === "bot")?.id ||
+          form.engagement_type_id ||
+          null
+        : form.engagement_type_id || null;
 
     const { data, error } = await (supabase as any)
       .from("people")
@@ -91,18 +110,24 @@ export default function NewPersonPage() {
         {
           full_name: form.full_name.trim(),
           name: form.full_name.trim(),
-          primary_email: form.primary_email.trim() || null,
+          primary_email: email,
           phone: form.phone.trim() || null,
-          engagement_type_id: form.engagement_type_id || null,
+          engagement_type_id: engagementId,
           roster_status: form.roster_status,
+          kind,
           bio_notes: form.bio_notes.trim() || null,
           rate_notes: form.rate_notes.trim() || null,
-          co_founder_track: form.co_founder_track,
-          co_founder_track_notes: form.co_founder_track
-            ? form.co_founder_track_notes.trim() || null
-            : null,
-          person_type: legacyPersonType(eng?.key),
+          co_founder_track: kind === "bot" ? false : form.co_founder_track,
+          co_founder_track_notes:
+            kind === "bot" || !form.co_founder_track
+              ? null
+              : form.co_founder_track_notes.trim() || null,
+          person_type: legacyPersonType(
+            engagementTypes.find((t) => t.id === engagementId)?.key || eng?.key
+          ),
           expertise_tags: skillLabels,
+          hourly_rate_cost: kind === "bot" ? null : undefined,
+          salary_base: kind === "bot" ? null : undefined,
         },
       ])
       .select("id")
@@ -167,6 +192,22 @@ export default function NewPersonPage() {
                 placeholder="Ali Hashemi"
               />
             </label>
+            <label className="block sm:col-span-2">
+              <span className="text-[12px] font-semibold text-gray-700">Kind</span>
+              <select
+                name="kind"
+                value={form.kind}
+                onChange={onChange}
+                className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+              >
+                <option value="human">Human</option>
+                <option value="bot">Bot / Agent</option>
+              </select>
+              <span className="mt-1 block text-[11px] text-gray-500">
+                Bots are assignable task agents (no salary). Email defaults to
+                @bots.wide if blank.
+              </span>
+            </label>
             <label className="block">
               <span className="text-[12px] font-semibold text-gray-700">Email</span>
               <input
@@ -175,6 +216,9 @@ export default function NewPersonPage() {
                 value={form.primary_email}
                 onChange={onChange}
                 className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                placeholder={
+                  form.kind === "bot" ? "client-manager@bots.wide" : undefined
+                }
               />
             </label>
             <label className="block">

@@ -9,6 +9,8 @@ export interface HourglassStage {
   value: number;
   /** Actual data metric shown under the number (e.g. Impressions) */
   metricHint?: string;
+  /** Extra sentence under the metric — used on the client report */
+  detail?: string;
   locked?: boolean;
   lockedHint?: string;
 }
@@ -16,6 +18,8 @@ export interface HourglassStage {
 interface HourglassFunnelProps {
   stages: HourglassStage[];
   className?: string;
+  /** Client-facing rate copy instead of “Drop-off / conversion” jargon */
+  plainLanguage?: boolean;
 }
 
 function rate(from: number, to: number): number | null {
@@ -32,7 +36,11 @@ function dropoff(from: number, to: number): number | null {
  * Custom hourglass funnel — awareness → consideration → conversion waist,
  * then locked loyalty / advocacy blocks. No MUI dependency.
  */
-export function HourglassFunnel({ stages, className = "" }: HourglassFunnelProps) {
+export function HourglassFunnel({
+  stages,
+  className = "",
+  plainLanguage = false,
+}: HourglassFunnelProps) {
   const active = stages.filter((s) => !s.locked);
   const locked = stages.filter((s) => s.locked);
   const max = Math.max(...active.map((s) => s.value), 1);
@@ -44,18 +52,14 @@ export function HourglassFunnel({ stages, className = "" }: HourglassFunnelProps
         const next = active[i + 1];
         const conv = next ? rate(stage.value, next.value) : null;
         const drop = next ? dropoff(stage.value, next.value) : null;
-        const colors = [
-          "from-indigo-500 to-blue-600",
-          "from-violet-500 to-indigo-600",
-          "from-emerald-500 to-teal-600",
-        ];
-        const grad = colors[i % colors.length];
+        const fills = ["bg-accent", "bg-neutral-700", "bg-neutral-500"];
+        const fill = fills[i % fills.length];
 
         return (
           <div key={stage.id} className="relative">
             <div className="flex justify-center">
               <div
-                className={`relative bg-gradient-to-b ${grad} text-white shadow-md transition-all`}
+                className={`relative ${fill} text-white transition-all`}
                 style={{
                   width: `${widthPct}%`,
                   clipPath:
@@ -83,18 +87,33 @@ export function HourglassFunnel({ stages, className = "" }: HourglassFunnelProps
               </div>
             </div>
 
-            {next && (
+            {stage.detail && (
+              <p className="text-center text-[12px] text-text-secondary leading-relaxed max-w-xl mx-auto px-4 pt-2">
+                {stage.detail}
+              </p>
+            )}
+
+            {next && (plainLanguage ? conv != null : drop != null || conv != null) && (
               <div className="flex justify-center py-2">
-                <div className="inline-flex flex-col sm:flex-row items-center gap-2 text-[11px] px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200 text-gray-600">
-                  {drop != null && (
-                    <span className="text-amber-700 font-semibold">
-                      Drop-off {drop.toFixed(1)}%
+                <div className="inline-flex flex-col sm:flex-row items-center gap-2 text-[11px] px-3 py-1.5 rounded-full bg-surface-raised border border-border text-text-secondary">
+                  {plainLanguage ? (
+                    <span className="font-semibold tabular-nums">
+                      {conv!.toFixed(1)}% moved to the next step
+                      {drop != null ? ` · ${drop.toFixed(0)}% did not continue` : ""}
                     </span>
-                  )}
-                  {conv != null && (
-                    <span className="text-emerald-700 font-semibold">
-                      → {conv.toFixed(2)}% conversion
-                    </span>
+                  ) : (
+                    <>
+                      {drop != null && (
+                        <span className="font-semibold tabular-nums">
+                          Drop-off {drop.toFixed(1)}%
+                        </span>
+                      )}
+                      {conv != null && (
+                        <span className="font-semibold tabular-nums">
+                          → {conv.toFixed(2)}% conversion
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

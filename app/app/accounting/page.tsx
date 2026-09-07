@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Loader2, Wallet } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { Workspace } from "@/components/frappe-ui/Workspace";
+import { PageHeader } from "@/components/frappe-ui/primitives";
 import { Scorecard } from "@/components/accounting/Scorecard";
+import { AccountingTrendChart } from "@/components/accounting/AccountingTrendChart";
+import { LedgerBrowseView } from "@/components/accounting/LedgerBrowseView";
 import { ActivityFeed } from "@/components/accounting/ActivityFeed";
 import {
   DateMonthFilter,
@@ -13,29 +16,33 @@ import {
   isMonthInFilter,
   type DateMonthFilterValue,
 } from "@/components/accounting/DateMonthFilter";
-import { aggregateMonthly, fetchLedgerEntries, totals } from "@/lib/accounting/queries";
-import type { LedgerEntry, LedgerPillar } from "@/lib/accounting/types";
+import {
+  fetchCashBalances,
+  fetchLedgerEntries,
+  monthlySeriesChronological,
+  totals,
+} from "@/lib/accounting/queries";
+import {
+  formatEuro,
+  LEDGER_PILLAR_UI,
+  type LedgerEntry,
+  type LedgerPillar,
+} from "@/lib/accounting/types";
 
-const PILLARS: { key: LedgerPillar; label: string; href: string; blurb: string }[] = [
-  {
-    key: "unidentified",
-    label: "Unidentified",
-    href: "/app/accounting/unidentified",
-    blurb: "Pipeline estimates & speculative revenue/cost",
-  },
-  {
-    key: "identified",
-    label: "Identified",
-    href: "/app/accounting/identified",
-    blurb: "Prospect deals not yet signed",
-  },
-  {
-    key: "actual",
-    label: "Actual",
-    href: "/app/accounting/actual",
-    blurb: "Signed revenue & real costs — HR, overhead, delivered projects",
-  },
-];
+function avgMonthlyNetActual(entries: LedgerEntry[], trailingMonths = 3): number {
+  const series = monthlySeriesChronological(entries);
+  const last = series.slice(-trailingMonths);
+  if (last.length === 0) return 0;
+  const sum = last.reduce((s, m) => s + (m.revenue - m.cost), 0);
+  return sum / last.length;
+}
+
+function avgMonthlyNetPipeline(entries: LedgerEntry[]): number {
+  const series = monthlySeriesChronological(entries);
+  if (series.length === 0) return 0;
+  const sum = series.reduce((s, m) => s + (m.revenue - m.cost), 0);
+  return sum / 12;
+}
 
 export default function AccountingDashboardPage() {
   const [filter, setFilter] = useState<DateMonthFilterValue>(() => defaultFyFilter());
@@ -44,21 +51,35 @@ export default function AccountingDashboardPage() {
     identified: [],
     unidentified: [],
   });
+  const [cash, setCash] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<LedgerPillar | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
     const supabase = createClient();
-    const [actual, identified, unidentified] = await Promise.all(
-      PILLARS.map((p) =>
-        fetchLedgerEntries(supabase, {
-          pillar: p.key,
-          startDate: filter.startDate,
-          endDate: filter.endDate,
-        })
-      )
-    );
+    const year = new Date().getFullYear();
+    const [unidentified, identified, actual, cashRows] = await Promise.all([
+      fetchLedgerEntries(supabase, {
+        pillar: "unidentified",
+        startDate: filter.startDate,
+        endDate: filter.endDate,
+      }),
+      fetchLedgerEntries(supabase, {
+        pillar: "identified",
+        startDate: filter.startDate,
+        endDate: filter.endDate,
+      }),
+      fetchLedgerEntries(supabase, {
+        pillar: "actual",
+        startDate: filter.startDate,
+        endDate: filter.endDate,
+      }),
+      fetchCashBalances(supabase, `${year - 1}-01-01`, `${year + 1}-12-31`),
+    ]);
     setData({ actual, identified, unidentified });
+    const last = (cashRows as { amount?: number }[]).at(-1);
+    setCash(Number(last?.amount || 0));
     setLoading(false);
   }, [filter.startDate, filter.endDate]);
 
@@ -70,90 +91,149 @@ export default function AccountingDashboardPage() {
     return data[pillar].filter((e) => isMonthInFilter(filter.months, e.entry_date));
   }
 
+  const chartSeries = useMemo(
+    () => ({
+      unidentified: scoped("unidentified"),
+      identified: scoped("identified"),
+      actual: scoped("actual"),
+    }),
+    [data, filter.months]
+  );
+
+  const summaries = useMemo(() => {
+    const out: Record<LedgerPillar, ReturnType<typeof totals>> = {
+      actual: totals(scoped("actual")),
+      identified: totals(scoped("identified")),
+      unidentified: totals(scoped("unidentified")),
+    };
+    return out;
+  }, [data, filter.months]);
+
+  const actualNet = useMemo(
+    () => avgMonthlyNetActual(data.actual),
+    [data.actual]
+  );
+  const identifiedNet = useMemo(
+    () => avgMonthlyNetPipeline(data.identified),
+    [data.identified]
+  );
+  const baseNet = actualNet + identifiedNet * 0.5;
+  const monthsRunway =
+    baseNet >= 0 ? null : cash <= 0 ? 0 : Math.floor(cash / Math.abs(baseNet));
+
+  function togglePillar(pillar: LedgerPillar) {
+    setExpanded((prev) => (prev === pillar ? null : pillar));
+  }
+
   return (
     <Workspace wide>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Accounting</h2>
-        <p className="text-gray-500 mt-1 text-[13px]">
-          Unidentified → Identified → Actual revenue &amp; cost pipeline.
-        </p>
-      </div>
+      <PageHeader
+        title="Accounting"
+        subtitle="Actual is the books. Identified and Unidentified sit beside it as pipeline. Click a card for the table and calendar."
+      />
 
       <div className="mb-6">
         <DateMonthFilter value={filter} onChange={setFilter} />
       </div>
 
-      {/* Flow strip */}
-      <div className="flex items-center gap-3 mb-6 overflow-x-auto pb-1">
-        {PILLARS.map((p, idx) => (
-          <div key={p.key} className="flex items-center gap-3 shrink-0">
-            <Link
-              href={p.href}
-              className="px-4 py-2 rounded-lg border border-gray-200 bg-white text-[13px] font-medium text-gray-700 hover:border-gray-300 hover:shadow-sm transition-all"
-            >
-              {p.label}
-            </Link>
-            {idx < PILLARS.length - 1 && <ArrowRight size={16} className="text-gray-300" />}
-          </div>
-        ))}
-      </div>
+      {loading ? null : (
+        <AccountingTrendChart filter={filter} series={chartSeries} />
+      )}
 
       {loading ? (
-        <div className="py-16 flex items-center justify-center text-gray-400 text-[13px] gap-2">
+        <div className="py-16 flex items-center justify-center text-text-muted text-[13px] gap-2">
           <Loader2 size={16} className="animate-spin" /> Loading ledger…
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-          {PILLARS.map((p) => {
-            const entries = scoped(p.key);
-            const t = totals(entries);
-            const monthly = aggregateMonthly(entries);
-            return (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
+            <div className="lg:col-span-3">
               <Scorecard
-                key={p.key}
-                title={p.label}
-                revenue={t.revenue}
-                cost={t.cost}
-                profit={t.profit}
-                monthlySeries={monthly}
-                pillarStyle={p.key}
+                title={LEDGER_PILLAR_UI.actual.title}
+                revenue={summaries.actual.revenue}
+                cost={summaries.actual.cost}
+                profit={summaries.actual.profit}
+                pillarStyle="actual"
+                size="featured"
+                selected={expanded === "actual"}
+                onSelect={() => togglePillar("actual")}
               />
-            );
-          })}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-        {PILLARS.map((p) => (
-          <Link
-            key={p.key}
-            href={p.href}
-            className="group flex items-center justify-between p-4 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all"
-          >
-            <div>
-              <p className="text-[13px] font-semibold text-gray-900">Open {p.label}</p>
-              <p className="text-[12px] text-gray-500 mt-0.5">{p.blurb}</p>
             </div>
-            <ArrowRight size={16} className="text-gray-300 group-hover:text-gray-500 transition-colors shrink-0 ml-3" />
-          </Link>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Link
-          href="/app/accounting/runway"
-          className="lg:col-span-1 p-4 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all flex flex-col justify-between"
-        >
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Wallet size={16} />
-            </div>
-            <div>
-              <p className="text-[13px] font-semibold text-gray-900">Runway</p>
-              <p className="text-[11px] text-gray-500">Cash, burn &amp; scenarios</p>
+            <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
+              {(["identified", "unidentified"] as LedgerPillar[]).map((key) => (
+                <Scorecard
+                  key={key}
+                  title={LEDGER_PILLAR_UI[key].title}
+                  revenue={summaries[key].revenue}
+                  cost={summaries[key].cost}
+                  profit={summaries[key].profit}
+                  pillarStyle={key}
+                  size="compact"
+                  selected={expanded === key}
+                  onSelect={() => togglePillar(key)}
+                />
+              ))}
             </div>
           </div>
-          <ArrowRight size={16} className="text-gray-300 mt-4 self-end" />
+
+          {expanded ? (
+            <div className="mb-8">
+              <LedgerBrowseView
+                pillar={expanded}
+                entries={scoped(expanded)}
+                onClose={() => setExpanded(null)}
+              />
+            </div>
+          ) : (
+            <div className="mb-8" />
+          )}
+        </>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <Link
+          href="/app/accounting/runway"
+          className="p-4 rounded-lg border border-border bg-surface hover:border-text-muted transition-colors"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+                Runway
+              </p>
+              <p className="text-2xl font-semibold text-text-primary tabular-nums mt-1">
+                {monthsRunway == null
+                  ? "Growing"
+                  : `${monthsRunway} mo`}
+              </p>
+              <p className="text-[12px] text-text-secondary mt-1">
+                Cash {formatEuro(cash)}
+                {baseNet < 0
+                  ? ` · burn ${formatEuro(Math.abs(baseNet))}/mo`
+                  : ` · net ${formatEuro(baseNet)}/mo`}
+                {" · base"}
+              </p>
+            </div>
+            <ArrowRight size={16} strokeWidth={1.75} className="text-text-muted mt-1 shrink-0" />
+          </div>
+        </Link>
+        <Link
+          href="/app/accounting/projections"
+          className="p-4 rounded-lg border border-border bg-surface hover:border-text-muted transition-colors"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+                Projections
+              </p>
+              <p className="text-[15px] font-semibold text-text-primary mt-1">
+                2027–2031
+              </p>
+              <p className="text-[12px] text-text-secondary mt-1">
+                Catalog-backed unidentified P&amp;L. Push a year into the ledger.
+              </p>
+            </div>
+            <ArrowRight size={16} strokeWidth={1.75} className="text-text-muted mt-1 shrink-0" />
+          </div>
         </Link>
         <div className="lg:col-span-2">
           <ActivityFeed />

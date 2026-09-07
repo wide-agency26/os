@@ -8,7 +8,7 @@ export default async function ProjectPmTimesheetPage({
 }) {
   const { project_id } = await params;
   return (
-    <Workspace>
+    <Workspace wide>
       <ProjectTimesheetClient projectId={project_id} />
     </Workspace>
   );

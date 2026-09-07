@@ -3,6 +3,7 @@ import { Workspace } from "@/components/frappe-ui/Workspace";
 import { createClient } from "@/utils/supabase/server";
 import { isFounder } from "@/lib/rbac";
 import { redirect } from "next/navigation";
+import { workPaths } from "@/lib/work/paths";
 
 export default async function ContractHubPage() {
   const supabase = await createClient();
@@ -53,7 +54,7 @@ export default async function ContractHubPage() {
             return (
               <li key={r.id}>
                 <Link
-                  href={`/app/bd/contract/${r.id}`}
+                  href={workPaths.contractId(r.id)}
                   className="block rounded-xl border border-gray-200 bg-white px-4 py-3 hover:border-gray-400"
                 >
                   <p className="font-semibold text-gray-950">

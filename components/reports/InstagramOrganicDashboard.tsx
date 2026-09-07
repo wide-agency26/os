@@ -26,6 +26,7 @@ import {
 import { DatasetSourceBadge } from "@/components/reports/DatasetSourceBadge";
 import {
   type IgBundle,
+  type IgPost,
   computeIgHeadline,
   hasInstagramData,
   igPublishScatter,
@@ -38,6 +39,98 @@ const PINK = "#E1306C";
 const PURPLE = "#833AB4";
 const ORANGE = "#F77737";
 const COLORS = [PINK, PURPLE, ORANGE, "#405DE6", "#C13584", "#5851DB"];
+
+function IgMediaPreview({
+  post,
+  compact = false,
+}: {
+  post: IgPost;
+  compact?: boolean;
+}) {
+  const [broken, setBroken] = useState(false);
+  const showImg = Boolean(post.thumbnailUrl) && !broken;
+  const snippet = post.caption.replace(/\s+/g, " ").trim();
+  const format =
+    post.format && post.format !== "post"
+      ? post.format.replace(/_/g, " ")
+      : "Instagram";
+
+  return (
+    <div
+      className={`relative overflow-hidden bg-[#171717] ${
+        compact ? "w-10 h-10 rounded" : "w-full h-full"
+      }`}
+    >
+      {showImg ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={post.thumbnailUrl}
+          alt=""
+          className="w-full h-full object-cover"
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        <div
+          className={`w-full h-full flex flex-col justify-end ${
+            compact ? "p-1" : "p-4 gap-2"
+          }`}
+        >
+          {compact ? null : (
+            <span className="text-[10px] uppercase tracking-[0.14em] text-white/45">
+              {format}
+            </span>
+          )}
+          <p
+            className={`leading-snug text-white/90 ${
+              compact
+                ? "text-[8px] line-clamp-3"
+                : "text-[13px] line-clamp-6"
+            }`}
+          >
+            {snippet || "Instagram"}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IgPostLink({
+  post,
+  handle,
+}: {
+  post: IgPost;
+  handle: string | null;
+}) {
+  if (post.permalinkValid && post.postUrl) {
+    return (
+      <a
+        href={post.postUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[11px] font-medium text-[#E1306C] hover:underline inline-flex items-center gap-1"
+      >
+        Open post <ExternalLink className="w-3 h-3" />
+      </a>
+    );
+  }
+  if (!post.postUrl) return null;
+  return (
+    <span className="text-[11px] text-gray-400 inline-flex items-center gap-1">
+      Profile only
+      {handle ? (
+        <a
+          href={post.postUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-gray-500 hover:underline inline-flex items-center gap-0.5"
+        >
+          @{handle} <ExternalLink className="w-3 h-3" />
+        </a>
+      ) : null}
+    </span>
+  );
+}
 
 interface InstagramOrganicDashboardProps {
   bundle: IgBundle;
@@ -333,7 +426,7 @@ export function InstagramOrganicDashboard({
       <SectionShell
         eyebrow="Section 4"
         title="Best performing posts"
-        description="Top creatives by external link taps, then accounts reached — with live Instagram links when available."
+        description="Top creatives by external link taps, then accounts reached. Post links open Instagram when the permalink is real; otherwise the profile."
       >
         {topPosts.length === 0 ? (
           <p className="text-[13px] text-gray-500 text-center py-8">
@@ -353,18 +446,22 @@ export function InstagramOrganicDashboard({
                   key={id}
                   className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col"
                 >
-                  <div className="aspect-square bg-gray-100 relative">
-                    {p.thumbnailUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={p.thumbnailUrl}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
+                  <div className="aspect-square bg-[#171717] relative">
+                    {p.permalinkValid && p.postUrl ? (
+                      <a
+                        href={p.postUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block w-full h-full"
+                        aria-label="Open Instagram post"
+                      >
+                        <IgMediaPreview post={p} />
+                        <span className="absolute right-2 top-2 inline-flex rounded bg-black/55 p-1 text-white">
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </span>
+                      </a>
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
-                        No preview
-                      </div>
+                      <IgMediaPreview post={p} />
                     )}
                   </div>
                   <div className="p-3 flex-1 flex flex-col gap-2">
@@ -406,16 +503,7 @@ export function InstagramOrganicDashboard({
                         Link taps {formatCompact(p.externalLinkTaps)}
                       </span>
                     </div>
-                    {p.postUrl ? (
-                      <a
-                        href={p.postUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] font-medium text-[#E1306C] hover:underline inline-flex items-center gap-1"
-                      >
-                        Open on Instagram <ExternalLink className="w-3 h-3" />
-                      </a>
-                    ) : null}
+                    <IgPostLink post={p} handle={rawBundle.handle} />
                   </div>
                 </article>
               );
@@ -487,16 +575,7 @@ export function InstagramOrganicDashboard({
                   {pageRows.map((p, i) => (
                     <tr key={i} className="hover:bg-gray-50/80">
                       <td className="px-3 py-2">
-                        {p.thumbnailUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={p.thumbnailUrl}
-                            alt=""
-                            className="w-10 h-10 rounded object-cover bg-gray-100"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded bg-gray-100" />
-                        )}
+                        <IgMediaPreview post={p} compact />
                       </td>
                       <td className="px-3 py-2 max-w-[14rem] truncate text-gray-800">
                         {p.caption || "—"}
@@ -526,17 +605,17 @@ export function InstagramOrganicDashboard({
                         {formatCompact(p.externalLinkTaps)}
                       </td>
                       <td className="px-3 py-2">
-                        {p.postUrl ? (
+                        {p.permalinkValid && p.postUrl ? (
                           <a
                             href={p.postUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-[#E1306C] hover:underline"
+                            className="text-[#E1306C] hover:underline inline-flex items-center gap-1"
                           >
-                            Open
+                            Post <ExternalLink className="w-3 h-3" />
                           </a>
                         ) : (
-                          "—"
+                          <span className="text-gray-400">Profile only</span>
                         )}
                       </td>
                     </tr>

@@ -20,6 +20,9 @@ import {
 } from "@/lib/accounting/queries";
 import { formatEuro, formatEuroExact, type LedgerEntry } from "@/lib/accounting/types";
 import { deleteCashBalance, saveCashBalance } from "@/app/actions/accounting";
+import { FounderCashRunwayCard } from "@/components/accounting/FounderCashRunwayCard";
+import { isFounderPerson, type PersonRow } from "@/lib/hr/types";
+import type { FounderRatePerson } from "@/lib/accounting/founder-runway";
 
 type Scenario = "conservative" | "base" | "optimistic";
 
@@ -71,6 +74,7 @@ export default function RunwayPage() {
   const [actualEntries, setActualEntries] = useState<LedgerEntry[]>([]);
   const [identifiedEntries, setIdentifiedEntries] = useState<LedgerEntry[]>([]);
   const [unidentifiedEntries, setUnidentifiedEntries] = useState<LedgerEntry[]>([]);
+  const [founders, setFounders] = useState<FounderRatePerson[]>([]);
   const [loading, setLoading] = useState(true);
   const [scenario, setScenario] = useState<Scenario>("base");
 
@@ -85,16 +89,32 @@ export default function RunwayPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     const supabase = createClient();
-    const [cash, actual, identified, unidentified] = await Promise.all([
+    const [cash, actual, identified, unidentified, peopleRes] = await Promise.all([
       fetchCashBalances(supabase, rangeStart, rangeEnd),
       fetchLedgerEntries(supabase, { pillar: "actual", startDate: rangeStart, endDate: rangeEnd }),
       fetchLedgerEntries(supabase, { pillar: "identified", startDate: rangeStart, endDate: rangeEnd }),
       fetchLedgerEntries(supabase, { pillar: "unidentified", startDate: rangeStart, endDate: rangeEnd }),
+      (supabase as any)
+        .from("people")
+        .select(
+          "id, full_name, hourly_rate_cost, wishlist_hourly_rate, max_weekly_hours, co_founder_track, person_type, engagement_types ( key )"
+        )
+        .eq("roster_status", "active"),
     ]);
     setCashRows(cash as CashRow[]);
     setActualEntries(actual);
     setIdentifiedEntries(identified);
     setUnidentifiedEntries(unidentified);
+    const people = (peopleRes.data || []) as PersonRow[];
+    setFounders(
+      people.filter(isFounderPerson).map((p) => ({
+        id: p.id,
+        full_name: p.full_name,
+        hourly_rate_cost: p.hourly_rate_cost,
+        wishlist_hourly_rate: p.wishlist_hourly_rate ?? null,
+        max_weekly_hours: p.max_weekly_hours ?? null,
+      }))
+    );
     setLoading(false);
   }, [rangeStart, rangeEnd]);
 
@@ -241,7 +261,7 @@ export default function RunwayPage() {
         <button
           type="button"
           onClick={openAddForm}
-          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-md text-[13px] font-medium hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-2 bg-accent text-white rounded-md text-[13px] font-medium hover:bg-accent-hover transition-colors"
         >
           <Plus size={14} /> Add cash balance
         </button>
@@ -301,6 +321,8 @@ export default function RunwayPage() {
             </div>
           </div>
 
+          <FounderCashRunwayCard cash={latestCash} founders={founders} />
+
           <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1 w-fit mb-4">
             {SCENARIOS.map((s) => (
               <button
@@ -320,7 +342,7 @@ export default function RunwayPage() {
           <div className="p-5 rounded-lg border border-gray-200 bg-white mb-8">
             <div className="flex items-center gap-4 mb-3 text-[11px] text-gray-500">
               <span className="flex items-center gap-1">
-                <span className="w-3 h-0.5 bg-blue-600 inline-block" /> Historical
+                <span className="w-3 h-0.5 bg-accent inline-block" /> Historical
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-3 h-0.5 bg-blue-300 inline-block" style={{ borderTop: "2px dashed" }} /> Projected ({scenario})
@@ -423,11 +445,11 @@ export default function RunwayPage() {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40">
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-sm rounded-xl bg-white shadow-xl border border-gray-200"
+            className="w-full max-w-sm rounded-t-2xl sm:rounded-xl bg-white shadow-xl border border-gray-200 max-h-[100dvh] overflow-y-auto"
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <h3 className="text-[15px] font-bold text-gray-900">
@@ -490,7 +512,7 @@ export default function RunwayPage() {
                 type="button"
                 disabled={saving}
                 onClick={() => void handleSaveCash()}
-                className="px-4 py-1.5 bg-blue-600 text-white rounded text-[12px] font-medium hover:bg-blue-700 disabled:opacity-60 flex items-center gap-1.5"
+                className="px-4 py-1.5 bg-accent text-white rounded-md text-[12px] font-medium hover:bg-accent-hover disabled:opacity-60 flex items-center gap-1.5"
               >
                 {saving && <Loader2 size={13} className="animate-spin" />}
                 {saving ? "Saving…" : "Save"}

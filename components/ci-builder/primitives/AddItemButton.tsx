@@ -7,7 +7,7 @@ export interface AddItemButtonProps {
   label: string;
   onClick: () => void;
   isAdmin?: boolean;
-  variant?: "tile" | "button" | "dashed-card";
+  variant?: "tile" | "button" | "dashed-card" | "shade";
   className?: string;
 }
 
@@ -19,6 +19,19 @@ export function AddItemButton({
   className = ""
 }: AddItemButtonProps) {
   if (!isAdmin) return null;
+
+  if (variant === "shade") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`w-[132px] min-h-[150px] rounded-[14px] border-[1.5px] border-dashed border-[var(--ci-text,#111)]/20 hover:border-[var(--ci-text,#111)]/45 text-[var(--ci-muted,#8e8e9f)] hover:text-[var(--ci-text,#111)] flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-transparent box-border transition-colors ${className}`}
+      >
+        <Plus className="w-[18px] h-[18px]" strokeWidth={1.8} />
+        <span className="text-[11px] font-medium">{label}</span>
+      </button>
+    );
+  }
 
   if (variant === "dashed-card" || variant === "tile") {
     return (

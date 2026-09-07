@@ -2,10 +2,15 @@
 
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Workspace } from "@/components/frappe-ui/Workspace";
+import { ClientNavGuard } from "@/components/client/ClientNavGuard";
 import { ClientAccessFlowGate } from "@/components/client/ClientAccessFlowGate";
+import {
+  ClientEmptyState,
+  ClientPortalFrame,
+} from "@/components/client/ClientPortalFrame";
 import { isFounder } from "@/lib/rbac";
-import { BookOpen, Building2, ExternalLink, Sparkles, Loader2 } from "lucide-react";
+import { getViewAsCompany } from "@/app/actions/view-as-client";
+import { Loader2 } from "lucide-react";
 import Link from "next/link";
 
 interface PublishedGuideline {
@@ -15,6 +20,7 @@ interface PublishedGuideline {
   project_title: string;
   company_name: string;
   updated_at: string;
+  project_id?: string;
 }
 
 function GuidelinesContent() {
@@ -40,6 +46,7 @@ function GuidelinesContent() {
           .maybeSingle();
 
         const isStaff = profile && isFounder(profile.role);
+        const viewAs = isStaff ? await getViewAsCompany() : null;
 
         const { data: members, error: memErr } = await supabase
           .from("company_members")
@@ -55,7 +62,6 @@ function GuidelinesContent() {
 
         const activeCompIds = (members ?? []).map((m) => m.company_id);
 
-        // Clients with no company membership see an empty library (not all brands)
         if (!isStaff && activeCompIds.length === 0) {
           setGuidelines([]);
           return;
@@ -81,10 +87,13 @@ function GuidelinesContent() {
           `
           )
           .eq("status", "published")
-          .not("slug", "is", null);
+          .not("slug", "is", null)
+          .eq("projects.client_visible", true);
 
         if (!isStaff) {
           query = query.in("projects.client_id", activeCompIds);
+        } else if (viewAs?.id) {
+          query = query.eq("projects.client_id", viewAs.id);
         }
 
         const { data: glData, error: glErr } = await query;
@@ -113,11 +122,35 @@ function GuidelinesContent() {
               project_title: title,
               company_name: company,
               updated_at: g.updated_at as string,
+              project_id: (proj as { id?: string }).id || "",
             },
           ];
         });
 
-        setGuidelines(formatted);
+        let visible = formatted;
+        if (!isStaff) {
+          const { data: memRows } = await supabase
+            .from("company_members")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("status", "active");
+          const memberIds = (memRows ?? []).map((m) => m.id);
+          if (memberIds.length) {
+            const { data: grants } = await (supabase as any)
+              .from("project_members")
+              .select("project_id")
+              .in("company_member_id", memberIds)
+              .eq("status", "active");
+            const granted = new Set(
+              ((grants ?? []) as { project_id: string }[]).map((g) => g.project_id)
+            );
+            if (granted.size > 0) {
+              visible = formatted.filter((g) => g.project_id && granted.has(g.project_id));
+            }
+          }
+        }
+
+        setGuidelines(visible);
       } catch (e) {
         console.error("Error in loadGuidelines:", e);
         setLoadError(e instanceof Error ? e.message : "Failed to load guidelines");
@@ -130,90 +163,60 @@ function GuidelinesContent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-120px)]">
-        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+      <div className="flex items-center justify-center min-h-[calc(100dvh-var(--os-header))]">
+        <Loader2 className="w-6 h-6 text-text-muted animate-spin" />
       </div>
     );
   }
 
   return (
-    <Workspace>
-      <div className="space-y-8 pb-12">
-        <div className="border-b border-gray-200 pb-5">
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2.5">
-            <BookOpen className="w-6 h-6 text-blue-600" />
-            Your Brand Guidelines
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Access living brand identity specifications, design tokens, and AI brand prompts for
-            your organization.
-          </p>
+    <ClientPortalFrame
+      eyebrow="Brand"
+      title="Brand guidelines"
+      subtitle="Published identity specs for your organization."
+    >
+      {loadError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+          Couldn’t load guidelines: {loadError}
         </div>
+      ) : null}
 
-        {loadError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
-            Couldn’t load guidelines: {loadError}
-          </div>
-        )}
-
-        {guidelines.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center space-y-3 shadow-sm">
-            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-semibold text-gray-900">No Published Brand Guidelines Yet</h3>
-            <p className="text-xs text-gray-500 max-w-sm mx-auto">
-              Your organization currently has no published brand guidelines. As soon as your
-              strategy team publishes a guideline linked to your company, it will appear here.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {guidelines.map((g) => (
-              <Link
-                key={g.id}
-                href={`/app/client-guidelines/${g.slug}`}
-                className="bg-white rounded-2xl border border-gray-200 p-6 flex flex-col justify-between hover:shadow-md hover:border-blue-300 transition-all group text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
-                      <Building2 className="w-3 h-3 text-gray-400" />
-                      {g.company_name}
-                    </span>
-                    <span className="text-[10px] text-gray-400 shrink-0">
-                      Updated {new Date(g.updated_at).toLocaleDateString()}
-                    </span>
-                  </div>
-
-                  <div>
-                    <h2 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
-                      {g.brand_name}
-                    </h2>
-                    <p className="text-xs text-gray-500 mt-0.5">{g.project_title}</p>
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t border-gray-100 mt-6 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-blue-600 group-hover:underline inline-flex items-center gap-1">
-                    Open guideline <ExternalLink className="w-3.5 h-3.5" />
-                  </span>
-                  <span className="px-3.5 py-2 bg-blue-600 group-hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-sm">
-                    View
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-    </Workspace>
+      {guidelines.length === 0 ? (
+        <ClientEmptyState
+          title="No published guidelines yet"
+          message="When your strategy team publishes a guideline linked to your company, it will appear here."
+        />
+      ) : (
+        <div className="space-y-2">
+          {guidelines.map((g) => (
+            <Link
+              key={g.id}
+              href={`/app/client-guidelines/${g.slug}`}
+              className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3.5 hover:bg-surface-raised"
+            >
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-text-primary truncate">
+                  {g.brand_name}
+                </p>
+                <p className="text-[12px] text-text-muted mt-0.5">
+                  {g.company_name} · Updated {new Date(g.updated_at).toLocaleDateString()}
+                </p>
+              </div>
+              <span className="shrink-0 text-[12px] font-medium text-text-secondary mt-0.5">
+                Open
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </ClientPortalFrame>
   );
 }
 
 export default function ClientGuidelinesPage() {
   return (
     <ClientAccessFlowGate>
+      <ClientNavGuard navKey="guidelines" />
       <GuidelinesContent />
     </ClientAccessFlowGate>
   );

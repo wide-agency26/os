@@ -7,9 +7,11 @@ import { createClient } from "@/utils/supabase/client";
 import { Pencil, Plus, Trash, UserCheck, X } from "lucide-react";
 import {
   PIPELINE_STAGES,
+  formatMoney,
   legacyPersonType,
   type PipelineStage,
 } from "@/lib/hr/types";
+import { runSyncHrAndOverheadLedger } from "@/app/actions/accounting";
 
 type PipelineCard = {
   id: string;
@@ -19,6 +21,8 @@ type PipelineCard = {
   stage: PipelineStage;
   converted_person_id: string | null;
   created_at?: string;
+  expected_monthly_cost: number | null;
+  currency: string | null;
 };
 
 type EditForm = {
@@ -27,9 +31,16 @@ type EditForm = {
   source: string;
   notes: string;
   stage: PipelineStage;
+  expected_monthly_cost: string;
 };
 
 const ACTIVE_STAGES = PIPELINE_STAGES.map((s) => s.value);
+
+function parseMonthlyCost(raw: string): number | null {
+  const n = Number(String(raw).replace(",", ".").trim());
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
 
 export default function HrPipelinePage() {
   const [cards, setCards] = useState<PipelineCard[]>([]);
@@ -38,6 +49,7 @@ export default function HrPipelinePage() {
   const [newName, setNewName] = useState("");
   const [newSource, setNewSource] = useState("");
   const [newNotes, setNewNotes] = useState("");
+  const [newCost, setNewCost] = useState("");
   const [editing, setEditing] = useState<EditForm | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -91,6 +103,8 @@ export default function HrPipelinePage() {
         source: newSource.trim() || null,
         notes: newNotes.trim() || null,
         stage: "met",
+        expected_monthly_cost: parseMonthlyCost(newCost),
+        currency: "EUR",
       },
     ]);
     setAdding(false);
@@ -101,7 +115,9 @@ export default function HrPipelinePage() {
     setNewName("");
     setNewSource("");
     setNewNotes("");
+    setNewCost("");
     await load();
+    await runSyncHrAndOverheadLedger();
   };
 
   const moveStage = async (id: string, stage: PipelineStage) => {
@@ -119,6 +135,7 @@ export default function HrPipelinePage() {
       alert("Error moving card: " + error.message);
       return;
     }
+    await runSyncHrAndOverheadLedger();
   };
 
   const startEdit = (card: PipelineCard) => {
@@ -128,6 +145,10 @@ export default function HrPipelinePage() {
       source: card.source || "",
       notes: card.notes || "",
       stage: card.stage,
+      expected_monthly_cost:
+        card.expected_monthly_cost != null
+          ? String(card.expected_monthly_cost)
+          : "",
     });
   };
 
@@ -146,6 +167,7 @@ export default function HrPipelinePage() {
         source: editing.source.trim() || null,
         notes: editing.notes.trim() || null,
         stage: editing.stage,
+        expected_monthly_cost: parseMonthlyCost(editing.expected_monthly_cost),
         updated_at: new Date().toISOString(),
       })
       .eq("id", editing.id);
@@ -156,6 +178,7 @@ export default function HrPipelinePage() {
     }
     setEditing(null);
     await load();
+    await runSyncHrAndOverheadLedger();
   };
 
   const handleDelete = async (card: PipelineCard) => {
@@ -177,6 +200,7 @@ export default function HrPipelinePage() {
     }
     if (editing?.id === card.id) setEditing(null);
     setCards((list) => list.filter((c) => c.id !== card.id));
+    await runSyncHrAndOverheadLedger();
   };
 
   const convertToPerson = async (card: PipelineCard) => {
@@ -229,6 +253,7 @@ export default function HrPipelinePage() {
       return;
     }
     await load();
+    await runSyncHrAndOverheadLedger();
   };
 
   const onDropToStage = (stage: PipelineStage) => {
@@ -253,7 +278,7 @@ export default function HrPipelinePage() {
 
       <div className="border border-gray-200 rounded-xl p-4 mb-6 bg-white space-y-3">
         <p className="text-[13px] font-bold text-gray-900">Add candidate</p>
-        <div className="grid sm:grid-cols-3 gap-3">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -272,6 +297,13 @@ export default function HrPipelinePage() {
             placeholder="Notes"
             className="border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
           />
+          <input
+            value={newCost}
+            onChange={(e) => setNewCost(e.target.value)}
+            placeholder="Expected € / month"
+            inputMode="decimal"
+            className="border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+          />
         </div>
         <button
           type="button"
@@ -285,12 +317,12 @@ export default function HrPipelinePage() {
       </div>
 
       {editing ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="pipeline-edit-title"
-            className="w-full max-w-md rounded-xl bg-white shadow-xl border border-gray-200 p-5 space-y-4"
+            className="w-full max-w-md rounded-t-2xl sm:rounded-xl bg-white shadow-xl border border-gray-200 p-5 space-y-4 max-h-[100dvh] overflow-y-auto"
           >
             <div className="flex items-start justify-between gap-3">
               <h3
@@ -348,6 +380,22 @@ export default function HrPipelinePage() {
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="block">
+                <span className="text-[12px] font-semibold text-gray-700">
+                  Expected € / month
+                </span>
+                <input
+                  value={editing.expected_monthly_cost}
+                  onChange={(e) =>
+                    setEditing((f) =>
+                      f ? { ...f, expected_monthly_cost: e.target.value } : f
+                    )
+                  }
+                  inputMode="decimal"
+                  placeholder="Leave empty for no Identified cost"
+                  className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                />
               </label>
               <label className="block">
                 <span className="text-[12px] font-semibold text-gray-700">Notes</span>
@@ -484,6 +532,16 @@ export default function HrPipelinePage() {
                       </div>
                       {card.source ? (
                         <p className="text-[11px] text-gray-500">{card.source}</p>
+                      ) : null}
+                      {card.expected_monthly_cost != null &&
+                      Number(card.expected_monthly_cost) > 0 ? (
+                        <p className="text-[12px] font-medium text-gray-800 tabular-nums">
+                          {formatMoney(
+                            Number(card.expected_monthly_cost),
+                            card.currency || "EUR"
+                          )}{" "}
+                          / mo
+                        </p>
                       ) : null}
                       {card.notes ? (
                         <p className="text-[12px] text-gray-600 line-clamp-2">
