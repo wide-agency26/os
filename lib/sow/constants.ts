@@ -141,20 +141,69 @@ export function formatSowMoney(
   }
 }
 
-/** Net total: ungrouped line prices + merged cost group prices (no double-count). */
-export function computeSowSubtotal(sow: SowDocument): number {
+/** Net total from raw cost rows (list views — same rules as computeSowSubtotal). */
+export function computeSowValueFromRows(input: {
+  groups: { price: number | null }[];
+  items: { price: number | null; cost_group_id: string | null }[];
+}): number {
   let total = 0;
-  for (const group of sow.cost_groups) {
-    total += group.price ?? 0;
-  }
-  for (const section of sow.sections) {
-    for (const item of section.line_items) {
-      if (item.cost_group_id) continue;
-      if (item.price != null) total += item.price;
-    }
+  for (const group of input.groups) total += group.price ?? 0;
+  for (const item of input.items) {
+    if (item.cost_group_id) continue;
+    if (item.price != null) total += item.price;
   }
   return total;
 }
+
+/** Net total: ungrouped line prices + merged cost group prices (no double-count). */
+export function computeSowSubtotal(sow: SowDocument): number {
+  return computeSowValueFromRows({
+    groups: sow.cost_groups,
+    items: sow.sections.flatMap((s) => s.line_items),
+  });
+}
+
+export type SowListDecision =
+  | "draft"
+  | "sent"
+  | "accepted"
+  | "on_hold"
+  | "declined"
+  | "archived";
+
+export function resolveSowListDecision(
+  sowStatus: string,
+  proposalStatus?: string | null
+): { id: SowListDecision; label: string } {
+  if (sowStatus === "accepted" || proposalStatus === "accepted") {
+    return { id: "accepted", label: "Accepted" };
+  }
+  if (sowStatus === "archived") {
+    return { id: "archived", label: "Archived" };
+  }
+  if (proposalStatus === "declined") {
+    return { id: "declined", label: "Declined" };
+  }
+  if (proposalStatus === "on_hold") {
+    return { id: "on_hold", label: "On hold" };
+  }
+  if (sowStatus === "published" || proposalStatus === "published") {
+    return { id: "sent", label: "Sent — awaiting reply" };
+  }
+  return { id: "draft", label: "Draft" };
+}
+
+export const SOW_DECISION_BADGE: Record<
+  SowListDecision,
+  { className: string }
+> = {
+  draft: { className: "bg-gray-100 text-gray-700" },
+  sent: { className: "bg-blue-50 text-blue-800" },
+  accepted: { className: "bg-emerald-50 text-emerald-800" },
+  on_hold: { className: "bg-amber-50 text-amber-900" },
+  declined: { className: "bg-red-50 text-red-800" },
+  archived: { className: "bg-gray-100 text-gray-500" },
+};
 
 export function renderVatLine(
   wording: string,

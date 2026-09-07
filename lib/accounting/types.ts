@@ -7,7 +7,10 @@ export type LedgerSource =
   | "auto_project"
   | "auto_hr"
   | "auto_overhead"
-  | "auto_lexware";
+  | "auto_pipeline"
+  | "auto_lexware"
+  | "auto_crm"
+  | "auto_projection";
 export type ProjectAccountingStage =
   | "prospect"
   | "lead"
@@ -133,11 +136,38 @@ export function pillarFromStage(
   return "actual"; // client | signed | completed
 }
 
+/** Display names for ledger buckets. Keys stay unidentified/identified/actual. */
+export const LEDGER_PILLAR_UI: Record<
+  LedgerPillar,
+  { title: string; ledgerName: string; blurb: string }
+> = {
+  unidentified: {
+    title: "Unidentified",
+    ledgerName: "Unidentified",
+    blurb: "Find / Qualify — pipeline value before a priced deal",
+  },
+  identified: {
+    title: "Identified",
+    ledgerName: "Identified",
+    blurb: "Propose / Contract — priced SOWs and quotes",
+  },
+  actual: {
+    title: "Actual",
+    ledgerName: "Actual",
+    blurb: "Signed revenue plus HR payroll and resource costs",
+  },
+};
+
+export function ledgerPillarTitle(pillar: LedgerPillar): string {
+  return LEDGER_PILLAR_UI[pillar].title;
+}
+
+export function ledgerPillarName(pillar: LedgerPillar): string {
+  return LEDGER_PILLAR_UI[pillar].ledgerName;
+}
+
 export function stagePillarLabel(stage: string | null | undefined): string {
-  const pillar = pillarFromStage(stage);
-  if (pillar === "unidentified") return "Unidentified";
-  if (pillar === "identified") return "Identified";
-  return "Actual";
+  return ledgerPillarName(pillarFromStage(stage));
 }
 
 export function formatEuro(amount: number | null | undefined): string {
@@ -163,7 +193,10 @@ export function isAutoSource(source: string | null | undefined): boolean {
     source === "auto_project" ||
     source === "auto_hr" ||
     source === "auto_overhead" ||
-    source === "auto_lexware"
+    source === "auto_pipeline" ||
+    source === "auto_lexware" ||
+    source === "auto_crm" ||
+    source === "auto_projection"
   );
 }
 
